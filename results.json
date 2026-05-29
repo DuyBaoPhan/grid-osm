@@ -1,0 +1,2802 @@
+[
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.780065636050658,
+    "approx_lng": 106.69985287480867,
+    "tile_x": 208768,
+    "tile_y": 123175
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.779874906935055,
+    "approx_lng": 106.70115663054086,
+    "tile_x": 208769,
+    "tile_y": 123175
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.781492752003276,
+    "approx_lng": 106.69869065093405,
+    "tile_x": 208767,
+    "tile_y": 123174
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.78120746590864,
+    "approx_lng": 106.69835843194517,
+    "tile_x": 208767,
+    "tile_y": 123174
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.78005718647002,
+    "approx_lng": 106.69838514729437,
+    "tile_x": 208767,
+    "tile_y": 123175
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.779873302315444,
+    "approx_lng": 106.6987041086301,
+    "tile_x": 208767,
+    "tile_y": 123175
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.77864109612377,
+    "approx_lng": 106.69836965999806,
+    "tile_x": 208767,
+    "tile_y": 123176
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.781437857552811,
+    "approx_lng": 106.6998305452981,
+    "tile_x": 208768,
+    "tile_y": 123174
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.781464451776046,
+    "approx_lng": 106.69981799324978,
+    "tile_x": 208768,
+    "tile_y": 123174
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.781475591723694,
+    "approx_lng": 106.6999793406103,
+    "tile_x": 208768,
+    "tile_y": 123174
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.781194760386931,
+    "approx_lng": 106.70142924451388,
+    "tile_x": 208769,
+    "tile_y": 123174
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.781279398767872,
+    "approx_lng": 106.70138921193714,
+    "tile_x": 208769,
+    "tile_y": 123174
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.778516852240788,
+    "approx_lng": 106.70127277935511,
+    "tile_x": 208769,
+    "tile_y": 123176
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.781193391712158,
+    "approx_lng": 106.70273993462399,
+    "tile_x": 208770,
+    "tile_y": 123174
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.781264602408699,
+    "approx_lng": 106.70271515952946,
+    "tile_x": 208770,
+    "tile_y": 123174
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.780105247841858,
+    "approx_lng": 106.70250140276531,
+    "tile_x": 208770,
+    "tile_y": 123175
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.77991332106861,
+    "approx_lng": 106.7026454041528,
+    "tile_x": 208770,
+    "tile_y": 123175
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.780072950562497,
+    "approx_lng": 106.70255925000501,
+    "tile_x": 208770,
+    "tile_y": 123175
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.778551216160539,
+    "approx_lng": 106.70266279113487,
+    "tile_x": 208770,
+    "tile_y": 123176
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.778592437777359,
+    "approx_lng": 106.70253159082235,
+    "tile_x": 208770,
+    "tile_y": 123176
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.781544973914546,
+    "approx_lng": 106.69731845263163,
+    "tile_x": 208766,
+    "tile_y": 123174
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.781388324746658,
+    "approx_lng": 106.69716263272625,
+    "tile_x": 208766,
+    "tile_y": 123174
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.780053629061776,
+    "approx_lng": 106.6971103189912,
+    "tile_x": 208766,
+    "tile_y": 123175
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.782751262521122,
+    "approx_lng": 106.69998224902534,
+    "tile_x": 208768,
+    "tile_y": 123173
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.782603100389835,
+    "approx_lng": 106.69984536747864,
+    "tile_x": 208768,
+    "tile_y": 123173
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.782564646431553,
+    "approx_lng": 106.69994897890591,
+    "tile_x": 208768,
+    "tile_y": 123173
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.778797738511933,
+    "approx_lng": 106.69701632661803,
+    "tile_x": 208766,
+    "tile_y": 123176
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.778783084945838,
+    "approx_lng": 106.69714254934999,
+    "tile_x": 208766,
+    "tile_y": 123176
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.777383017096932,
+    "approx_lng": 106.69729384267498,
+    "tile_x": 208766,
+    "tile_y": 123177
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.777470283887343,
+    "approx_lng": 106.69862074246453,
+    "tile_x": 208767,
+    "tile_y": 123177
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.777187165841681,
+    "approx_lng": 106.6984008712037,
+    "tile_x": 208767,
+    "tile_y": 123177
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.777280019731165,
+    "approx_lng": 106.70129901652334,
+    "tile_x": 208769,
+    "tile_y": 123177
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.777424875265373,
+    "approx_lng": 106.70144546440856,
+    "tile_x": 208769,
+    "tile_y": 123177
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.777268475654608,
+    "approx_lng": 106.70266579551489,
+    "tile_x": 208770,
+    "tile_y": 123177
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.777508454729034,
+    "approx_lng": 106.70258282441063,
+    "tile_x": 208770,
+    "tile_y": 123177
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.77729050696577,
+    "approx_lng": 106.70285012443014,
+    "tile_x": 208770,
+    "tile_y": 123177
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.782787924867133,
+    "approx_lng": 106.70415453195446,
+    "tile_x": 208771,
+    "tile_y": 123173
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.782814127219286,
+    "approx_lng": 106.70390518342029,
+    "tile_x": 208771,
+    "tile_y": 123173
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.782742013930402,
+    "approx_lng": 106.7038446178378,
+    "tile_x": 208771,
+    "tile_y": 123173
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.781462599609865,
+    "approx_lng": 106.70412332754101,
+    "tile_x": 208771,
+    "tile_y": 123174
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.781485958278068,
+    "approx_lng": 106.70390864505585,
+    "tile_x": 208771,
+    "tile_y": 123174
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.77868494132273,
+    "approx_lng": 106.70402743266995,
+    "tile_x": 208771,
+    "tile_y": 123176
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.778660290734097,
+    "approx_lng": 106.70388805789213,
+    "tile_x": 208771,
+    "tile_y": 123176
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.777176245476051,
+    "approx_lng": 106.70400932795278,
+    "tile_x": 208771,
+    "tile_y": 123177
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.7798474976659,
+    "approx_lng": 106.69575541165862,
+    "tile_x": 208765,
+    "tile_y": 123175
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.783895468790453,
+    "approx_lng": 106.69732626766707,
+    "tile_x": 208766,
+    "tile_y": 123172
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.776009854650999,
+    "approx_lng": 106.69836370262882,
+    "tile_x": 208767,
+    "tile_y": 123178
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.775878854045981,
+    "approx_lng": 106.69854756992781,
+    "tile_x": 208767,
+    "tile_y": 123178
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.776030176378432,
+    "approx_lng": 106.69862190066718,
+    "tile_x": 208767,
+    "tile_y": 123178
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.775882772990373,
+    "approx_lng": 106.69998791415279,
+    "tile_x": 208768,
+    "tile_y": 123178
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.775833637642501,
+    "approx_lng": 106.700095888277,
+    "tile_x": 208768,
+    "tile_y": 123178
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.776161387191893,
+    "approx_lng": 106.6999645549291,
+    "tile_x": 208768,
+    "tile_y": 123178
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.776126232289782,
+    "approx_lng": 106.70128410150906,
+    "tile_x": 208769,
+    "tile_y": 123178
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.775799166458013,
+    "approx_lng": 106.70142471419152,
+    "tile_x": 208769,
+    "tile_y": 123178
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.784261144786656,
+    "approx_lng": 106.70415873978406,
+    "tile_x": 208771,
+    "tile_y": 123172
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.775810461592567,
+    "approx_lng": 106.7040121632558,
+    "tile_x": 208771,
+    "tile_y": 123178
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.775883128671804,
+    "approx_lng": 106.70417266441223,
+    "tile_x": 208771,
+    "tile_y": 123178
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.776033454273792,
+    "approx_lng": 106.70416391786159,
+    "tile_x": 208771,
+    "tile_y": 123178
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.784208869905237,
+    "approx_lng": 106.70530913199129,
+    "tile_x": 208772,
+    "tile_y": 123172
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.78418871952666,
+    "approx_lng": 106.70534390695853,
+    "tile_x": 208772,
+    "tile_y": 123172
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.78416293932926,
+    "approx_lng": 106.7055763891315,
+    "tile_x": 208772,
+    "tile_y": 123172
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.779921230924591,
+    "approx_lng": 106.70532581240914,
+    "tile_x": 208772,
+    "tile_y": 123175
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.778720387087235,
+    "approx_lng": 106.70520061282217,
+    "tile_x": 208772,
+    "tile_y": 123176
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.777410940782046,
+    "approx_lng": 106.70543437347976,
+    "tile_x": 208772,
+    "tile_y": 123177
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.778571559100875,
+    "approx_lng": 106.69441068233245,
+    "tile_x": 208764,
+    "tile_y": 123176
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.778545704253842,
+    "approx_lng": 106.69450654148339,
+    "tile_x": 208764,
+    "tile_y": 123176
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.778817837503695,
+    "approx_lng": 106.69442508112581,
+    "tile_x": 208764,
+    "tile_y": 123176
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.77724964931035,
+    "approx_lng": 106.6943470410892,
+    "tile_x": 208764,
+    "tile_y": 123177
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.777245599480914,
+    "approx_lng": 106.69435284238277,
+    "tile_x": 208764,
+    "tile_y": 123177
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.785315064254247,
+    "approx_lng": 106.69734324354421,
+    "tile_x": 208766,
+    "tile_y": 123171
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.785225187211482,
+    "approx_lng": 106.7012914342413,
+    "tile_x": 208769,
+    "tile_y": 123171
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.785345153664451,
+    "approx_lng": 106.70113225285654,
+    "tile_x": 208769,
+    "tile_y": 123171
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.77600625177882,
+    "approx_lng": 106.69423745981837,
+    "tile_x": 208764,
+    "tile_y": 123178
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.774771426727199,
+    "approx_lng": 106.69430222048348,
+    "tile_x": 208764,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.774530160802861,
+    "approx_lng": 106.69444303739657,
+    "tile_x": 208764,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.774717877010325,
+    "approx_lng": 106.69566337514252,
+    "tile_x": 208765,
+    "tile_y": 123179
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.774718495317265,
+    "approx_lng": 106.69982961300498,
+    "tile_x": 208768,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.774522967227607,
+    "approx_lng": 106.69976960540136,
+    "tile_x": 208768,
+    "tile_y": 123179
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.77449781754381,
+    "approx_lng": 106.70245961636515,
+    "tile_x": 208770,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.77453744260981,
+    "approx_lng": 106.7038646641431,
+    "tile_x": 208771,
+    "tile_y": 123179
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.774706876960499,
+    "approx_lng": 106.70414936876283,
+    "tile_x": 208771,
+    "tile_y": 123179
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.774755657127388,
+    "approx_lng": 106.70410346349034,
+    "tile_x": 208771,
+    "tile_y": 123179
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.774763517760224,
+    "approx_lng": 106.70535503916022,
+    "tile_x": 208772,
+    "tile_y": 123179
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.774744987496339,
+    "approx_lng": 106.70545584987924,
+    "tile_x": 208772,
+    "tile_y": 123179
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.784253817214843,
+    "approx_lng": 106.70661093104984,
+    "tile_x": 208773,
+    "tile_y": 123172
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.78422394433914,
+    "approx_lng": 106.70685403149282,
+    "tile_x": 208773,
+    "tile_y": 123172
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.782819159409984,
+    "approx_lng": 106.70672574606623,
+    "tile_x": 208773,
+    "tile_y": 123173
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.782651412684556,
+    "approx_lng": 106.70669003594996,
+    "tile_x": 208773,
+    "tile_y": 123173
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.781224703719946,
+    "approx_lng": 106.70690373958155,
+    "tile_x": 208773,
+    "tile_y": 123174
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.778824413033144,
+    "approx_lng": 106.70673450509483,
+    "tile_x": 208773,
+    "tile_y": 123176
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.77880430907237,
+    "approx_lng": 106.706725521082,
+    "tile_x": 208773,
+    "tile_y": 123176
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.778565054553887,
+    "approx_lng": 106.70669132178166,
+    "tile_x": 208773,
+    "tile_y": 123176
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.777382413641918,
+    "approx_lng": 106.70691655324946,
+    "tile_x": 208773,
+    "tile_y": 123177
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.777360785895176,
+    "approx_lng": 106.70671760566927,
+    "tile_x": 208773,
+    "tile_y": 123177
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.774600862522117,
+    "approx_lng": 106.70662539412245,
+    "tile_x": 208773,
+    "tile_y": 123179
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.77743608121833,
+    "approx_lng": 106.69297958149481,
+    "tile_x": 208763,
+    "tile_y": 123177
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.777338244777553,
+    "approx_lng": 106.69290605264669,
+    "tile_x": 208763,
+    "tile_y": 123177
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.775922105926531,
+    "approx_lng": 106.69319041421936,
+    "tile_x": 208763,
+    "tile_y": 123178
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.776151341262972,
+    "approx_lng": 106.6928849193508,
+    "tile_x": 208763,
+    "tile_y": 123178
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.77609124276423,
+    "approx_lng": 106.69314971565548,
+    "tile_x": 208763,
+    "tile_y": 123178
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.786619152505999,
+    "approx_lng": 106.69434890075706,
+    "tile_x": 208764,
+    "tile_y": 123170
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.786888065418788,
+    "approx_lng": 106.69584665493028,
+    "tile_x": 208765,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.78690408685201,
+    "approx_lng": 106.69559878583452,
+    "tile_x": 208765,
+    "tile_y": 123170
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.78686985773246,
+    "approx_lng": 106.69731674710107,
+    "tile_x": 208766,
+    "tile_y": 123170
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.786733550349481,
+    "approx_lng": 106.69715394111022,
+    "tile_x": 208766,
+    "tile_y": 123170
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.786765174035013,
+    "approx_lng": 106.69856818016939,
+    "tile_x": 208767,
+    "tile_y": 123170
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.786736187741656,
+    "approx_lng": 106.70133214107436,
+    "tile_x": 208769,
+    "tile_y": 123170
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.786632460877088,
+    "approx_lng": 106.7014648786355,
+    "tile_x": 208769,
+    "tile_y": 123170
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.78682659879526,
+    "approx_lng": 106.70135402420559,
+    "tile_x": 208769,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.786810114428723,
+    "approx_lng": 106.70391414023231,
+    "tile_x": 208771,
+    "tile_y": 123170
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.786588800464111,
+    "approx_lng": 106.70421324694664,
+    "tile_x": 208771,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.786928517348098,
+    "approx_lng": 106.7040427543267,
+    "tile_x": 208771,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.774427878064747,
+    "approx_lng": 106.69300288829825,
+    "tile_x": 208763,
+    "tile_y": 123179
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.774787940655965,
+    "approx_lng": 106.69297268361203,
+    "tile_x": 208763,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.774767545805403,
+    "approx_lng": 106.69301048141405,
+    "tile_x": 208763,
+    "tile_y": 123179
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.77341746388793,
+    "approx_lng": 106.69434665066935,
+    "tile_x": 208764,
+    "tile_y": 123180
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.773446553154058,
+    "approx_lng": 106.69582802270948,
+    "tile_x": 208765,
+    "tile_y": 123180
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.773432469078214,
+    "approx_lng": 106.6970933177236,
+    "tile_x": 208766,
+    "tile_y": 123180
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.773240915030252,
+    "approx_lng": 106.69976217771175,
+    "tile_x": 208768,
+    "tile_y": 123180
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.773094631664518,
+    "approx_lng": 106.70121165411231,
+    "tile_x": 208769,
+    "tile_y": 123180
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.773129089931462,
+    "approx_lng": 106.70143449847966,
+    "tile_x": 208769,
+    "tile_y": 123180
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.773135358838216,
+    "approx_lng": 106.70125550630176,
+    "tile_x": 208769,
+    "tile_y": 123180
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.773201948676125,
+    "approx_lng": 106.70259465070458,
+    "tile_x": 208770,
+    "tile_y": 123180
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.77336343614494,
+    "approx_lng": 106.70279343038112,
+    "tile_x": 208770,
+    "tile_y": 123180
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.786768394152789,
+    "approx_lng": 106.70547002246353,
+    "tile_x": 208772,
+    "tile_y": 123170
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.773132729485615,
+    "approx_lng": 106.7055263662247,
+    "tile_x": 208772,
+    "tile_y": 123180
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.77307947182072,
+    "approx_lng": 106.70693121370665,
+    "tile_x": 208773,
+    "tile_y": 123180
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.78531684328684,
+    "approx_lng": 106.70796376659162,
+    "tile_x": 208774,
+    "tile_y": 123171
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.785367234199011,
+    "approx_lng": 106.70819064665505,
+    "tile_x": 208774,
+    "tile_y": 123171
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.784056121969893,
+    "approx_lng": 106.70824508682078,
+    "tile_x": 208774,
+    "tile_y": 123172
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.783938945369545,
+    "approx_lng": 106.7082107246569,
+    "tile_x": 208774,
+    "tile_y": 123172
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.782718022400523,
+    "approx_lng": 106.70800096039264,
+    "tile_x": 208774,
+    "tile_y": 123173
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.781286385339905,
+    "approx_lng": 106.70825894986777,
+    "tile_x": 208774,
+    "tile_y": 123174
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.780110834629074,
+    "approx_lng": 106.70805668042514,
+    "tile_x": 208774,
+    "tile_y": 123175
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.77747680871244,
+    "approx_lng": 106.70800912414907,
+    "tile_x": 208774,
+    "tile_y": 123177
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.777182584888191,
+    "approx_lng": 106.70796388129317,
+    "tile_x": 208774,
+    "tile_y": 123177
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.777381727418044,
+    "approx_lng": 106.70794567560702,
+    "tile_x": 208774,
+    "tile_y": 123177
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.775901643729519,
+    "approx_lng": 106.70805222197912,
+    "tile_x": 208774,
+    "tile_y": 123178
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.77592941609371,
+    "approx_lng": 106.69186142263871,
+    "tile_x": 208762,
+    "tile_y": 123178
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.77444182586418,
+    "approx_lng": 106.69157221048611,
+    "tile_x": 208762,
+    "tile_y": 123179
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.774719788601049,
+    "approx_lng": 106.69167469239243,
+    "tile_x": 208762,
+    "tile_y": 123179
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.788166756843665,
+    "approx_lng": 106.69431447309081,
+    "tile_x": 208764,
+    "tile_y": 123169
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.78798148274175,
+    "approx_lng": 106.69452936597156,
+    "tile_x": 208764,
+    "tile_y": 123169
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.788088832495632,
+    "approx_lng": 106.69594990930071,
+    "tile_x": 208765,
+    "tile_y": 123169
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.788187019834167,
+    "approx_lng": 106.69724872051323,
+    "tile_x": 208766,
+    "tile_y": 123169
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.788146266273017,
+    "approx_lng": 106.69720113761143,
+    "tile_x": 208766,
+    "tile_y": 123169
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.787993897600842,
+    "approx_lng": 106.6972283699075,
+    "tile_x": 208766,
+    "tile_y": 123169
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.788255782403107,
+    "approx_lng": 106.69840994352123,
+    "tile_x": 208767,
+    "tile_y": 123169
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.788276921949032,
+    "approx_lng": 106.6986227822995,
+    "tile_x": 208767,
+    "tile_y": 123169
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.788313509976767,
+    "approx_lng": 106.69854311006024,
+    "tile_x": 208767,
+    "tile_y": 123169
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.787938114144842,
+    "approx_lng": 106.6998670737882,
+    "tile_x": 208768,
+    "tile_y": 123169
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.787928096505054,
+    "approx_lng": 106.70134812672399,
+    "tile_x": 208769,
+    "tile_y": 123169
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.788193132378298,
+    "approx_lng": 106.70384104574555,
+    "tile_x": 208771,
+    "tile_y": 123169
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.788294189995415,
+    "approx_lng": 106.70407190930102,
+    "tile_x": 208771,
+    "tile_y": 123169
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.787956403094494,
+    "approx_lng": 106.70413606416841,
+    "tile_x": 208771,
+    "tile_y": 123169
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.788205972917089,
+    "approx_lng": 106.7054105321933,
+    "tile_x": 208772,
+    "tile_y": 123169
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.77333062010279,
+    "approx_lng": 106.69159687301112,
+    "tile_x": 208762,
+    "tile_y": 123180
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.771844265032787,
+    "approx_lng": 106.69150198993927,
+    "tile_x": 208762,
+    "tile_y": 123181
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.771963587682535,
+    "approx_lng": 106.69155785741762,
+    "tile_x": 208762,
+    "tile_y": 123181
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.772021819302223,
+    "approx_lng": 106.6918506810838,
+    "tile_x": 208762,
+    "tile_y": 123181
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.771960482844328,
+    "approx_lng": 106.69294440243141,
+    "tile_x": 208763,
+    "tile_y": 123181
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.771870397609156,
+    "approx_lng": 106.69438071581513,
+    "tile_x": 208764,
+    "tile_y": 123181
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.771839517761837,
+    "approx_lng": 106.69439888498354,
+    "tile_x": 208764,
+    "tile_y": 123181
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.771961284492024,
+    "approx_lng": 106.69578946505185,
+    "tile_x": 208765,
+    "tile_y": 123181
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.771870810907652,
+    "approx_lng": 106.69560160788603,
+    "tile_x": 208765,
+    "tile_y": 123181
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.772106996011134,
+    "approx_lng": 106.69584559218272,
+    "tile_x": 208765,
+    "tile_y": 123181
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.772085547298188,
+    "approx_lng": 106.69861425122686,
+    "tile_x": 208767,
+    "tile_y": 123181
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.771773322462606,
+    "approx_lng": 106.70146843672062,
+    "tile_x": 208769,
+    "tile_y": 123181
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.771875302644858,
+    "approx_lng": 106.7012082165821,
+    "tile_x": 208769,
+    "tile_y": 123181
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.771758607910641,
+    "approx_lng": 106.70123700116764,
+    "tile_x": 208769,
+    "tile_y": 123181
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.771900750455574,
+    "approx_lng": 106.70530135755624,
+    "tile_x": 208772,
+    "tile_y": 123181
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.771820747983595,
+    "approx_lng": 106.7053808646151,
+    "tile_x": 208772,
+    "tile_y": 123181
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.78831647419121,
+    "approx_lng": 106.70695708379469,
+    "tile_x": 208773,
+    "tile_y": 123169
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.788189502662842,
+    "approx_lng": 106.70675173418478,
+    "tile_x": 208773,
+    "tile_y": 123169
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.788200332028914,
+    "approx_lng": 106.70668176196442,
+    "tile_x": 208773,
+    "tile_y": 123169
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.772021390975572,
+    "approx_lng": 106.70671177568542,
+    "tile_x": 208773,
+    "tile_y": 123181
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.786826419719546,
+    "approx_lng": 106.70960881336906,
+    "tile_x": 208775,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.786807614341662,
+    "approx_lng": 106.70934380798018,
+    "tile_x": 208775,
+    "tile_y": 123170
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.785574972776242,
+    "approx_lng": 106.70948925030878,
+    "tile_x": 208775,
+    "tile_y": 123171
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.784236598267169,
+    "approx_lng": 106.70969432781284,
+    "tile_x": 208775,
+    "tile_y": 123172
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.784019118163666,
+    "approx_lng": 106.70964104250031,
+    "tile_x": 208775,
+    "tile_y": 123172
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.78392780811008,
+    "approx_lng": 106.70963230828337,
+    "tile_x": 208775,
+    "tile_y": 123172
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.782774196347148,
+    "approx_lng": 106.70935787634477,
+    "tile_x": 208775,
+    "tile_y": 123173
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.781409361073623,
+    "approx_lng": 106.7096806542298,
+    "tile_x": 208775,
+    "tile_y": 123174
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.781430985297563,
+    "approx_lng": 106.70951037989047,
+    "tile_x": 208775,
+    "tile_y": 123174
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.781464820175247,
+    "approx_lng": 106.70971449997545,
+    "tile_x": 208775,
+    "tile_y": 123174
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.780003663232835,
+    "approx_lng": 106.70941047321345,
+    "tile_x": 208775,
+    "tile_y": 123175
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.773114539196715,
+    "approx_lng": 106.69014483765956,
+    "tile_x": 208761,
+    "tile_y": 123180
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.773146745883158,
+    "approx_lng": 106.69035877846846,
+    "tile_x": 208761,
+    "tile_y": 123180
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.789380682982788,
+    "approx_lng": 106.69182725484441,
+    "tile_x": 208762,
+    "tile_y": 123168
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.789523487580915,
+    "approx_lng": 106.69149935312035,
+    "tile_x": 208762,
+    "tile_y": 123168
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.789638737185195,
+    "approx_lng": 106.6916991524743,
+    "tile_x": 208762,
+    "tile_y": 123168
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.789505390880779,
+    "approx_lng": 106.693038671783,
+    "tile_x": 208763,
+    "tile_y": 123168
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.789315357686984,
+    "approx_lng": 106.69307554407182,
+    "tile_x": 208763,
+    "tile_y": 123168
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.78931878954088,
+    "approx_lng": 106.69426230730694,
+    "tile_x": 208764,
+    "tile_y": 123168
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.789503990786207,
+    "approx_lng": 106.697127824661,
+    "tile_x": 208766,
+    "tile_y": 123168
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.789637247673797,
+    "approx_lng": 106.6985574088405,
+    "tile_x": 208767,
+    "tile_y": 123168
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.789536450157714,
+    "approx_lng": 106.70006485429528,
+    "tile_x": 208768,
+    "tile_y": 123168
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.789523032026871,
+    "approx_lng": 106.70001992005359,
+    "tile_x": 208768,
+    "tile_y": 123168
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.789540741293434,
+    "approx_lng": 106.69988816910374,
+    "tile_x": 208768,
+    "tile_y": 123168
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.789338301322523,
+    "approx_lng": 106.70251628860377,
+    "tile_x": 208770,
+    "tile_y": 123168
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.789502215050785,
+    "approx_lng": 106.7039668364145,
+    "tile_x": 208771,
+    "tile_y": 123168
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.789299080835622,
+    "approx_lng": 106.70401972674034,
+    "tile_x": 208771,
+    "tile_y": 123168
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.789430843335367,
+    "approx_lng": 106.70385436591086,
+    "tile_x": 208771,
+    "tile_y": 123168
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.771857564353622,
+    "approx_lng": 106.69013474191189,
+    "tile_x": 208761,
+    "tile_y": 123181
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.772119589742978,
+    "approx_lng": 106.69048686685076,
+    "tile_x": 208761,
+    "tile_y": 123181
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.771848369971178,
+    "approx_lng": 106.69030987676345,
+    "tile_x": 208761,
+    "tile_y": 123181
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.77060078958836,
+    "approx_lng": 106.69017374036594,
+    "tile_x": 208761,
+    "tile_y": 123182
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.770389699234425,
+    "approx_lng": 106.69012528377004,
+    "tile_x": 208761,
+    "tile_y": 123182
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.770635900690412,
+    "approx_lng": 106.69292928661842,
+    "tile_x": 208763,
+    "tile_y": 123182
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.770550022451792,
+    "approx_lng": 106.69306626642523,
+    "tile_x": 208763,
+    "tile_y": 123182
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.770585436356274,
+    "approx_lng": 106.69323452335283,
+    "tile_x": 208763,
+    "tile_y": 123182
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.770407320531293,
+    "approx_lng": 106.69584266228277,
+    "tile_x": 208765,
+    "tile_y": 123182
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.77064500116733,
+    "approx_lng": 106.69708650585223,
+    "tile_x": 208766,
+    "tile_y": 123182
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.770506724375004,
+    "approx_lng": 106.70010064573242,
+    "tile_x": 208768,
+    "tile_y": 123182
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.770426002034235,
+    "approx_lng": 106.70008377366302,
+    "tile_x": 208768,
+    "tile_y": 123182
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.770458074050188,
+    "approx_lng": 106.69979158362865,
+    "tile_x": 208768,
+    "tile_y": 123182
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.770760150558921,
+    "approx_lng": 106.70385631735809,
+    "tile_x": 208771,
+    "tile_y": 123182
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.77049226983423,
+    "approx_lng": 106.7041147033769,
+    "tile_x": 208771,
+    "tile_y": 123182
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.770659538913314,
+    "approx_lng": 106.70555151316982,
+    "tile_x": 208772,
+    "tile_y": 123182
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.770393236936085,
+    "approx_lng": 106.70535409978355,
+    "tile_x": 208772,
+    "tile_y": 123182
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.7868669813364,
+    "approx_lng": 106.7110433529684,
+    "tile_x": 208776,
+    "tile_y": 123170
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.785324236392135,
+    "approx_lng": 106.71099595808734,
+    "tile_x": 208776,
+    "tile_y": 123171
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.771893597382848,
+    "approx_lng": 106.68885639506021,
+    "tile_x": 208760,
+    "tile_y": 123181
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.77211771994849,
+    "approx_lng": 106.68883299099421,
+    "tile_x": 208760,
+    "tile_y": 123181
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.771908696808115,
+    "approx_lng": 106.6888921028467,
+    "tile_x": 208760,
+    "tile_y": 123181
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.790965478794488,
+    "approx_lng": 106.69019543152206,
+    "tile_x": 208761,
+    "tile_y": 123167
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.78940400343812,
+    "approx_lng": 106.69040908765288,
+    "tile_x": 208761,
+    "tile_y": 123168
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.790963376615434,
+    "approx_lng": 106.69163342237383,
+    "tile_x": 208762,
+    "tile_y": 123167
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.790928515208538,
+    "approx_lng": 106.69180493467657,
+    "tile_x": 208762,
+    "tile_y": 123167
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.790814951388054,
+    "approx_lng": 106.69163486481233,
+    "tile_x": 208762,
+    "tile_y": 123167
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.790622969121543,
+    "approx_lng": 106.69431821974175,
+    "tile_x": 208764,
+    "tile_y": 123167
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.790924946347351,
+    "approx_lng": 106.69458535326967,
+    "tile_x": 208764,
+    "tile_y": 123167
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.790623498476156,
+    "approx_lng": 106.69437420275689,
+    "tile_x": 208764,
+    "tile_y": 123167
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.790973630502222,
+    "approx_lng": 106.69733388062416,
+    "tile_x": 208766,
+    "tile_y": 123167
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.790990095691125,
+    "approx_lng": 106.69708202860485,
+    "tile_x": 208766,
+    "tile_y": 123167
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.790830457174057,
+    "approx_lng": 106.69846341435228,
+    "tile_x": 208767,
+    "tile_y": 123167
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.79075148119474,
+    "approx_lng": 106.69975884108082,
+    "tile_x": 208768,
+    "tile_y": 123167
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.790669583833832,
+    "approx_lng": 106.69993531982831,
+    "tile_x": 208768,
+    "tile_y": 123167
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.791011379098313,
+    "approx_lng": 106.70136223823474,
+    "tile_x": 208769,
+    "tile_y": 123167
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.790865995444832,
+    "approx_lng": 106.70130103595173,
+    "tile_x": 208769,
+    "tile_y": 123167
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.790751554712191,
+    "approx_lng": 106.70250613797566,
+    "tile_x": 208770,
+    "tile_y": 123167
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.79063254533834,
+    "approx_lng": 106.70266180940776,
+    "tile_x": 208770,
+    "tile_y": 123167
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.79088153214448,
+    "approx_lng": 106.70271066752635,
+    "tile_x": 208770,
+    "tile_y": 123167
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.769295775546096,
+    "approx_lng": 106.69017384141031,
+    "tile_x": 208761,
+    "tile_y": 123183
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.769300865476788,
+    "approx_lng": 106.69288420155327,
+    "tile_x": 208763,
+    "tile_y": 123183
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.769057538727493,
+    "approx_lng": 106.69447402226598,
+    "tile_x": 208764,
+    "tile_y": 123183
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.76905177709351,
+    "approx_lng": 106.69453887154302,
+    "tile_x": 208764,
+    "tile_y": 123183
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.769260535518372,
+    "approx_lng": 106.69844528223193,
+    "tile_x": 208767,
+    "tile_y": 123183
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.769112656350941,
+    "approx_lng": 106.7012641698607,
+    "tile_x": 208769,
+    "tile_y": 123183
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.769394884680496,
+    "approx_lng": 106.70256743091417,
+    "tile_x": 208770,
+    "tile_y": 123183
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.76903958140223,
+    "approx_lng": 106.70273507716033,
+    "tile_x": 208770,
+    "tile_y": 123183
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.76936465181553,
+    "approx_lng": 106.70385387025645,
+    "tile_x": 208771,
+    "tile_y": 123183
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.769042263906577,
+    "approx_lng": 106.70556236693469,
+    "tile_x": 208772,
+    "tile_y": 123183
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.769404442726005,
+    "approx_lng": 106.70523111596162,
+    "tile_x": 208772,
+    "tile_y": 123183
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.76929929913739,
+    "approx_lng": 106.70547663209695,
+    "tile_x": 208772,
+    "tile_y": 123183
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.786603923250032,
+    "approx_lng": 106.71241896525234,
+    "tile_x": 208777,
+    "tile_y": 123170
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.786714149422265,
+    "approx_lng": 106.71238880543528,
+    "tile_x": 208777,
+    "tile_y": 123170
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.786604822729103,
+    "approx_lng": 106.71237487192458,
+    "tile_x": 208777,
+    "tile_y": 123170
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.785319462863079,
+    "approx_lng": 106.71218248568098,
+    "tile_x": 208777,
+    "tile_y": 123171
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.785326173108851,
+    "approx_lng": 106.71227297076506,
+    "tile_x": 208777,
+    "tile_y": 123171
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.785488679403448,
+    "approx_lng": 106.71234380289779,
+    "tile_x": 208777,
+    "tile_y": 123171
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.770764196453625,
+    "approx_lng": 106.68743980397996,
+    "tile_x": 208759,
+    "tile_y": 123182
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.770475336434371,
+    "approx_lng": 106.68748945857801,
+    "tile_x": 208759,
+    "tile_y": 123182
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.77069208984358,
+    "approx_lng": 106.68770962296148,
+    "tile_x": 208759,
+    "tile_y": 123182
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.792253262232295,
+    "approx_lng": 106.68906202668366,
+    "tile_x": 208760,
+    "tile_y": 123166
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.79070803375999,
+    "approx_lng": 106.68879175296475,
+    "tile_x": 208760,
+    "tile_y": 123167
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.790994506842177,
+    "approx_lng": 106.6887425612935,
+    "tile_x": 208760,
+    "tile_y": 123167
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.791997984413428,
+    "approx_lng": 106.69437354160483,
+    "tile_x": 208764,
+    "tile_y": 123166
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.792360765349665,
+    "approx_lng": 106.69709023406396,
+    "tile_x": 208766,
+    "tile_y": 123166
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.792248888429844,
+    "approx_lng": 106.69734806125044,
+    "tile_x": 208766,
+    "tile_y": 123166
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.792109500206507,
+    "approx_lng": 106.69726859513108,
+    "tile_x": 208766,
+    "tile_y": 123166
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.792288651431628,
+    "approx_lng": 106.69990652879503,
+    "tile_x": 208768,
+    "tile_y": 123166
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.792245306979023,
+    "approx_lng": 106.69971218277222,
+    "tile_x": 208768,
+    "tile_y": 123166
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.791995385188786,
+    "approx_lng": 106.70008747695452,
+    "tile_x": 208768,
+    "tile_y": 123166
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.792159721126747,
+    "approx_lng": 106.70118000900064,
+    "tile_x": 208769,
+    "tile_y": 123166
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.792218446645094,
+    "approx_lng": 106.70114989998531,
+    "tile_x": 208769,
+    "tile_y": 123166
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.791971822600674,
+    "approx_lng": 106.70284920140577,
+    "tile_x": 208770,
+    "tile_y": 123166
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.792165711237198,
+    "approx_lng": 106.70538175474978,
+    "tile_x": 208772,
+    "tile_y": 123166
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.769053873694185,
+    "approx_lng": 106.68741152923543,
+    "tile_x": 208759,
+    "tile_y": 123183
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.769398919863658,
+    "approx_lng": 106.68739720240791,
+    "tile_x": 208759,
+    "tile_y": 123183
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.769386654394177,
+    "approx_lng": 106.68745906951156,
+    "tile_x": 208759,
+    "tile_y": 123183
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.767732539998097,
+    "approx_lng": 106.68757238633162,
+    "tile_x": 208759,
+    "tile_y": 123184
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.767797012470702,
+    "approx_lng": 106.69162937731573,
+    "tile_x": 208762,
+    "tile_y": 123184
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.767759188441325,
+    "approx_lng": 106.69297108318617,
+    "tile_x": 208763,
+    "tile_y": 123184
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.76807602009142,
+    "approx_lng": 106.69447356443321,
+    "tile_x": 208764,
+    "tile_y": 123184
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.767999658185765,
+    "approx_lng": 106.69589362141397,
+    "tile_x": 208765,
+    "tile_y": 123184
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.76801839524095,
+    "approx_lng": 106.69728323074702,
+    "tile_x": 208766,
+    "tile_y": 123184
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.767722040902893,
+    "approx_lng": 106.69702061806632,
+    "tile_x": 208766,
+    "tile_y": 123184
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.767733784769813,
+    "approx_lng": 106.69734156433684,
+    "tile_x": 208766,
+    "tile_y": 123184
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.76794259095027,
+    "approx_lng": 106.69972696875412,
+    "tile_x": 208768,
+    "tile_y": 123184
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.767893926087002,
+    "approx_lng": 106.70142001711496,
+    "tile_x": 208769,
+    "tile_y": 123184
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.767766974279429,
+    "approx_lng": 106.70109329647515,
+    "tile_x": 208769,
+    "tile_y": 123184
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.786816852869926,
+    "approx_lng": 106.7136310227662,
+    "tile_x": 208778,
+    "tile_y": 123170
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.786891269042497,
+    "approx_lng": 106.7136419462636,
+    "tile_x": 208778,
+    "tile_y": 123170
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.785280058647434,
+    "approx_lng": 106.71370130977844,
+    "tile_x": 208778,
+    "tile_y": 123171
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.793378983454785,
+    "approx_lng": 106.68760274215568,
+    "tile_x": 208759,
+    "tile_y": 123165
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.793636002699774,
+    "approx_lng": 106.69301796547576,
+    "tile_x": 208763,
+    "tile_y": 123165
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.793700322676559,
+    "approx_lng": 106.69296119666879,
+    "tile_x": 208763,
+    "tile_y": 123165
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.793323720466553,
+    "approx_lng": 106.6970392145085,
+    "tile_x": 208766,
+    "tile_y": 123165
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.793507580001675,
+    "approx_lng": 106.69735454018934,
+    "tile_x": 208766,
+    "tile_y": 123165
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.793538498664628,
+    "approx_lng": 106.69843125500772,
+    "tile_x": 208767,
+    "tile_y": 123165
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.766647565479502,
+    "approx_lng": 106.68765815211755,
+    "tile_x": 208759,
+    "tile_y": 123185
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.766706113391002,
+    "approx_lng": 106.68735539148634,
+    "tile_x": 208759,
+    "tile_y": 123185
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.766549499279494,
+    "approx_lng": 106.68753151119823,
+    "tile_x": 208759,
+    "tile_y": 123185
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.766380324358336,
+    "approx_lng": 106.69018855395713,
+    "tile_x": 208761,
+    "tile_y": 123185
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.766497306157149,
+    "approx_lng": 106.69048756390818,
+    "tile_x": 208761,
+    "tile_y": 123185
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.766666674681879,
+    "approx_lng": 106.69017049024893,
+    "tile_x": 208761,
+    "tile_y": 123185
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.766377941998726,
+    "approx_lng": 106.69289971063003,
+    "tile_x": 208763,
+    "tile_y": 123185
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.766680051114307,
+    "approx_lng": 106.6931932205443,
+    "tile_x": 208763,
+    "tile_y": 123185
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.76651023078924,
+    "approx_lng": 106.6932053635624,
+    "tile_x": 208763,
+    "tile_y": 123185
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.766686910582392,
+    "approx_lng": 106.69834979991893,
+    "tile_x": 208767,
+    "tile_y": 123185
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.766652114476626,
+    "approx_lng": 106.69857310507255,
+    "tile_x": 208767,
+    "tile_y": 123185
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.766473660266131,
+    "approx_lng": 106.69864779446908,
+    "tile_x": 208767,
+    "tile_y": 123185
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.766710095139125,
+    "approx_lng": 106.69997367296058,
+    "tile_x": 208768,
+    "tile_y": 123185
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.766695900284038,
+    "approx_lng": 106.69983991217248,
+    "tile_x": 208768,
+    "tile_y": 123185
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.766502714553528,
+    "approx_lng": 106.69992389465799,
+    "tile_x": 208768,
+    "tile_y": 123185
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.766623839644245,
+    "approx_lng": 106.70135913539751,
+    "tile_x": 208769,
+    "tile_y": 123185
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.766345808358846,
+    "approx_lng": 106.70109227207809,
+    "tile_x": 208769,
+    "tile_y": 123185
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.767703223928761,
+    "approx_lng": 106.68490981130535,
+    "tile_x": 208757,
+    "tile_y": 123184
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.767776815004334,
+    "approx_lng": 106.68466094421338,
+    "tile_x": 208757,
+    "tile_y": 123184
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.79365927432682,
+    "approx_lng": 106.68602201086517,
+    "tile_x": 208758,
+    "tile_y": 123165
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.793654294141213,
+    "approx_lng": 106.68623016850115,
+    "tile_x": 208758,
+    "tile_y": 123165
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.794747419306775,
+    "approx_lng": 106.68734859793533,
+    "tile_x": 208759,
+    "tile_y": 123164
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.794922844043814,
+    "approx_lng": 106.68911338394528,
+    "tile_x": 208760,
+    "tile_y": 123164
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.794882668587558,
+    "approx_lng": 106.68894783246208,
+    "tile_x": 208760,
+    "tile_y": 123164
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.794985221934224,
+    "approx_lng": 106.69175473438169,
+    "tile_x": 208762,
+    "tile_y": 123164
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.79480199259502,
+    "approx_lng": 106.6918120843287,
+    "tile_x": 208762,
+    "tile_y": 123164
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.765024733855837,
+    "approx_lng": 106.68604591607664,
+    "tile_x": 208758,
+    "tile_y": 123186
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.765325330528311,
+    "approx_lng": 106.68763369407918,
+    "tile_x": 208759,
+    "tile_y": 123186
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.765205330777276,
+    "approx_lng": 106.68753791147672,
+    "tile_x": 208759,
+    "tile_y": 123186
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.76517898749137,
+    "approx_lng": 106.68765960244362,
+    "tile_x": 208759,
+    "tile_y": 123186
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.765033411379104,
+    "approx_lng": 106.68876453144573,
+    "tile_x": 208760,
+    "tile_y": 123186
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.765172997906847,
+    "approx_lng": 106.68906322849975,
+    "tile_x": 208760,
+    "tile_y": 123186
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.765047108887146,
+    "approx_lng": 106.68876888645251,
+    "tile_x": 208760,
+    "tile_y": 123186
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.765032603898577,
+    "approx_lng": 106.69029917860072,
+    "tile_x": 208761,
+    "tile_y": 123186
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.765209947925829,
+    "approx_lng": 106.69013756313184,
+    "tile_x": 208761,
+    "tile_y": 123186
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.765084019892088,
+    "approx_lng": 106.69179923273417,
+    "tile_x": 208762,
+    "tile_y": 123186
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.765128879420658,
+    "approx_lng": 106.69181953518014,
+    "tile_x": 208762,
+    "tile_y": 123186
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.765193400558973,
+    "approx_lng": 106.69431352808384,
+    "tile_x": 208764,
+    "tile_y": 123186
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.764991000610436,
+    "approx_lng": 106.6943198493251,
+    "tile_x": 208764,
+    "tile_y": 123186
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.765342354813361,
+    "approx_lng": 106.69428497681588,
+    "tile_x": 208764,
+    "tile_y": 123186
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.765130723872407,
+    "approx_lng": 106.69566404575123,
+    "tile_x": 208765,
+    "tile_y": 123186
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.765247241815134,
+    "approx_lng": 106.69699324995999,
+    "tile_x": 208766,
+    "tile_y": 123186
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.765045872648736,
+    "approx_lng": 106.69733773451003,
+    "tile_x": 208766,
+    "tile_y": 123186
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.765113952179226,
+    "approx_lng": 106.69719732665456,
+    "tile_x": 208766,
+    "tile_y": 123186
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.766467886430968,
+    "approx_lng": 106.68334334223181,
+    "tile_x": 208756,
+    "tile_y": 123185
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.765228006138999,
+    "approx_lng": 106.68355772260703,
+    "tile_x": 208756,
+    "tile_y": 123186
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.763767178058055,
+    "approx_lng": 106.69163368809106,
+    "tile_x": 208762,
+    "tile_y": 123187
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.763732120679155,
+    "approx_lng": 106.69440306914176,
+    "tile_x": 208764,
+    "tile_y": 123187
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.763828021153897,
+    "approx_lng": 106.69866342104586,
+    "tile_x": 208767,
+    "tile_y": 123187
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.763849039994941,
+    "approx_lng": 106.69866697773881,
+    "tile_x": 208767,
+    "tile_y": 123187
+  },
+  {
+    "name": "Highlands Coffee (Demo)",
+    "approx_lat": 10.765282391220751,
+    "approx_lng": 106.68221477520264,
+    "tile_x": 208755,
+    "tile_y": 123186
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.765362042650384,
+    "approx_lng": 106.68197110886837,
+    "tile_x": 208755,
+    "tile_y": 123186
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.765188482665168,
+    "approx_lng": 106.68211268775639,
+    "tile_x": 208755,
+    "tile_y": 123186
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.762364794095802,
+    "approx_lng": 106.68608846360779,
+    "tile_x": 208758,
+    "tile_y": 123188
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.762369851989254,
+    "approx_lng": 106.69176976469262,
+    "tile_x": 208762,
+    "tile_y": 123188
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.762504258002798,
+    "approx_lng": 106.69172652816,
+    "tile_x": 208762,
+    "tile_y": 123188
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.762538654593254,
+    "approx_lng": 106.69162612647565,
+    "tile_x": 208762,
+    "tile_y": 123188
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.76245761742658,
+    "approx_lng": 106.6930691514979,
+    "tile_x": 208763,
+    "tile_y": 123188
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.762386567293095,
+    "approx_lng": 106.69287794100038,
+    "tile_x": 208763,
+    "tile_y": 123188
+  },
+  {
+    "name": "The Coffee House (Demo)",
+    "approx_lat": 10.7626047665628,
+    "approx_lng": 106.69296874068644,
+    "tile_x": 208763,
+    "tile_y": 123188
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.761304838620605,
+    "approx_lng": 106.68334508254274,
+    "tile_x": 208756,
+    "tile_y": 123189
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.76094769210229,
+    "approx_lng": 106.68489086748718,
+    "tile_x": 208757,
+    "tile_y": 123189
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.76114896909943,
+    "approx_lng": 106.68478248264954,
+    "tile_x": 208757,
+    "tile_y": 123189
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.761172088383601,
+    "approx_lng": 106.68496891751745,
+    "tile_x": 208757,
+    "tile_y": 123189
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.761083919228675,
+    "approx_lng": 106.68629075795693,
+    "tile_x": 208758,
+    "tile_y": 123189
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.76123667575355,
+    "approx_lng": 106.68602909204104,
+    "tile_x": 208758,
+    "tile_y": 123189
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.761169973774999,
+    "approx_lng": 106.68604288500435,
+    "tile_x": 208758,
+    "tile_y": 123189
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.760963221961564,
+    "approx_lng": 106.68737082181458,
+    "tile_x": 208759,
+    "tile_y": 123189
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.761087101361642,
+    "approx_lng": 106.68878467587274,
+    "tile_x": 208760,
+    "tile_y": 123189
+  },
+  {
+    "name": "Cửa hàng tiện lợi (Demo)",
+    "approx_lat": 10.761013333206494,
+    "approx_lng": 106.69305894384617,
+    "tile_x": 208763,
+    "tile_y": 123189
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.761319028066577,
+    "approx_lng": 106.69457230481854,
+    "tile_x": 208764,
+    "tile_y": 123189
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.76107354555133,
+    "approx_lng": 106.69439293366116,
+    "tile_x": 208764,
+    "tile_y": 123189
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.761157842426071,
+    "approx_lng": 106.69457010210633,
+    "tile_x": 208764,
+    "tile_y": 123189
+  },
+  {
+    "name": "Bánh mì Huỳnh Hoa (Demo)",
+    "approx_lat": 10.761269032372702,
+    "approx_lng": 106.69581740749005,
+    "tile_x": 208765,
+    "tile_y": 123189
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.759854275735796,
+    "approx_lng": 106.6848731321486,
+    "tile_x": 208757,
+    "tile_y": 123190
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.759839519296298,
+    "approx_lng": 106.68491252075377,
+    "tile_x": 208757,
+    "tile_y": 123190
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.759955548222555,
+    "approx_lng": 106.68628054526158,
+    "tile_x": 208758,
+    "tile_y": 123190
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.759644674615604,
+    "approx_lng": 106.68603379153059,
+    "tile_x": 208758,
+    "tile_y": 123190
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.759762613668391,
+    "approx_lng": 106.68625613226268,
+    "tile_x": 208758,
+    "tile_y": 123190
+  },
+  {
+    "name": "GS25 (Demo)",
+    "approx_lat": 10.759681889773264,
+    "approx_lng": 106.68754908902193,
+    "tile_x": 208759,
+    "tile_y": 123190
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.75995513238689,
+    "approx_lng": 106.69323072488594,
+    "tile_x": 208763,
+    "tile_y": 123190
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.759784807281976,
+    "approx_lng": 106.69444580952201,
+    "tile_x": 208764,
+    "tile_y": 123190
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.758259750224228,
+    "approx_lng": 106.68476822373924,
+    "tile_x": 208757,
+    "tile_y": 123191
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.75845928299135,
+    "approx_lng": 106.68477128740253,
+    "tile_x": 208757,
+    "tile_y": 123191
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.758608914653182,
+    "approx_lng": 106.68897560632503,
+    "tile_x": 208760,
+    "tile_y": 123191
+  },
+  {
+    "name": "FamilyMart (Demo)",
+    "approx_lat": 10.758320156601258,
+    "approx_lng": 106.6889272154754,
+    "tile_x": 208760,
+    "tile_y": 123191
+  },
+  {
+    "name": "Circle K (Demo)",
+    "approx_lat": 10.758448097220697,
+    "approx_lng": 106.69156847638592,
+    "tile_x": 208762,
+    "tile_y": 123191
+  },
+  {
+    "name": "WinMart+ (Demo)",
+    "approx_lat": 10.758384012303956,
+    "approx_lng": 106.69171395671566,
+    "tile_x": 208762,
+    "tile_y": 123191
+  },
+  {
+    "name": "Bún chả Hoa Đông (Demo)",
+    "approx_lat": 10.758475682330221,
+    "approx_lng": 106.69184075750385,
+    "tile_x": 208762,
+    "tile_y": 123191
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.75727108176031,
+    "approx_lng": 106.68597339917413,
+    "tile_x": 208758,
+    "tile_y": 123192
+  },
+  {
+    "name": "Katinat Saigon Kafe (Demo)",
+    "approx_lat": 10.757192125487613,
+    "approx_lng": 106.68625915629805,
+    "tile_x": 208758,
+    "tile_y": 123192
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.756974017109993,
+    "approx_lng": 106.68631478698114,
+    "tile_x": 208758,
+    "tile_y": 123192
+  },
+  {
+    "name": "Phở Hòa Pasteur (Demo)",
+    "approx_lat": 10.757129050322625,
+    "approx_lng": 106.68895687402268,
+    "tile_x": 208760,
+    "tile_y": 123192
+  },
+  {
+    "name": "Phúc Long Tea & Coffee (Demo)",
+    "approx_lat": 10.75694223053423,
+    "approx_lng": 106.68874267549472,
+    "tile_x": 208760,
+    "tile_y": 123192
+  },
+  {
+    "name": "ATM Techcombank (Demo)",
+    "approx_lat": 10.757258357602463,
+    "approx_lng": 106.68898440983934,
+    "tile_x": 208760,
+    "tile_y": 123192
+  },
+  {
+    "name": "Cà phê vỉa hè (Demo)",
+    "approx_lat": 10.75711924998582,
+    "approx_lng": 106.69022698570964,
+    "tile_x": 208761,
+    "tile_y": 123192
+  },
+  {
+    "name": "Nhà sách Nguyễn Huệ (Demo)",
+    "approx_lat": 10.755586561735829,
+    "approx_lng": 106.68746598178839,
+    "tile_x": 208759,
+    "tile_y": 123193
+  },
+  {
+    "name": "ATM Vietcombank (Demo)",
+    "approx_lat": 10.755588988633681,
+    "approx_lng": 106.68754458413437,
+    "tile_x": 208759,
+    "tile_y": 123193
+  }
+]

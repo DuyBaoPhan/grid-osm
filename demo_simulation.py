@@ -25,6 +25,13 @@ import config
 from coordinator import Coordinator
 from grid import generate_all_tiles, tile_center
 
+# Fix Windows terminal encoding (cp1252 không hỗ trợ tiếng Việt có dấu)
+import io
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+else:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 # Thiết lập logging
 logging.basicConfig(
     level=logging.INFO,
@@ -84,16 +91,32 @@ async def run_simulation():
     await asyncio.sleep(3.0)
 
     start_time = time.time()
-    
-    # Duyệt qua từng tile để giả lập quét
-    for idx, tile in enumerate(all_tiles, 1):
+    idx = 0
+
+    # Vòng lặp giống hệt worker thật trong main.py:
+    #   get_next_tile() → xử lý → report_result() → coordinator tự expand neighbor
+    # Không pre-sort, không biết trước thứ tự — hoàn toàn giống real crawl!
+    while True:
+        tile = await coord.get_next_tile()
+
+        if tile is None:
+            # Queue tạm trống — chờ một chút (giống worker.py)
+            await asyncio.sleep(0.05)
+            tile = await coord.get_next_tile()
+            if tile is None:
+                # Thực sự hết việc
+                break
+
+        idx += 1
+        tx, ty = tile
+
         # 1. Lấy tọa độ tâm tile để sinh POI ảo
-        clat, clng = tile_center(tile[0], tile[1], config.ZOOM_LEVEL)
-        
-        # 2. Giả lập thời gian worker chụp ảnh và phân tích (50 - 150ms để chạy demo nhanh mượt)
+        clat, clng = tile_center(tx, ty, config.ZOOM_LEVEL)
+
+        # 2. Giả lập thời gian worker chụp ảnh và phân tích
         delay = random.uniform(0.06, 0.15)
         await asyncio.sleep(delay)
-        
+
         # 3. Tạo POI giả lập
         pois = []
         # Tỷ lệ 60% tìm thấy 1-3 địa điểm trong ô
@@ -101,39 +124,37 @@ async def run_simulation():
             num_pois = random.randint(1, 3)
             selected_names = random.sample(MOCK_POI_NAMES, num_pois)
             for name in selected_names:
-                # Lệch nhẹ tọa độ xung quanh tâm tile để nhìn tự nhiên
                 poi_lat = clat + random.uniform(-0.0002, 0.0002)
                 poi_lng = clng + random.uniform(-0.0002, 0.0002)
                 pois.append({
                     "name": f"{name} (Demo)",
                     "approx_lat": poi_lat,
                     "approx_lng": poi_lng,
-                    "tile_x": tile[0],
-                    "tile_y": tile[1]
+                    "tile_x": tx,
+                    "tile_y": ty,
                 })
 
-        # 4. Giả lập một số ít ô ở rìa sát biên giới bị coi là nằm ngoài quận (tỷ lệ 5%)
-        # để hiển thị hiệu ứng gạch sọc đỏ cực đẹp
+        # 4. Không giả lập outside_district — coordinator đã tự geo-verify
+        #    chỉ tile trong polygon Quận 1 mới có trong queue
         outside_district = False
-        if random.random() < 0.05:
-            outside_district = True
-            pois = []
 
-        # 5. Khai báo kết quả lên coordinator
-        # Hệ thống sẽ tự động ghi results_demo.json, checkpoint_demo.json và vẽ lại map_viewer.html
+        # 5. Báo kết quả cho coordinator — tự động expand neighbor vào queue
         neighbors = [
-            (tile[0] + dx, tile[1] + dy)
+            (tx + dx, ty + dy)
             for dx in [-1, 0, 1] for dy in [-1, 0, 1]
             if not (dx == 0 and dy == 0)
         ]
         await coord.report_result(tile, pois, neighbors, outside_district)
 
         # 6. Log tiến độ ra console
-        pct = (idx / total_tiles) * 100
+        total_done = len(coord._visited)
+        total_tiles = len(coord._all_tiles)
+        pct = (total_done / total_tiles) * 100 if total_tiles else 0
         speed = idx / (time.time() - start_time) * 60  # tiles/minute
-        eta_sec = (total_tiles - idx) / (speed / 60) if speed > 0 else 0
-        
-        status_text = "BỎ QUA (Biên)" if outside_district else f"ĐÃ QUÉT (+{len(pois)} POIs)"
+        remaining = total_tiles - total_done
+        eta_sec = remaining / (speed / 60) if speed > 0 else 0
+
+        status_text = f"ĐÃ QUÉT (+{len(pois)} POIs)"
         logger.info(
             " Tiến trình: %d/%d (%d%%) | Ô (%d, %d) -> %s | Tốc độ: %.0f ô/phút | Còn lại: %.0fs",
             idx, total_tiles, int(pct), tile[0], tile[1], status_text, speed, eta_sec

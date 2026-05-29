@@ -23,6 +23,7 @@ from config import (
     CENTER_LNG,
     CHECKPOINT_FILE,
     EXPAND_EMPTY,
+    NUM_WORKERS,
     RADIUS_KM,
     RESULTS_FILE,
     TARGET_DISTRICT,
@@ -103,9 +104,9 @@ class Coordinator:
         # 4. Xác định tile ban đầu (tile chứa tâm quận)
         center_tile = lat_lng_to_tile(CENTER_LAT, CENTER_LNG, ZOOM_LEVEL)
         if center_tile not in self._all_tiles_set:
-            # Nếu tâm không trong danh sách, lấy tile đầu tiên
+            # Nếu tâm không trong danh sách, lấy tile gần tâm nhất
             if self._all_tiles:
-                center_tile = self._all_tiles[0]
+                center_tile = _sort_by_distance(set(self._all_tiles), CENTER_LAT, CENTER_LNG)[0]
 
         # 5. Khởi tạo queue từ checkpoint nếu có, hoặc bắt đầu từ tâm
         if visited_from_checkpoint or queued_from_checkpoint:
@@ -117,9 +118,9 @@ class Coordinator:
             # Nếu queue từ checkpoint trống, tìm tile biên chưa xử lý
             if not seed_tiles:
                 seed_tiles = self._find_frontier_tiles()
-            if not seed_tiles and self._all_tiles:
+            if not seed_tiles:
                 remaining = self._all_tiles_set - self._visited - self._discarded
-                seed_tiles = set(list(remaining)[:1])
+                seed_tiles = set(_sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[:NUM_WORKERS])
 
             for tile in _sort_by_distance(seed_tiles, CENTER_LAT, CENTER_LNG):
                 if tile not in self._visited and tile not in self._discarded:
@@ -130,16 +131,23 @@ class Coordinator:
                 len(self._visited), len(self._discarded), self._queue.qsize(),
             )
         else:
-            # Bắt đầu mới từ tile trung tâm
+            # Bắt đầu mới: seed đủ NUM_WORKERS tile, bắt đầu từ trung tâm toả ra
+            # → mỗi worker đều có tile ngay từ đầu, không bị shutdown vì đói tile
+            seed_candidates = _sort_by_distance(self._all_tiles_set, CENTER_LAT, CENTER_LNG)
+            # Đảm bảo tile trung tâm luôn là tile đầu tiên
+            seeds: list[TileCoord] = []
             if center_tile in self._all_tiles_set:
-                await self._queue.put(center_tile)
-                self._queued.add(center_tile)
-            elif self._all_tiles:
-                await self._queue.put(self._all_tiles[0])
-                self._queued.add(self._all_tiles[0])
+                seeds.append(center_tile)
+            for t in seed_candidates:
+                if t != center_tile and len(seeds) < NUM_WORKERS:
+                    seeds.append(t)
+
+            for tile in seeds:
+                await self._queue.put(tile)
+                self._queued.add(tile)
             logger.info(
-                "Starting fresh scan from center tile %s. Total: %d tiles",
-                center_tile, len(self._all_tiles),
+                "Starting fresh scan from center tile %s with %d seed tiles. Total: %d tiles",
+                center_tile, len(seeds), len(self._all_tiles),
             )
 
     # ── Queue management ─────────────────────────────────────
@@ -148,20 +156,32 @@ class Coordinator:
         """
         Lấy tile tiếp theo từ queue.
         Trả về None nếu queue rỗng và không còn tile nào để xử lý.
+
+        Quy tắc fill-frontier:
+          - Chỉ thêm tile vào queue khi ĐÃ có tile được xử lý (_visited không rỗng)
+            → tránh race condition lúc khởi động: worker 2 gọi trước khi worker 1
+            hoàn thành tile trung tâm và expand neighbors, dẫn đến tile ngẫu nhiên
+            được chọn thay vì hàng xóm của tâm.
+          - Nếu _visited còn rỗng (lần đầu, chỉ có seed trong queue), trả về None
+            để worker ngủ 2s và thử lại (worker.py đã xử lý việc này).
         """
         async with self._lock:
-            if self._queue.empty():
-                # Kiểm tra xem còn tile chưa xử lý không
+            if self._queue.empty() and self._visited:
+                # Đã có tile được xử lý → an toàn để tìm frontier thực sự
                 remaining = self._all_tiles_set - self._visited - self._discarded - self._queued
                 if remaining:
-                    # Thêm các tile chưa được queue vào hàng đợi
                     frontier = self._find_frontier_tiles()
-                    if not frontier:
-                        frontier = set(list(remaining)[:1])
-                    for tile in _sort_by_distance(frontier & remaining, CENTER_LAT, CENTER_LNG):
-                        await self._queue.put(tile)
-                        self._queued.add(tile)
-                        break  # Chỉ thêm 1 tile, để worker tự expand
+                    if frontier:
+                        # Lấy tile frontier gần trung tâm nhất
+                        for tile in _sort_by_distance(frontier, CENTER_LAT, CENTER_LNG):
+                            await self._queue.put(tile)
+                            self._queued.add(tile)
+                            break
+                    # Nếu không có frontier (island tile) → fallback tile gần tâm nhất
+                    elif remaining:
+                        tile_fb = _sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[0]
+                        await self._queue.put(tile_fb)
+                        self._queued.add(tile_fb)
 
         try:
             tile = self._queue.get_nowait()
