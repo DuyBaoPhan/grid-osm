@@ -1,0 +1,6 @@
+FROM ./model/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+
+# Cấu hình tham số tối ưu cho mô hình thị giác
+PARAMETER temperature 0.1
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
