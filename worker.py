@@ -106,7 +106,6 @@ class Worker:
     async def run(self, playwright: Playwright) -> None:
         """Vòng lặp chính của worker — chạy đến khi queue rỗng."""
         self._playwright = playwright
-        await self._start_browser()
 
         try:
             while True:
@@ -170,21 +169,28 @@ class Worker:
     async def _process_tile(self, tile: TileCoord) -> None:
         """
         Xử lý 1 tile:
-          1. Điều hướng đến OSM URL
-          2. Chụp screenshot
-          3. Gọi vision → danh sách POI
-          4. Báo kết quả cho coordinator
+          1. Khởi động browser
+          2. Điều hướng đến OSM URL
+          3. Chụp screenshot và trích xuất TOÀN BỘ tọa độ DOM địa điểm cùng một lúc
+          4. Đóng browser ngay lập tức để tiết kiệm RAM, CPU và dọn dẹp màn hình!
+          5. Gọi vision → danh sách POI (chạy ngầm 30-60s không cần browser)
+          6. Báo kết quả cho coordinator
         Retry MAX_RETRIES lần nếu lỗi.
         """
         tx, ty = tile
         lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
         bbox = tile_bbox(tx, ty, ZOOM_LEVEL)
-        # Dung SCREENSHOT_ZOOM de browser hien thi to hon, thay ro ten dia diem
         url = _OSM_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
 
+        # Đảm bảo khởi động trình duyệt cho ô quét này
+        await self._start_browser()
+
+        browser_coords = {}
         for attempt in range(1, MAX_RETRIES + 2):
             try:
                 screenshot = await self._capture_screenshot(url, bbox)
+                # Trích xuất toàn bộ nhãn và tọa độ hiển thị trong DOM hiện tại
+                browser_coords = await self._extract_all_visible_poi_coords_from_browser()
                 break
             except Exception as exc:
                 if attempt <= MAX_RETRIES:
@@ -193,7 +199,6 @@ class Worker:
                         self.id, attempt, MAX_RETRIES, tx, ty, exc,
                     )
                     await asyncio.sleep(attempt * 2.0)
-                    # Restart browser nếu page không phản hồi
                     try:
                         await self._start_browser()
                     except Exception:
@@ -203,6 +208,7 @@ class Worker:
                         "[Worker %d] Tile (%d,%d) skipped after %d attempts.",
                         self.id, tx, ty, MAX_RETRIES + 1,
                     )
+                    await self._close_browser()
                     # Re-queue để thử lại trong phiên sau
                     await self.coord._queue.put(tile)
                     return
@@ -216,16 +222,28 @@ class Worker:
         poi_names, outside_district = await extract_pois_from_screenshot(screenshot)
         logger.info("  [2/2] LLM done.")
 
-        # Ghi lại tên POI để resolve tọa độ qua DOM browser
-        # Thay vì dùng ước lượng x,y từ LLM, dùng JS trong browser để tìm
-        # đúng vị trí pixel của nhãn chữ trên bản đồ và chuyển sang lat/lng.
-        lat_min, lng_min, lat_max, lng_max = bbox
-        poi_name_list = [item.get("name", "").strip() for item in poi_names if item.get("name", "").strip()]
+        # ĐÓNG TRÌNH DUYỆT sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
+        await self._close_browser()
 
-        # Bước 2b: Lấy tọa độ chính xác từ browser (ưu tiên) hoặc fallback LLM x,y
-        browser_coords = await self._resolve_poi_coords_via_browser(poi_name_list)
-        logger.info("  [Geo] Browser DOM resolved %d/%d POI coordinates.",
-                    len(browser_coords), len(poi_name_list))
+        # Lọc và khớp tọa độ địa điểm
+        lat_min, lng_min, lat_max, lng_max = bbox
+        
+        # Hàm so khớp mềm tên POI từ LLM với nhãn DOM trích xuất được
+        def find_dom_match(poi_name: str, dom_coords: dict) -> Optional[dict]:
+            # 1. Khớp chính xác tuyệt đối
+            if poi_name in dom_coords:
+                return dom_coords[poi_name]
+            # 2. Khớp không phân biệt chữ hoa thường
+            poi_name_lower = poi_name.lower()
+            for k, v in dom_coords.items():
+                if k.lower() == poi_name_lower:
+                    return v
+            # 3. Khớp một phần (substring)
+            for k, v in dom_coords.items():
+                k_lower = k.lower()
+                if len(k) > 3 and (k_lower in poi_name_lower or poi_name_lower in k_lower):
+                    return v
+            return None
 
         pois = []
         for item in poi_names:
@@ -233,10 +251,11 @@ class Worker:
             if not name:
                 continue
 
-            if name in browser_coords:
+            dom_match = find_dom_match(name, browser_coords)
+            if dom_match:
                 # Tọa độ lấy từ Leaflet DOM — chính xác tuyệt đối
-                poi_lat = browser_coords[name]["lat"]
-                poi_lng = browser_coords[name]["lng"]
+                poi_lat = dom_match["lat"]
+                poi_lng = dom_match["lng"]
             else:
                 # Fallback: toán học tile bbox từ ước lượng LLM x,y
                 x_pct = max(0.0, min(100.0, float(item.get("x", 50))))
@@ -246,9 +265,6 @@ class Worker:
                 logger.debug("  [Geo] Fallback visual coords for: %s", name)
 
             # Lọc nghiêm ngặt: Chỉ giữ POI có tọa độ thực sự nằm trong khung quét (bbox) của tile hiện tại.
-            # Với tọa độ fallback, nó luôn nằm trong bbox vì x_pct, y_pct được chặn từ 0-100%.
-            # Với tọa độ thực từ DOM browser, ta kiểm tra xem nó có thực sự nằm trong tile này không.
-            # Cho phép một dung sai cực kỳ nhỏ (epsilon = 1e-6 độ, khoảng 10cm) để tránh sai số dấu phẩy động ở biên.
             eps = 1e-6
             in_lat = (lat_min - eps) <= poi_lat <= (lat_max + eps)
             in_lng = (lng_min - eps) <= poi_lng <= (lng_max + eps)
@@ -287,120 +303,84 @@ class Worker:
         else:
             logger.info("  => No POI found at this tile")
 
-    async def _resolve_poi_coords_via_browser(self, poi_names: List[str]) -> dict:
+    async def _extract_all_visible_poi_coords_from_browser(self) -> dict:
         """
-        Dùng JavaScript trong trình duyệt đang mở để tìm phần tử DOM của từng
-        nhãn POI trên bản đồ OSM (SVG <text>, Leaflet popup, icon label...),
-        lấy vị trí pixel của nó rồi chuyển sang lat/lng chính xác tuyệt đối
-        bằng Leaflet's containerPointToLatLng() — không cần bất kỳ API bên ngoài.
-
-        Trả về dict: {"Tên POI": {"lat": ..., "lng": ...}}
-        Các POI không tìm thấy trong DOM sẽ không có trong dict (sẽ fallback sang visual coords).
+        Trích xuất TOÀN BỘ nhãn địa điểm hiển thị trên bản đồ DOM hiện tại
+        và tính toán tọa độ lat/lng chính xác của chúng bằng containerPointToLatLng.
+        Trả về dict: {poi_name: {lat, lng}}
         """
-        if not poi_names or self._page is None:
+        if self._page is None:
             return {}
 
-        import json as _json
-        results: dict = {}
-
-        for name in poi_names:
-            try:
-                coords = await self._page.evaluate(
-                    """
-                    (searchText) => {
-                        // Lấy Leaflet map instance
-                        let mapInstance = null;
-                        if (typeof OSM !== 'undefined' && OSM.map) {
-                            mapInstance = OSM.map;
-                        } else if (window.MAP) {
-                            mapInstance = window.MAP;
-                        } else if (window.map) {
-                            mapInstance = window.map;
-                        } else {
-                            for (let key in window) {
-                                try {
-                                    if (window[key] && window[key]._layers
-                                        && typeof window[key].invalidateSize === 'function') {
-                                        mapInstance = window[key];
-                                        break;
-                                    }
-                                } catch (e) {}
-                            }
+        try:
+            coords = await self._page.evaluate(
+                """
+                () => {
+                    let mapInstance = null;
+                    if (typeof OSM !== 'undefined' && OSM.map) {
+                        mapInstance = OSM.map;
+                    } else if (window.MAP) {
+                        mapInstance = window.MAP;
+                    } else if (window.map) {
+                        mapInstance = window.map;
+                    } else {
+                        for (let key in window) {
+                            try {
+                                if (window[key] && window[key]._layers
+                                    && typeof window[key].invalidateSize === 'function') {
+                                    mapInstance = window[key];
+                                    break;
+                                }
+                            } catch (e) {}
                         }
-                        if (!mapInstance) return null;
-
-                        const mapEl = document.getElementById('map') || document.body;
-
-                        // 1. Tìm trong SVG <text> (nhãn đường phố và tên địa điểm của OSM)
-                        const svgTexts = mapEl.querySelectorAll('text');
-                        for (const el of svgTexts) {
-                            const content = (el.textContent || '').trim();
-                            if (content === searchText || content.includes(searchText) || searchText.includes(content) && content.length > 3) {
-                                const rect = el.getBoundingClientRect();
-                                if (rect.width === 0 && rect.height === 0) continue;
-                                const cx = rect.left + rect.width / 2;
-                                const cy = rect.top + rect.height / 2;
-                                try {
-                                    const ll = mapInstance.containerPointToLatLng([cx, cy]);
-                                    return { lat: ll.lat, lng: ll.lng, source: 'svg-text' };
-                                } catch(e) {}
-                            }
-                        }
-
-                        // 2. Tìm trong Leaflet marker icons và tooltip labels
-                        const labels = mapEl.querySelectorAll(
-                            '.leaflet-marker-icon, .leaflet-tooltip, .leaflet-popup-content, [class*="label"]'
-                        );
-                        for (const el of labels) {
-                            const content = (el.textContent || '').trim();
-                            if (content === searchText || content.includes(searchText)) {
-                                const rect = el.getBoundingClientRect();
-                                if (rect.width === 0 && rect.height === 0) continue;
-                                const cx = rect.left + rect.width / 2;
-                                const cy = rect.top + rect.height / 2;
-                                try {
-                                    const ll = mapInstance.containerPointToLatLng([cx, cy]);
-                                    return { lat: ll.lat, lng: ll.lng, source: 'leaflet-label' };
-                                } catch(e) {}
-                            }
-                        }
-
-                        // 3. Tìm rộng hơn trong toàn bộ DOM (fallback cho các renderer lạ)
-                        const walker = document.createTreeWalker(
-                            mapEl, NodeFilter.SHOW_TEXT, null
-                        );
-                        let node;
-                        while ((node = walker.nextNode())) {
-                            const content = (node.textContent || '').trim();
-                            if (content === searchText) {
-                                const el = node.parentElement;
-                                if (!el) continue;
-                                const rect = el.getBoundingClientRect();
-                                if (rect.width === 0 && rect.height === 0) continue;
-                                const cx = rect.left + rect.width / 2;
-                                const cy = rect.top + rect.height / 2;
-                                try {
-                                    const ll = mapInstance.containerPointToLatLng([cx, cy]);
-                                    return { lat: ll.lat, lng: ll.lng, source: 'text-node' };
-                                } catch(e) {}
-                            }
-                        }
-
-                        return null;
                     }
-                    """,
-                    name
-                )
-                if coords and "lat" in coords and "lng" in coords:
-                    results[name] = coords
-                    logger.debug(
-                        "  [Geo] %-40s → (%.6f, %.6f) via %s",
-                        name, coords["lat"], coords["lng"], coords.get("source", "?")
-                    )
-            except Exception as exc:
-                logger.debug("  [Geo] DOM lookup failed for '%s': %s", name, exc)
+                    if (!mapInstance) return {};
 
-        return results
+                    const mapEl = document.getElementById('map') || document.body;
+                    const results = {};
+
+                    // 1. Quét SVG text
+                    const svgTexts = mapEl.querySelectorAll('text');
+                    for (const el of svgTexts) {
+                        const content = (el.textContent || '').trim();
+                        if (content.length > 2) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width === 0 && rect.height === 0) continue;
+                            const cx = rect.left + rect.width / 2;
+                            const cy = rect.top + rect.height / 2;
+                            try {
+                                const ll = mapInstance.containerPointToLatLng([cx, cy]);
+                                results[content] = { lat: ll.lat, lng: ll.lng, source: 'svg-text' };
+                            } catch(e) {}
+                        }
+                    }
+
+                    // 2. Quét Leaflet markers/tooltips
+                    const labels = mapEl.querySelectorAll(
+                        '.leaflet-marker-icon, .leaflet-tooltip, .leaflet-popup-content, [class*="label"]'
+                    );
+                    for (const el of labels) {
+                        const content = (el.textContent || '').trim();
+                        if (content.length > 2) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width === 0 && rect.height === 0) continue;
+                            const cx = rect.left + rect.width / 2;
+                            const cy = rect.top + rect.height / 2;
+                            try {
+                                const ll = mapInstance.containerPointToLatLng([cx, cy]);
+                                results[content] = { lat: ll.lat, lng: ll.lng, source: 'leaflet-label' };
+                            } catch(e) {}
+                        }
+                    }
+
+                    return results;
+                }
+                """
+            )
+            return coords if isinstance(coords, dict) else {}
+        except Exception as exc:
+            logger.warning("[Worker %d] Failed to extract DOM coords: %s", self.id, exc)
+            return {}
 
     async def _capture_screenshot(self, url: str, bbox: Tuple[float, float, float, float]) -> bytes:
         """Điều hướng đến URL và chụp screenshot."""

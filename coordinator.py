@@ -18,14 +18,13 @@ import os
 from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
 
+import config
 from config import (
     CENTER_LAT,
     CENTER_LNG,
-    CHECKPOINT_FILE,
     EXPAND_EMPTY,
     NUM_WORKERS,
     RADIUS_KM,
-    RESULTS_FILE,
     TARGET_DISTRICT,
     ZOOM_LEVEL,
 )
@@ -108,7 +107,7 @@ class Coordinator:
             if self._all_tiles:
                 center_tile = _sort_by_distance(set(self._all_tiles), CENTER_LAT, CENTER_LNG)[0]
 
-        # 5. Khởi tạo queue từ checkpoint nếu có, hoặc bắt đầu từ tâm
+        # 5. Khởi tạo queue từ checkpoint nếu có, hoặc bắt đầu mới hoàn toàn
         if visited_from_checkpoint or queued_from_checkpoint:
             self._visited = visited_from_checkpoint & self._all_tiles_set
             self._discarded = self._load_discarded()
@@ -120,8 +119,8 @@ class Coordinator:
                 self._queued.add(tile)
 
             # Đưa TOÀN BỘ tile còn lại chưa được quét vào queue
-            # → đảm bảo không bỏ sót tile cô lập (không qua BFS neighbor được)
-            # → sắp xếp từ gần tâm ra để vẫn giữ thứ tự lan rộng hợp lý
+            # → đảm bảo không bỏ sót tile cô lập
+            # → sắp xếp lan tỏa từ tọa độ xuất phát ra ngoài
             remaining_unqueued = (
                 self._all_tiles_set - self._visited - self._discarded - self._queued
             )
@@ -139,23 +138,15 @@ class Coordinator:
                 len(self._visited), len(self._discarded), self._queue.qsize(),
             )
         else:
-            # Bắt đầu mới: seed đủ NUM_WORKERS tile, bắt đầu từ trung tâm toả ra
-            # → mỗi worker đều có tile ngay từ đầu, không bị shutdown vì đói tile
-            seed_candidates = _sort_by_distance(self._all_tiles_set, CENTER_LAT, CENTER_LNG)
-            # Đảm bảo tile trung tâm luôn là tile đầu tiên
-            seeds: list[TileCoord] = []
-            if center_tile in self._all_tiles_set:
-                seeds.append(center_tile)
-            for t in seed_candidates:
-                if t != center_tile and len(seeds) < NUM_WORKERS:
-                    seeds.append(t)
-
-            for tile in seeds:
+            # Bắt đầu mới hoàn toàn: xếp toàn bộ tile theo thứ tự khoảng cách từ tọa độ xuất phát ra ngoài
+            # Điều này giúp lan tỏa tròn đều từ tâm, ưu tiên Up, Down, Left, Right trước do khoảng cách nhỏ hơn góc chéo
+            sorted_tiles = _sort_by_distance(self._all_tiles_set, CENTER_LAT, CENTER_LNG)
+            for tile in sorted_tiles:
                 await self._queue.put(tile)
                 self._queued.add(tile)
             logger.info(
-                "Starting fresh scan from center tile %s with %d seed tiles. Total: %d tiles",
-                center_tile, len(seeds), len(self._all_tiles),
+                "Starting fresh scan radiating outward from center coordinates. Total: %d tiles queued",
+                len(self._all_tiles),
             )
 
     # ── Queue management ─────────────────────────────────────
@@ -174,22 +165,13 @@ class Coordinator:
             để worker ngủ 2s và thử lại (worker.py đã xử lý việc này).
         """
         async with self._lock:
-            if self._queue.empty() and self._visited:
-                # Đã có tile được xử lý → an toàn để tìm frontier thực sự
+            if self._queue.empty():
                 remaining = self._all_tiles_set - self._visited - self._discarded - self._queued
                 if remaining:
-                    frontier = self._find_frontier_tiles()
-                    if frontier:
-                        # Lấy tile frontier gần trung tâm nhất
-                        for tile in _sort_by_distance(frontier, CENTER_LAT, CENTER_LNG):
-                            await self._queue.put(tile)
-                            self._queued.add(tile)
-                            break
-                    # Nếu không có frontier (island tile) → fallback tile gần tâm nhất
-                    elif remaining:
-                        tile_fb = _sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[0]
-                        await self._queue.put(tile_fb)
-                        self._queued.add(tile_fb)
+                    # Lấy tile tiếp theo gần tọa độ xuất phát (tâm) nhất
+                    next_tile = _sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[0]
+                    await self._queue.put(next_tile)
+                    self._queued.add(next_tile)
 
         try:
             tile = self._queue.get_nowait()
@@ -320,14 +302,22 @@ class Coordinator:
             "queue_size":   self._queue.qsize(),
         }
 
+    @property
+    def checkpoint_file(self) -> str:
+        return config.CHECKPOINT_FILE
+
+    @property
+    def results_file(self) -> str:
+        return config.RESULTS_FILE
+
     # ── Checkpoint I/O ───────────────────────────────────────
 
     def _load_checkpoint(self) -> Tuple[Set[TileCoord], Set[TileCoord]]:
         """Nạp checkpoint.json, trả về (visited_set, queued_set)."""
-        if not os.path.exists(CHECKPOINT_FILE):
+        if not os.path.exists(self.checkpoint_file):
             return set(), set()
         try:
-            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+            with open(self.checkpoint_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             visited = {tuple(t) for t in data.get("visited", [])}
             queued  = {tuple(t) for t in data.get("queue",   [])}
@@ -342,10 +332,10 @@ class Coordinator:
 
     def _load_discarded(self) -> Set[TileCoord]:
         """Nạp danh sách tile discarded từ checkpoint."""
-        if not os.path.exists(CHECKPOINT_FILE):
+        if not os.path.exists(self.checkpoint_file):
             return set()
         try:
-            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+            with open(self.checkpoint_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return {tuple(t) for t in data.get("discarded", [])}
         except Exception:
@@ -353,7 +343,7 @@ class Coordinator:
 
     async def _save_checkpoint(self) -> None:
         """Ghi trạng thái hiện tại ra checkpoint.json (dùng tmp file để an toàn)."""
-        tmp = CHECKPOINT_FILE + ".tmp"
+        tmp = self.checkpoint_file + ".tmp"
         try:
             data = {
                 "visited":   [list(t) for t in self._visited],
@@ -362,7 +352,7 @@ class Coordinator:
             }
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            os.replace(tmp, CHECKPOINT_FILE)
+            os.replace(tmp, self.checkpoint_file)
         except Exception as exc:
             logger.warning("Could not save checkpoint: %s", exc)
 
@@ -370,10 +360,10 @@ class Coordinator:
 
     def _load_results(self) -> List[dict]:
         """Nạp results.json nếu tồn tại."""
-        if not os.path.exists(RESULTS_FILE):
+        if not os.path.exists(self.results_file):
             return []
         try:
-            with open(RESULTS_FILE, "r", encoding="utf-8") as f:
+            with open(self.results_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             logger.info("Loaded %d existing POIs from results.json", len(data))
             return data
@@ -383,11 +373,11 @@ class Coordinator:
 
     async def _save_results(self) -> None:
         """Ghi kết quả POI ra results.json (dùng tmp file để an toàn)."""
-        tmp = RESULTS_FILE + ".tmp"
+        tmp = self.results_file + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self._results, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, RESULTS_FILE)
+            os.replace(tmp, self.results_file)
         except Exception as exc:
             logger.warning("Could not save results: %s", exc)
 

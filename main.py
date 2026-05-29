@@ -8,6 +8,18 @@ import webbrowser
 # Đảm bảo thư mục hiện tại luôn nằm trong sys.path để tránh lỗi ModuleNotFoundError
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Fix Windows terminal encoding (cp1252 không hỗ trợ tiếng Việt có dấu)
+import io
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+else:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+else:
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from playwright.async_api import async_playwright
 
 from config import LOG_FILE, LOG_LEVEL, NUM_WORKERS
