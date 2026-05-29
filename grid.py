@@ -223,10 +223,20 @@ def generate_all_tiles(
                 for tx in range(tx_min, tx_max + 1):
                     for ty in range(ty_min, ty_max + 1):
                         clat, clng = tile_center(tx, ty, zoom)
-                        if is_point_in_boundary(clat, clng, geometry):
+                        # Phủ kín hoàn hảo ranh giới: chỉ cần tâm hoặc bất kỳ góc nào của ô
+                        # nằm trong đa giác quận thì chấp nhận ô đó thuộc quận để quét.
+                        t_lat_min, t_lng_min, t_lat_max, t_lng_max = tile_bbox(tx, ty, zoom)
+                        corners = [
+                            (t_lat_min, t_lng_min),
+                            (t_lat_min, t_lng_max),
+                            (t_lat_max, t_lng_min),
+                            (t_lat_max, t_lng_max),
+                            (clat, clng)
+                        ]
+                        if any(is_point_in_boundary(lat, lng, geometry) for lat, lng in corners):
                             tiles.append((tx, ty))
                 
-                logger.info("Generated %d tiles strictly inside polygon boundary of '%s'", len(tiles), district_name)
+                logger.info("Generated %d tiles inside polygon boundary of '%s'", len(tiles), district_name)
                 return tiles
 
     # Fallback to circle radius

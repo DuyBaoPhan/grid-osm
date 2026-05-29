@@ -113,19 +113,27 @@ class Coordinator:
             self._visited = visited_from_checkpoint & self._all_tiles_set
             self._discarded = self._load_discarded()
 
-            # Đưa lại các tile đã queued từ checkpoint vào queue
+            # Đưa lại các tile đã queued từ checkpoint vào queue (ưu tiên xử lý trước)
             seed_tiles = queued_from_checkpoint - self._visited - self._discarded
-            # Nếu queue từ checkpoint trống, tìm tile biên chưa xử lý
-            if not seed_tiles:
-                seed_tiles = self._find_frontier_tiles()
-            if not seed_tiles:
-                remaining = self._all_tiles_set - self._visited - self._discarded
-                seed_tiles = set(_sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[:NUM_WORKERS])
-
             for tile in _sort_by_distance(seed_tiles, CENTER_LAT, CENTER_LNG):
-                if tile not in self._visited and tile not in self._discarded:
+                await self._queue.put(tile)
+                self._queued.add(tile)
+
+            # Đưa TOÀN BỘ tile còn lại chưa được quét vào queue
+            # → đảm bảo không bỏ sót tile cô lập (không qua BFS neighbor được)
+            # → sắp xếp từ gần tâm ra để vẫn giữ thứ tự lan rộng hợp lý
+            remaining_unqueued = (
+                self._all_tiles_set - self._visited - self._discarded - self._queued
+            )
+            if remaining_unqueued:
+                logger.info(
+                    "Found %d unscanned tiles not in checkpoint queue — re-queuing them.",
+                    len(remaining_unqueued),
+                )
+                for tile in _sort_by_distance(remaining_unqueued, CENTER_LAT, CENTER_LNG):
                     await self._queue.put(tile)
                     self._queued.add(tile)
+
             logger.info(
                 "Resumed from checkpoint: %d done, %d discarded, %d in queue",
                 len(self._visited), len(self._discarded), self._queue.qsize(),

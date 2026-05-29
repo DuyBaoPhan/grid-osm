@@ -156,16 +156,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .legend {{ margin-top:14px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px; }}
   .leg-item {{ display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:12px; color:#94a3b8; }}
   .leg-dot {{ width:12px; height:12px; border-radius:3px; flex-shrink:0; }}
-  .stripes-legend {{
-    background: repeating-linear-gradient(
-      45deg,
-      #f43f5e,
-      #f43f5e 2px,
-      #1e293b 2px,
-      #1e293b 4px
-    ) !important;
-    border: 1px solid rgba(255,255,255,0.1);
-  }}
   .tile-tooltip {{
     background: rgba(15,23,42,0.95);
     border: 1px solid rgba(255,255,255,0.15);
@@ -188,14 +178,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 
-<!-- SVG Stripes Pattern definitions for Leaflet -->
-<svg style="display: none;">
-  <defs>
-    <pattern id="stripes" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
-      <line x1="0" y1="0" x2="0" y2="10" stroke="#f43f5e" stroke-width="2.5" />
-    </pattern>
-  </defs>
-</svg>
+<!-- SVG Pattern definitions removed -->
 
 <div id="map"></div>
 <div id="panel">
@@ -215,7 +198,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <div class="legend">
     <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div> Đã quét (Done)</div>
-    <div class="leg-item"><div class="leg-dot stripes-legend"></div> Ngoài ranh giới (Bỏ qua)</div>
     <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div> Đang chờ xử lý (Queue)</div>
     <div class="leg-item"><div class="leg-dot" style="background:#475569"></div> Chưa bắt đầu (Pending)</div>
   </div>
@@ -273,16 +255,7 @@ if (typeof boundaryGeojson !== 'undefined' && boundaryGeojson && typeof turf !==
         insideFeature.geometry = insideIntersection.geometry;
         processedGeojson.features.push(insideFeature);
       }}
-      
-      // 2. Tính phần nằm NGOÀI ranh giới quận -> Tự động chuyển sang sọc đỏ Discarded (Không quét)
-      const outsideDifference = turf.difference(turf.feature(tilePoly), turf.feature(boundaryPoly));
-      if (outsideDifference) {{
-        const outsideFeature = JSON.parse(JSON.stringify(f));
-        outsideFeature.geometry = outsideDifference.geometry;
-        outsideFeature.properties.status = "discarded";
-        outsideFeature.properties.color = "url(#stripes)";
-        processedGeojson.features.push(outsideFeature);
-      }}
+
     }} catch (err) {{
       processedGeojson.features.push(f);
     }}

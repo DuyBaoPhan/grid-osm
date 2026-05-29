@@ -113,12 +113,23 @@ class Worker:
                 tile = await self.coord.get_next_tile()
 
                 if tile is None:
-                    # Queue tạm thời trống — có thể neighbor chưa được thêm
-                    # Đợi một chút rồi kiểm tra lại
-                    await asyncio.sleep(2.0)
-                    tile = await self.coord.get_next_tile()
-                    if tile is None:
-                        logger.info("[Worker %d] Queue empty — shutting down.", self.id)
+                    # Queue tạm thời trống — worker khác có thể đang xử lý tile cuối
+                    # Retry nhiều lần với thời gian chờ tăng dần
+                    # (Playwright thật cần 30-60s/tile, nên cần chờ đủ lâu)
+                    gave_up = True
+                    for retry in range(1, 6):  # thử tối đa 5 lần
+                        wait_sec = retry * 3.0   # 3s, 6s, 9s, 12s, 15s
+                        logger.debug(
+                            "[Worker %d] Queue empty, retry %d/5 in %.0fs...",
+                            self.id, retry, wait_sec,
+                        )
+                        await asyncio.sleep(wait_sec)
+                        tile = await self.coord.get_next_tile()
+                        if tile is not None:
+                            gave_up = False
+                            break
+                    if gave_up:
+                        logger.info("[Worker %d] Queue confirmed empty — shutting down.", self.id)
                         break
 
                 # Restart browser định kỳ để giải phóng RAM
