@@ -26,28 +26,31 @@ _client = AsyncOpenAI(
 
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-Bạn là chuyên gia số hóa bản đồ chuyên nghiệp. Hãy đọc ảnh chụp bản đồ OpenStreetMap này.
-Trong ảnh có một khung quét màu xanh Neon Blue (khung chữ nhật đứt nét màu xanh sáng) biểu thị phạm vi ô lưới cần thu thập.
+Bạn là chuyên gia số hóa bản đồ chuyên nghiệp. Hãy phân tích ảnh chụp bản đồ OpenStreetMap này.
 
-Nhiệm vụ 1: Hãy liệt kê chính xác các địa điểm (POI) thực tế có tên riêng rõ ràng có tâm vị trí (icon hoặc nhãn chữ) nằm BÊN TRONG khung quét màu xanh Neon này.
-- CHỈ thu thập các địa điểm có tên riêng cụ thể (ví dụ: "JW Marriott Saigon", "Bệnh viện Nhi đồng 2", "Trường THPT Trần Đại Nghĩa", "Highlands Coffee").
-- TUYỆT ĐỐI KHÔNG lấy các nhãn thể loại chung chung không có tên riêng (như: "Khách sạn", "Ngân hàng", "siêu thị", "Chùa", "Nhà thờ", "Cửa hàng", "Nhà hàng", "Đường phố có tên", "Công viên").
-- Tuyệt đối không lấy các địa điểm nằm hoàn toàn ngoài khung quét màu xanh Neon.
-- Mỗi địa điểm chỉ liệt kê duy nhất 1 lần, không trùng lặp.
+Bức ảnh này có kích thước 512x512 pixel. Ở CHÍNH GIỮA bức ảnh có một KHUNG QUÉT HÌNH VUÔNG MÀU XANH NEON (đường viền nét đứt màu xanh sáng, kích thước 256x256 pixel từ x=128 đến x=384, y=128 đến y=384 của ảnh).
 
-Nhiệm vụ 2: Ước lượng vị trí x, y (phần trăm từ 0 đến 100) của từng địa điểm ĐỐI VỚI KHUNG QUÉT MÀU XANH NEON:
-- x (chiều ngang từ trái sang phải của KHUNG NEON): 0 = cạnh trái khung Neon, 50 = giữa khung Neon, 100 = cạnh phải khung Neon.
-- y (chiều dọc từ trên xuống dưới của KHUNG NEON): 0 = cạnh trên khung Neon, 50 = giữa khung Neon, 100 = cạnh dưới khung Neon.
-
-Nhiệm vụ 3: Xác định xem vị trí hiển thị trong ảnh này có nằm HOÀN TOÀN BÊN NGOÀI {district_name} hay không.
-Trả về "outside: true" nếu toàn bộ ảnh nằm ngoài {district_name}. Ngược lại trả về "outside: false".
+Nhiệm vụ của bạn:
+1. Hãy tìm và xác định vị trí của khung quét hình vuông màu xanh Neon ở chính giữa ảnh.
+2. Đọc và trích xuất TẤT CẢ các địa điểm có tên riêng cụ thể (POI) có nhãn chữ hoặc biểu tượng (icon) nằm BÊN TRONG khung quét màu xanh Neon này.
+   - Chỉ lấy địa điểm có tên riêng rõ ràng (ví dụ: tên cửa hàng, trường học, khách sạn, quán cafe cụ thể hiển thị bằng chữ trên bản đồ).
+   - Tuyệt đối KHÔNG lấy các nhãn thể loại chung chung không có tên riêng (như: "Khách sạn", "Ngân hàng", "siêu thị", "Chùa", "Nhà thờ", "Cửa hàng", "Nhà hàng", "Đường phố", "Công viên").
+   - Tuyệt đối KHÔNG lấy bất kỳ địa điểm nào nằm hoàn toàn ngoài khung quét màu xanh Neon.
+3. Ước lượng tọa độ x, y (phần trăm từ 0 đến 100) của từng địa điểm ĐỐI VỚI KHUNG QUÉT MÀU XANH NEON:
+   - x: 0 = cạnh trái khung Neon (x=128 của ảnh), 100 = cạnh phải khung Neon (x=384 của ảnh).
+   - y: 0 = cạnh trên khung Neon (y=128 của ảnh), 100 = cạnh dưới khung Neon (y=384 của ảnh).
+4. Xác định xem vị trí hiển thị trong ảnh này có nằm HOÀN TOÀN BÊN NGOÀI {district_name} hay không.
+   Trả về "outside: true" nếu toàn bộ ảnh nằm ngoài {district_name}. Ngược lại trả về "outside: false".
 
 Hãy trả về kết quả theo định dạng văn bản đơn giản sau (thay thế bằng tên và tọa độ thực tế tìm được, tuyệt đối không dùng các từ "Tên địa điểm" hay giải thích nào khác):
-- Highlands Coffee (x: 45, y: 30)
-- Bệnh viện Quận 1 (x: 75, y: 80)
+- Cafe A (x: 45, y: 30)
+- Store B (x: 75, y: 80)
 outside: false
 
-Lưu ý quan trọng: Hai dòng có tên "Highlands Coffee" và "Bệnh viện Quận 1" ở trên chỉ là ví dụ định dạng mẫu. Hãy thay thế chúng bằng các địa điểm thực tế bạn nhìn thấy. Tuyệt đối không sao chép lại hai tên ví dụ này nếu chúng không có thật trong ảnh.
+Lưu ý đặc biệt quan trọng để tránh lỗi:
+- Bạn phải trích xuất và ghi lại CHÍNH XÁC tên tiếng Việt hoặc tiếng Anh thực tế được ghi bằng chữ trên bản đồ (Ví dụ: "Bưu điện Trung tâm Sài Gòn", "Highlands Bưu Điện").
+- TUYỆT ĐỐI KHÔNG tự bịa ra tên, không tự dịch nghĩa tiếng Việt sang tiếng Anh, và không đặt tên theo chuỗi ký tự A, B, C, D (Ví dụ: KHÔNG được ghi "Cafe A", "Store B", "Coffee Shop C", "Restaurant D" nếu trên bản đồ không thực sự có chữ đó).
+- Chỉ trích xuất những địa điểm có nhãn chữ rõ ràng mà bạn đọc được trực tiếp từ ảnh. Nếu không đọc được chữ cụ thể, tuyệt đối bỏ qua.
 """
 
 
@@ -82,9 +85,7 @@ async def extract_pois_from_screenshot(
                     }
                 ],
                 max_tokens=300,
-                temperature=0.2,
-                frequency_penalty=1.1,
-                presence_penalty=1.1,
+                temperature=0.0,
             )
 
             raw_text = response.choices[0].message.content or ""

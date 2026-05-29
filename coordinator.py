@@ -62,6 +62,7 @@ class Coordinator:
         self._visited: Set[TileCoord] = set()
         self._discarded: Set[TileCoord] = set()
         self._queued: Set[TileCoord] = set()
+        self._captured: Set[TileCoord] = set()
         self._queue: asyncio.Queue = asyncio.Queue()
         self._results: List[dict] = []
         self._boundary: Optional[dict] = None
@@ -178,6 +179,13 @@ class Coordinator:
             return tile
         except asyncio.QueueEmpty:
             return None
+
+    async def report_captured(self, tile: TileCoord) -> None:
+        """Báo cáo rằng tile đã được chụp ảnh xong, đang gửi sang LLM."""
+        async with self._lock:
+            self._captured.add(tile)
+            await self._save_checkpoint()
+            self._update_map()
 
     async def report_result(
         self,
@@ -321,9 +329,10 @@ class Coordinator:
                 data = json.load(f)
             visited = {tuple(t) for t in data.get("visited", [])}
             queued  = {tuple(t) for t in data.get("queue",   [])}
+            self._captured = {tuple(t) for t in data.get("captured", [])}
             logger.info(
-                "Checkpoint loaded: %d visited, %d queued",
-                len(visited), len(queued),
+                "Checkpoint loaded: %d visited, %d queued, %d captured",
+                len(visited), len(queued), len(self._captured),
             )
             return visited, queued
         except Exception as exc:
@@ -349,6 +358,7 @@ class Coordinator:
                 "visited":   [list(t) for t in self._visited],
                 "queue":     [list(t) for t in self._queued - self._visited],
                 "discarded": [list(t) for t in self._discarded],
+                "captured":  [list(t) for t in self._captured],
             }
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
@@ -393,6 +403,7 @@ class Coordinator:
                 self._queued,
                 len(self._results),
                 self._discarded,
+                self._captured,
             )
         except Exception as exc:
             logger.debug("Could not update map viewer: %s", exc)

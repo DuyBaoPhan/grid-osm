@@ -12,7 +12,7 @@
 import asyncio
 import logging
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright
 
@@ -86,8 +86,30 @@ class Worker:
                 "Mozilla/5.0 (compatible; OSM-Research-Bot/2.0; "
                 "+https://github.com/DuyBaoPhan/grid-osm)"
             ),
+            bypass_csp=True,
         )
         self._page = await self._context.new_page()
+
+        # Inject CSS to hide all clutter elements (welcome panel, header, banners) before they render!
+        await self._page.add_init_script("""
+            const style = document.createElement('style');
+            style.textContent = `
+                #header, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent {
+                    display: none !important;
+                }
+                #map {
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: absolute !important;
+                }
+            `;
+            document.documentElement.appendChild(style);
+        """)
+
         self._tile_count = 0
         logger.info("[Worker %d] Browser started.", self.id)
 
@@ -191,6 +213,8 @@ class Worker:
                 screenshot = await self._capture_screenshot(url, bbox)
                 # Trích xuất toàn bộ nhãn và tọa độ hiển thị trong DOM hiện tại
                 browser_coords = await self._extract_all_visible_poi_coords_from_browser()
+                # Báo cáo ngay cho coordinator rằng đã chụp ảnh xong để vẽ ô màu xanh neon blue lên bản đồ!
+                await self.coord.report_captured(tile)
                 break
             except Exception as exc:
                 if attempt <= MAX_RETRIES:
@@ -222,7 +246,7 @@ class Worker:
         poi_names, outside_district = await extract_pois_from_screenshot(screenshot)
         logger.info("  [2/2] LLM done.")
 
-        # ĐÓNG TRÌNH DUYỆT sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
+        # Đóng trình duyệt sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
         await self._close_browser()
 
         # Lọc và khớp tọa độ địa điểm
@@ -387,7 +411,7 @@ class Worker:
         assert self._page is not None, "Page is not initialized"
         await self._page.goto(
             url,
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
             timeout=PAGE_LOAD_TIMEOUT,
         )
         
@@ -411,10 +435,10 @@ class Worker:
         except Exception as exc:
             logger.debug("Could not hide OSM UI elements: %s", exc)
 
-        # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM, vẽ khung quét màu Neon Blue và tính toán ô cắt (crop_box)
+        # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM, vẽ khung quét màu Neon Blue bằng DOM và tính toán ô cắt (crop_box)
         crop_box = None
         try:
-            crop_box = await self._page.evaluate(f"""() => {{
+            crop_box = await self._page.evaluate(f"""async () => {{
                 const selectors = [
                     '#header', '#sidebar', '.welcome', '#banner', '.banner', 
                     '.announcement', '.flash-wrap', '#flash', '.cookie-consent'
@@ -435,58 +459,70 @@ class Worker:
                     mapEl.style.setProperty('padding', '0px', 'important');
                 }}
                 
-                // Kích hoạt cập nhật kích thước Leaflet map và vẽ khung quét
-                let mapInstance = null;
-                if (typeof OSM !== 'undefined' && OSM.map) {{
-                    mapInstance = OSM.map;
-                }} else if (window.MAP) {{
-                    mapInstance = window.MAP;
-                }} else if (window.map) {{
-                    mapInstance = window.map;
-                }} else {{
-                    for (let key in window) {{
-                        try {{
-                            if (window[key] && window[key]._layers && typeof window[key].invalidateSize === 'function') {{
-                                mapInstance = window[key];
-                                break;
+                // Chờ và kích hoạt cập nhật kích thước Leaflet map
+                const waitAndCenter = () => {{
+                    return new Promise((resolve) => {{
+                        let attempts = 0;
+                        const interval = setInterval(() => {{
+                            let mapInstance = null;
+                            if (typeof OSM !== 'undefined' && OSM.map) {{
+                                mapInstance = OSM.map;
+                            }} else if (window.MAP) {{
+                                mapInstance = window.MAP;
+                            }} else if (window.map) {{
+                                mapInstance = window.map;
+                            }} else {{
+                                for (let key in window) {{
+                                    try {{
+                                        if (window[key] && window[key]._layers && typeof window[key].invalidateSize === 'function') {{
+                                            mapInstance = window[key];
+                                            break;
+                                        }}
+                                    }} catch (e) {{}}
+                                }}
                             }}
-                        }} catch (e) {{}}
-                    }}
-                }}
+                            if (mapInstance) {{
+                                clearInterval(interval);
+                                mapInstance.setView([{lat}, {lng}], {SCREENSHOT_ZOOM}, {{ animate: false }});
+                                mapInstance.invalidateSize();
+                                resolve(true);
+                            }} else {{
+                                attempts++;
+                                if (attempts > 100) {{ // 5 seconds timeout
+                                    clearInterval(interval);
+                                    resolve(false);
+                                }}
+                            }}
+                        }}, 50);
+                    }});
+                }};
+                
+                await waitAndCenter();
 
-                let box = null;
-                if (mapInstance) {{
-                    mapInstance.invalidateSize();
-                    
-                    // Vẽ khung quét Neon Blue thể hiện phạm vi chụp ảnh của worker
-                    const bounds = [[{bbox[0]}, {bbox[1]}], [{bbox[2]}, {bbox[3]}]];
-                    if (window.L) {{
-                        if (window.activeWorkerBbox) {{
-                            window.activeWorkerBbox.remove();
-                        }}
-                        window.activeWorkerBbox = window.L.rectangle(bounds, {{
-                            color: '#00d2ff',
-                            weight: 3,
-                            fillColor: '#00d2ff',
-                            fillOpacity: 0.08,
-                            dashArray: '8, 8',
-                            interactive: false
-                        }}).addTo(mapInstance);
-
-                        // Tính toán tọa độ pixel của bounding box trên màn hình
-                        try {{
-                            const p1 = mapInstance.latLngToContainerPoint(window.L.latLng({bbox[2]}, {bbox[1]})); // Top-Left (lat_max, lng_min)
-                            const p2 = mapInstance.latLngToContainerPoint(window.L.latLng({bbox[0]}, {bbox[3]})); // Bottom-Right (lat_min, lng_max)
-                            box = {{
-                                x: Math.round(p1.x),
-                                y: Math.round(p1.y),
-                                width: Math.round(p2.x - p1.x),
-                                height: Math.round(p2.y - p1.y)
-                            }};
-                        }} catch(err) {{}}
-                    }}
+                // Vẽ khung quét Neon Blue bằng DOM Injection (đảm bảo hiển thị 100% đáng tin cậy trên mọi giao diện)
+                let scanBox = document.getElementById('active-worker-scan-box');
+                if (!scanBox) {{
+                    scanBox = document.createElement('div');
+                    scanBox.id = 'active-worker-scan-box';
+                    document.body.appendChild(scanBox);
                 }}
-                return box;
+                scanBox.style.position = 'fixed';
+                scanBox.style.left = '384px';
+                scanBox.style.top = '256px';
+                scanBox.style.width = '256px';
+                scanBox.style.height = '256px';
+                scanBox.style.border = '3px dashed #00d2ff';
+                scanBox.style.backgroundColor = 'rgba(0, 210, 255, 0.08)';
+                scanBox.style.pointerEvents = 'none';
+                scanBox.style.zIndex = '99999';
+
+                // Trả về tọa độ pixel hình học chuẩn xác của ô tile 256x256 ở giữa màn hình 1024x768
+                return {{
+                    x: 384,
+                    y: 256,
+                    width: 256,
+                    height: 256
+                }};
             }}""")
         except Exception as exc:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
@@ -494,30 +530,57 @@ class Worker:
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
         screenshot_bytes = await self._page.screenshot(type="png")
 
-        # 3. Sử dụng Pillow để crop ảnh theo tọa độ ô lưới cộng thêm padding 128px để giữ trọn vẹn nhãn chữ ở biên ô lưới
-        if crop_box and all(k in crop_box for k in ["x", "y", "width", "height"]):
-            try:
-                from PIL import Image
-                import io
+        # 3. Sử dụng Pillow để crop và nén ảnh dưới dạng JPEG để tăng tốc độ xử lý của LLM cực lớn!
+        try:
+            from PIL import Image
+            import io
+            
+            img = Image.open(io.BytesIO(screenshot_bytes))
+            w, h = img.size
+            
+            # Khởi tạo tọa độ cắt
+            padding = 0
+            use_fallback = True
+            
+            if crop_box and all(k in crop_box for k in ["x", "y", "width", "height"]):
+                try:
+                    x1 = max(0, int(crop_box["x"]) - padding)
+                    y1 = max(0, int(crop_box["y"]) - padding)
+                    x2 = min(w, int(crop_box["x"]) + int(crop_box["width"]) + padding)
+                    y2 = min(h, int(crop_box["y"]) + int(crop_box["height"]) + padding)
+                    if x2 > x1 and y2 > y1:
+                        use_fallback = False
+                except Exception:
+                    pass
+            
+            if use_fallback:
+                # Tính toán hình học cố định (Do OSM tự động căn giữa ô tile ở tâm màn hình)
+                # Tỉ lệ hóa theo kích thước thực tế của ảnh (mặc định viewport 1024x768, ô tile 256x256 ở giữa)
+                cx, cy = w / 2, h / 2
+                tile_w = 256 * (w / 1024)
+                tile_h = 256 * (h / 768)
+                pad_w = padding * (w / 1024)
+                pad_h = padding * (h / 768)
                 
-                img = Image.open(io.BytesIO(screenshot_bytes))
-                w, h = img.size
-                
-                padding = 128
-                x1 = max(0, int(crop_box["x"]) - padding)
-                y1 = max(0, int(crop_box["y"]) - padding)
-                x2 = min(w, int(crop_box["x"]) + int(crop_box["width"]) + padding)
-                y2 = min(h, int(crop_box["y"]) + int(crop_box["height"]) + padding)
-                
-                # Chỉ crop nếu kích thước hợp lệ
-                if x2 > x1 and y2 > y1:
-                    cropped_img = img.crop((x1, y1, x2, y2))
-                    output_bytes = io.BytesIO()
-                    cropped_img.save(output_bytes, format="PNG")
-                    logger.info("  [Crop] Screenshot cropped to tile bounds with %dpx padding: %dx%d px", padding, x2-x1, y2-y1)
-                    return output_bytes.getvalue()
-            except Exception as crop_err:
-                logger.warning("Could not crop screenshot: %s", crop_err)
+                x1 = max(0, int(cx - tile_w / 2 - pad_w))
+                y1 = max(0, int(cy - tile_h / 2 - pad_h))
+                x2 = min(w, int(cx + tile_w / 2 + pad_w))
+                y2 = min(h, int(cy + tile_h / 2 + pad_h))
+            
+            # Thực hiện crop và chuyển đổi sang RGB để lưu thành JPEG
+            if x2 > x1 and y2 > y1:
+                cropped_img = img.crop((x1, y1, x2, y2))
+                rgb_img = cropped_img.convert("RGB")
+                output_bytes = io.BytesIO()
+                rgb_img.save(output_bytes, format="JPEG", quality=80)
+                method_str = "Leaflet DOM" if not use_fallback else "Viewport Center Fallback"
+                logger.info(
+                    "  [Crop & Compress] Screenshot cropped via %s to %dx%d px and compressed to JPEG (80%% quality)",
+                    method_str, x2 - x1, y2 - y1
+                )
+                return output_bytes.getvalue()
+        except Exception as crop_err:
+            logger.warning("Could not crop or compress screenshot: %s", crop_err)
 
         return screenshot_bytes
 

@@ -21,6 +21,7 @@ def load_state():
     visited = set()
     queued  = set()
     discarded = set()
+    captured = set()
 
     if os.path.exists(config.CHECKPOINT_FILE):
         try:
@@ -29,6 +30,7 @@ def load_state():
             visited = {tuple(t) for t in data.get("visited", [])}
             queued  = {tuple(t) for t in data.get("queue",   [])}
             discarded = {tuple(t) for t in data.get("discarded", [])}
+            captured = {tuple(t) for t in data.get("captured", [])}
         except Exception as e:
             print(f"[WARN] Cannot load checkpoint: {e}")
 
@@ -41,21 +43,22 @@ def load_state():
         except Exception:
             pass
 
-    return visited, queued, poi_count, discarded
+    return visited, queued, poi_count, discarded, captured
 
 
 # ── Tao GeoJSON polygons cho cac tile ────────────────────────
 
-def build_geojson(all_tiles, visited, queued, discarded=None):
+def build_geojson(all_tiles, visited, queued, discarded=None, captured=None):
     if discarded is None:
         discarded = set()
+    if captured is None:
+        captured = set()
     features = []
     for tile in all_tiles:
         tx, ty = tile
 
-        # Chỉ hiển thị các ô đã được xử lý (visited hoặc discarded)
-        # Ẩn hoàn toàn các ô chưa quét để tạo hiệu ứng "quét tới đâu hiện tới đó" cực đẹp!
-        if tile not in visited and tile not in discarded:
+        # Chỉ hiển thị các ô đã được xử lý (visited hoặc discarded) hoặc đã chụp (captured)
+        if tile not in visited and tile not in discarded and tile not in captured:
             continue
 
         lat_min, lng_min, lat_max, lng_max = tile_bbox(tx, ty, config.ZOOM_LEVEL)
@@ -69,6 +72,10 @@ def build_geojson(all_tiles, visited, queued, discarded=None):
             status = "done"
             color  = "#00ff66"   # Xanh lá Neon phản quang cực sáng
             opacity = 0.70       # Tăng độ đậm đặc để nổi hẳn lên nền bản đồ
+        elif tile in captured:
+            status = "captured"
+            color  = "#00d2ff"   # Xanh Neon Blue phản quang cho ô đang cào
+            opacity = 0.70
         else:
             continue
 
@@ -198,6 +205,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <div class="legend">
     <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div> Đã quét (Done)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#00d2ff"></div> Đang xử lý AI (Captured)</div>
     <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div> Đang chờ xử lý (Queue)</div>
     <div class="leg-item"><div class="leg-dot" style="background:#475569"></div> Chưa bắt đầu (Pending)</div>
   </div>
@@ -268,7 +276,7 @@ L.geoJSON(processedGeojson, {{
   style: f => ({{
     fillColor: f.properties.color, 
     fillOpacity: f.properties.color === 'url(#stripes)' ? 0.90 : 0.80, 
-    color: f.properties.color === 'url(#stripes)' ? '#ff3355' : '#00ff66', 
+    color: f.properties.color === 'url(#stripes)' ? '#ff3355' : (f.properties.status === 'captured' ? '#00d2ff' : '#00ff66'), 
     weight: 3.0, 
     opacity: 1.0, 
   }}),
@@ -304,6 +312,7 @@ def build_and_save(
     queued: set,
     poi_count: int,
     discarded: set = None,
+    captured: set = None,
     out_path: str = _MAP_OUT,
 ) -> str:
     """
@@ -312,6 +321,8 @@ def build_and_save(
     """
     if discarded is None:
         discarded = set()
+    if captured is None:
+        captured = set()
     total   = len(all_tiles)
     done    = len(visited)
     q_count = len(queued)
@@ -336,7 +347,7 @@ def build_and_save(
         except Exception:
             pass
 
-    geojson_str = json.dumps(build_geojson(all_tiles, visited, queued, discarded))
+    geojson_str = json.dumps(build_geojson(all_tiles, visited, queued, discarded, captured))
     display_zoom = max(10, config.ZOOM_LEVEL - 6)
 
     html = HTML_TEMPLATE.format(
@@ -355,7 +366,7 @@ def build_and_save(
 
 
 def main():
-    visited, queued, poi_count, discarded = load_state()
+    visited, queued, poi_count, discarded, captured = load_state()
 
     print("Generating tile grid...")
     all_tiles = generate_all_tiles(
@@ -378,7 +389,7 @@ def main():
     print(f"  Pending: {pending}")
     print(f"  Done   : {pct:.2f}%")
 
-    out_path = build_and_save(all_tiles, visited, queued, poi_count, discarded)
+    out_path = build_and_save(all_tiles, visited, queued, poi_count, discarded, captured)
     print(f"\nMap saved: {out_path}")
     print("Opening in browser...")
     webbrowser.open(f"file:///{out_path.replace(os.sep, '/')}")

@@ -10,12 +10,11 @@
 
 import math
 from typing import List, Tuple, Optional
+import config
 
+# ── Standard OSM tile math (Unshifted) ───────────────────────
 
-# ── OSM tile math ────────────────────────────────────────────
-
-def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
-    """Chuyển tọa độ địa lý → chỉ số tile OSM (tx, ty)."""
+def _std_lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
     n = 2 ** zoom
     tx = int((lng + 180.0) / 360.0 * n)
     lat_rad = math.radians(lat)
@@ -23,8 +22,7 @@ def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
     return tx, ty
 
 
-def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
-    """Trả về tọa độ tâm của tile (lat, lng)."""
+def _std_tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
     n = 2 ** zoom
     lng = (tx + 0.5) / n * 360.0 - 180.0
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (ty + 0.5) / n)))
@@ -32,8 +30,7 @@ def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
     return lat, lng
 
 
-def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    """Trả về bounding box của tile (lat_min, lng_min, lat_max, lng_max)."""
+def _std_tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
     n = 2 ** zoom
 
     def _y_to_lat(y_frac: float) -> float:
@@ -44,6 +41,40 @@ def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
     lat_max = _y_to_lat(ty)
     lat_min = _y_to_lat(ty + 1)
     return lat_min, lng_min, lat_max, lng_max
+
+
+# ── Shift Calculation to center exactly on the Epicenter ──────
+# We calculate the offset so that the tile containing (CENTER_LAT, CENTER_LNG)
+# is centered exactly on (CENTER_LAT, CENTER_LNG).
+
+_tx_c, _ty_c = _std_lat_lng_to_tile(config.CENTER_LAT, config.CENTER_LNG, config.ZOOM_LEVEL)
+_lat_c, _lng_c = _std_tile_center(_tx_c, _ty_c, config.ZOOM_LEVEL)
+OFFSET_LAT = config.CENTER_LAT - _lat_c
+OFFSET_LNG = config.CENTER_LNG - _lng_c
+
+
+# ── Shifted API functions ────────────────────────────────────
+
+def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
+    """Chuyển tọa độ địa lý → chỉ số tile OSM (tx, ty) dịch chuyển."""
+    return _std_lat_lng_to_tile(lat - OFFSET_LAT, lng - OFFSET_LNG, zoom)
+
+
+def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
+    """Trả về tọa độ tâm của tile dịch chuyển (lat, lng)."""
+    lat, lng = _std_tile_center(tx, ty, zoom)
+    return lat + OFFSET_LAT, lng + OFFSET_LNG
+
+
+def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
+    """Trả về bounding box của tile dịch chuyển (lat_min, lng_min, lat_max, lng_max)."""
+    lat_min, lng_min, lat_max, lng_max = _std_tile_bbox(tx, ty, zoom)
+    return (
+        lat_min + OFFSET_LAT,
+        lng_min + OFFSET_LNG,
+        lat_max + OFFSET_LAT,
+        lng_max + OFFSET_LNG
+    )
 
 
 # ── Radius-based tile set ────────────────────────────────────
