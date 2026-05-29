@@ -26,51 +26,28 @@ _client = AsyncOpenAI(
 
 # ── System message (vai trò) ─────────────────────────────────
 SYSTEM_MESSAGE = (
-    "Bạn là công cụ OCR dùng để đọc và sao chép chính xác các nhãn chữ trên ảnh bản đồ. "
-    "Quy tắc tối thượng: chỉ ghi ra những chữ mà bạn đọc được rõ ràng từ ảnh. "
-    "Tuyệt đối không tưởng tượng, dịch, hay bịa ra bất kỳ tên nào không có trong ảnh."
+    "Bạn là một công cụ OCR chuyên nghiệp để trích xuất tên địa điểm từ ảnh bản đồ. "
+    "Nhiệm vụ: chỉ trích xuất các TÊN RIÊNG địa điểm thực tế (ví dụ: cửa hàng, cafe, bưu điện, tòa nhà, địa danh...). "
+    "Quy tắc tối thượng: TUYỆT ĐỐI KHÔNG trích xuất tên đường phố, đường giao thông, đại lộ (như 'Hai Bà Trưng', 'Nguyễn Văn Bình', 'Lê Duẩn'...). "
+    "Tuyệt đối không đoán, không tự bịa tên mẫu."
 )
 
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-Ảnh này là ảnh chụp bản đồ OpenStreetMap của khu vực {district_name}.
+Đây là ảnh bản đồ của {district_name}.
+Hãy đọc và trích xuất tất cả các tên riêng địa điểm tiếng Việt hiển thị trên ảnh bản đồ này.
 
-Biến thể của ảnh:
-- Kích thước ảnh: 256x256 pixel (toàn bộ ảnh là vùng quét cần phân tích).
-- Ảnh có thể có khung nét đứt màu xanh Neon ở viền — bỏ qua, không liên quan.
+QUY TẮC CỰC KỲ QUAN TRỌNG:
+1. LOẠI BỎ hoàn toàn các tên đường phố, đường giao thông, đại lộ (ví dụ: "Hai Bà Trưng", "Nguyễn Văn Bình", "Lê Duẩn", "Đồng Khởi", "Đường...", "Street", "Rd", "Avenue"). Chỉ giữ lại điểm dịch vụ, cửa hiệu, địa danh du lịch, cơ quan.
+2. Chỉ ghi những tên địa điểm (POI) bạn thực sự đọc được trên ảnh. Không đoán, không bịa tên mẫu (Ví dụ: KHÔNG được viết "Cafe A", "Store B").
 
-Nhiệm vụ của bạn (làm theo THỨ TỰ này):
-
-BƯỚC 1 — Đọc chữ trên ảnh:
-- Nhìn vào từng vị trí trên ảnh và đọc từng nhãn chữ hiển thị (tên cửa tiệm, cửa hàng, ngân hàng, trường học, quán cafe, khách sạn v.v.).
-- Sao chép NGUYÊN VĂN tên chữ như in trên bản đồ, kể cả chữ in hoa, dấu vầy, tiếng Việt hoặc tiếng Anh.
-- Nếu không đọc được rõ ràng một tên → BUỘC PHẢI bỏ qua, không đoán.
-
-BƯỚC 2 — Lọc địa điểm hợp lệ:
-- CHỈ giữ lại địa điểm có TÊN RIÊNG cụ thể (ví dụ thực tế: "Bưu điện Trung tâm Sài Gòn", "Highlands Coffee", "Vincom Center", "Trường Tiểu học Lê Lợi").
-- LOẠI BỎ hoàn toàn các nhãn thể loại chung không có tên riêng như: "Khách sạn", "Ngân hàng", "Siêu thị", "Café", "Nhà thờ", "Đường", "Công viên", "Nhà hàng", "Cửa hàng".
-- LOẠI BỎ bất kỳ tên nào bạn TỰ NGHĨ RA hoặc suy diễn — chỉ ghi được tên nào bạn đọc được từ chữ trên bản đồ.
-
-BƯỚC 3 — Ước lượng vị trí:
-- Với mỗi địa điểm hợp lệ, ước lượng toạ độ x (0=trái, 100=phải) và y (0=trên, 100=dưới) trong ảnh.
-
-BƯỚC 4 — Xác định ngoài quận:
-- Nếu toàn bộ ảnh nằm RÕ RÀNG ngoài {district_name} → outside: true.
-- Nếu nằm trong hoặc không chắc chắn → outside: false.
-
-CÁCH TRẢ LỚI (bắt buộc dùng đúng định dạng này, không giải thích thêm):
-- Bưu điện Trung tâm Sài Gòn (x: 45, y: 30)
-- Highlands Coffee (x: 75, y: 80)
+Định dạng kết quả trả về bắt buộc (chỉ ghi kết quả này, không giải thích hay thêm bớt từ ngữ khác):
+- Tên Địa Điểm (x: tọa độ x từ 0-100, y: tọa độ y từ 0-100)
 outside: false
 
-Nếu không có địa điểm nào hợp lệ, chỉ cần trả lời:
+Ví dụ:
+- Bưu điện Trung tâm Sài Gòn (x: 45, y: 60)
 outside: false
-
-NHỚ LẠI LUẬT QUAN TRỌNG NHẤT:
-✓ Chỉ ghi tên địa điểm nếu bạn ĐỌC ĐƯỢC chữ đó trực tiếp từ ảnh bản đồ.
-✕ Không được viết "Cafe A", "Store B", "Restaurant C" hay bất kỳ tên mẫu nào — đây là vi phạm nghiêm trọng.
-✕ Không tự dịch tên sang ngôn ngữ khác.
-✕ Không đoán hoặc suy diễn tên từ icon hoặc biểu tượng.
 """
 
 
@@ -113,6 +90,9 @@ async def extract_pois_from_screenshot(
             )
 
             raw_text = response.choices[0].message.content or ""
+            # Ghi lại log phản hồi thô từ LLM để hỗ trợ debug OCR trực tiếp trên console
+            logger.info("  [Vision LLM Raw Response]:\n%s", raw_text)
+            
             pois, outside = _parse_poi_response(raw_text)
             
             # Programmatic case-insensitive deduplication of dicts, preserving order
@@ -129,12 +109,16 @@ async def extract_pois_from_screenshot(
                         "y": p.get("y", 50)
                     })
 
-            # Lọc bỏ các tên hallucination điển hình (Cafe A, Store B...)
+            # Lọc bỏ các tên nghi là tên đường hoặc hallucination điển hình
             filtered_pois = []
             for p in unique_pois:
                 if _is_hallucinated_name(p["name"]):
                     logger.warning(
                         "  [AntiHalluc] Bỏ tên nghi hallucination: '%s'", p["name"]
+                    )
+                elif _is_street_name(p["name"]):
+                    logger.warning(
+                        "  [AntiStreet] Bỏ tên đường phố: '%s'", p["name"]
                     )
                 else:
                     filtered_pois.append(p)
@@ -183,6 +167,77 @@ def _is_hallucinated_name(name: str) -> bool:
     return False
 
 
+# ── Bộ lọc tên đường giao thông (District 1 Streets Filter) ───
+
+# Từ khóa liên quan đến giao thông để lọc bỏ
+_STREET_KEYWORDS = re.compile(
+    r"\b(đường|phố|đại lộ|boulevard|avenue|street|st\.|rd\.|hẻm|ngõ|kiệt|vòng xoay|cầu|ngã tư|ngã sáu|ngã bảy|ngã ba)\b",
+    re.IGNORECASE
+)
+
+# Danh sách tên các con đường tại Quận 1 (được chuyển sang dạng không dấu để loại bỏ sai lệch dấu thanh/typo)
+_D1_STREETS_NO_ACCENT = {
+    "hai ba trung", "nguyen van binh", "le duan", "dong khoi", "ly tu trong",
+    "le thanh ton", "nguyen hue", "pasteur", "nam ky khoi nghia", "ham nghi",
+    "le loi", "nguyen thi minh khai", "ton duc thang", "cach mang thang tam",
+    "tran hung dao", "nguyen trai", "bui vien", "pham ngu lao", "de tham",
+    "nguyen du", "mac dinh chi", "phung khac khoan", "nguyen van chiem",
+    "pham ngoc thach", "vo van tan", "nguyen thi nghia", "ton that dam",
+    "huynh thuc khang", "nguyen cong tru", "pho duc chinh", "calmette",
+    "nguyen thai hoc", "ky con", "yersin", "tran dinh xu", "nguyen cu trinh",
+    "cong quynh", "mai thi luu", "dien bien phu", "nguyen binh khiem",
+    "nguyen dinh chieu", "truong dinh", "ba huyen thanh quan",
+    "suong nguyet anh", "ton that tung", "nguyen van trang", "nguyen thi dieu",
+    "huyen tran cong chua", "nguyen trung truc", "thu khoa huan", "phan chu trinh",
+    "phan boi chau", "nguyen an ninh", "le anh xuan",
+    "ton that thiep", "ngo duc ke", "ho huan nghiep", "mac thi buoi",
+    "nguyen thiep", "dong du", "thi sach", "thai van lung",
+    "chu manh trinh", "nguyen sieu", "nguyen trung ngan",
+    "vo thi sau", "thach thi thanh", "nguyen huu cau", "nguyen van thu",
+    "tran cao van", "tran quang khai", "nguyen phi khanh",
+    "dinh cong trang", "phan liem", "phan ke binh",
+    "huynh khuong ninh", "pham viet chanh", "nguyen huu canh"
+}
+
+def _strip_vietnamese_accents(s: str) -> str:
+    """Loại bỏ hoàn toàn dấu tiếng Việt và đưa về chữ thường."""
+    s = s.lower()
+    # a
+    s = re.sub(r'[àáảãạăằắẳẵặâầấẩẫậ]', 'a', s)
+    # e
+    s = re.sub(r'[èéẻẽẹêềếểễệ]', 'e', s)
+    # i
+    s = re.sub(r'[ìíỉĩị]', 'i', s)
+    # o
+    s = re.sub(r'[òóỏõọôồốổỗộơờớởỡợ]', 'o', s)
+    # u
+    s = re.sub(r'[ùúủũụưừứửữự]', 'u', s)
+    # y
+    s = re.sub(r'[ỳýỷỹỵ]', 'y', s)
+    # d
+    s = re.sub(r'[đ]', 'd', s)
+    return s
+
+def _is_street_name(name: str) -> bool:
+    """Trả về True nếu tên truyền vào khớp với tên đường giao thông."""
+    name_clean = name.strip()
+    name_lower = name_clean.lower()
+    
+    # 1. Nếu chứa từ khóa giao thông tiêu biểu -> Chắc chắn là tên đường
+    if _STREET_KEYWORDS.search(name_lower):
+        return True
+        
+    # 2. Loại bỏ tiền tố "đường", "phố", "đại lộ", "hẻm" nếu có để lấy tên lõi
+    core_name = re.sub(r"^(đường|phố|đại lộ|hẻm|ngõ|kiệt)\s+", "", name_lower).strip()
+    
+    # 3. Chuyển sang không dấu để đối khớp danh sách đường Quận 1 một cách an toàn
+    no_accent_name = _strip_vietnamese_accents(core_name)
+    if no_accent_name in _D1_STREETS_NO_ACCENT:
+        return True
+        
+    return False
+
+
 # ── JSON parser với fallback ──────────────────────────────────
 
 def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
@@ -198,8 +253,8 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
         outside_district = True
 
     # 2. Bước 1: Thử parse theo định dạng Text List mới: "- Tên (x: 45, y: 30)" hoặc "* Tên (x: 45%, y: 30%)"
-    # regex hỗ trợ bullet points khác nhau (-, *, numbered) và ký hiệu % tùy chọn
-    pattern = r"(?:-|\*|\d+\.)\s*([^(]+?)\s*\(\s*x\s*:\s*(\d+)\s*%?\s*,\s*y\s*:\s*(\d+)\s*%?\s*\)"
+    # regex hỗ trợ dấu bullet point tùy chọn (?) giúp khớp cả trường hợp LLM không viết dấu gạch đầu dòng
+    pattern = r"(?:-|\*|\d+\.)?\s*([^(]+?)\s*\(\s*x\s*:\s*(\d+)\s*%?\s*,\s*y\s*:\s*(\d+)\s*%?\s*\)"
     matches = re.findall(pattern, text)
     if matches:
         for m in matches:
@@ -258,7 +313,6 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
         except json.JSONDecodeError:
             pass
 
-    # 4. Fallback cuối: không tìm thấy POI nào — trả về rỗng thay vì đoán sắu
-    # (Xóa fallback regex trích xuất ngoặc kép vốn gây hallucination)
+    # 4. Fallback cuối: không tìm thấy POI nào
     logger.debug("No POI pattern matched in LLM response.")
     return pois, outside_district

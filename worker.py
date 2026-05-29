@@ -82,6 +82,7 @@ class Worker:
         )
         self._context = await self._browser.new_context(
             viewport={"width": SCREENSHOT_W, "height": SCREENSHOT_H},
+            device_scale_factor=2,  # Kích hoạt chế độ High DPI giúp chữ siêu sắc nét
             user_agent=(
                 "Mozilla/5.0 (compatible; OSM-Research-Bot/2.0; "
                 "+https://github.com/DuyBaoPhan/grid-osm)"
@@ -530,24 +531,29 @@ class Worker:
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
         screenshot_bytes = await self._page.screenshot(type="png")
 
-        # 3. Sử dụng Pillow để crop và nén ảnh dưới dạng JPEG để tăng tốc độ xử lý của LLM cực lớn!
+        # 3. Sử dụng Pillow để crop và nén ảnh dưới dạng JPEG chất lượng cao cùng các kỹ thuật nâng cao chất lượng nhận diện!
         try:
-            from PIL import Image
+            from PIL import Image, ImageEnhance, ImageFilter
             import io
             
             img = Image.open(io.BytesIO(screenshot_bytes))
             w, h = img.size
             
-            # Khởi tạo tọa độ cắt
-            padding = 0
+            # Tỷ lệ scale giữa pixel thực tế (physical pixels) và tọa độ CSS (logical pixels)
+            scale = w / SCREENSHOT_W
+            
+            # Thêm border padding (khoảng đệm biên) để lấy trọn vẹn nhãn chữ ở sát rìa ô quét
+            padding = 25
+            padding_scaled = int(padding * scale)
             use_fallback = True
             
             if crop_box and all(k in crop_box for k in ["x", "y", "width", "height"]):
                 try:
-                    x1 = max(0, int(crop_box["x"]) - padding)
-                    y1 = max(0, int(crop_box["y"]) - padding)
-                    x2 = min(w, int(crop_box["x"]) + int(crop_box["width"]) + padding)
-                    y2 = min(h, int(crop_box["y"]) + int(crop_box["height"]) + padding)
+                    # Nhân tọa độ CSS từ DOM với tỷ lệ scale để chuyển đổi sang tọa độ pixel thực tế của màn hình High-DPI
+                    x1 = max(0, int(crop_box["x"] * scale) - padding_scaled)
+                    y1 = max(0, int(crop_box["y"] * scale) - padding_scaled)
+                    x2 = min(w, int((crop_box["x"] + crop_box["width"]) * scale) + padding_scaled)
+                    y2 = min(h, int((crop_box["y"] + crop_box["height"]) * scale) + padding_scaled)
                     if x2 > x1 and y2 > y1:
                         use_fallback = False
                 except Exception:
@@ -555,7 +561,6 @@ class Worker:
             
             if use_fallback:
                 # Tính toán hình học cố định (Do OSM tự động căn giữa ô tile ở tâm màn hình)
-                # Tỉ lệ hóa theo kích thước thực tế của ảnh (mặc định viewport 1024x768, ô tile 256x256 ở giữa)
                 cx, cy = w / 2, h / 2
                 tile_w = 256 * (w / 1024)
                 tile_h = 256 * (h / 768)
@@ -567,15 +572,25 @@ class Worker:
                 x2 = min(w, int(cx + tile_w / 2 + pad_w))
                 y2 = min(h, int(cy + tile_h / 2 + pad_h))
             
-            # Thực hiện crop và chuyển đổi sang RGB để lưu thành JPEG
+            # Thực hiện crop và áp dụng bộ lọc nâng cao chất lượng chữ
             if x2 > x1 and y2 > y1:
                 cropped_img = img.crop((x1, y1, x2, y2))
+                
+                # Áp dụng bộ lọc làm sắc nét chữ và tăng tương phản giúp OCR đọc tốt hơn
+                try:
+                    cropped_img = cropped_img.filter(ImageFilter.SHARPEN)
+                    enhancer = ImageEnhance.Contrast(cropped_img)
+                    cropped_img = enhancer.enhance(1.25)
+                except Exception as enh_err:
+                    logger.debug("Image enhancement failed: %s", enh_err)
+                
                 rgb_img = cropped_img.convert("RGB")
                 output_bytes = io.BytesIO()
-                rgb_img.save(output_bytes, format="JPEG", quality=80)
+                # Lưu JPEG chất lượng cao 95% để giảm tối đa nhiễu nén làm hỏng viền chữ
+                rgb_img.save(output_bytes, format="JPEG", quality=95)
                 method_str = "Leaflet DOM" if not use_fallback else "Viewport Center Fallback"
                 logger.info(
-                    "  [Crop & Compress] Screenshot cropped via %s to %dx%d px and compressed to JPEG (80%% quality)",
+                    "  [Crop & Compress] Screenshot cropped via %s to %dx%d px (High-DPI 2x, quality=95%%) and enhanced with SHARPEN+Contrast",
                     method_str, x2 - x1, y2 - y1
                 )
                 return output_bytes.getvalue()
