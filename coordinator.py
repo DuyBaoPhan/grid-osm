@@ -394,7 +394,7 @@ class Coordinator:
     # ── Map viewer update ────────────────────────────────────
 
     def _update_map(self) -> None:
-        """Tái sinh map_viewer.html với trạng thái mới nhất."""
+        """Tái sinh map_viewer.html với trạng thái mới nhất, và cập nhật map_status.json."""
         try:
             from map_viewer import build_and_save
             build_and_save(
@@ -407,6 +407,23 @@ class Coordinator:
             )
         except Exception as exc:
             logger.debug("Could not update map viewer: %s", exc)
+
+        # Ghi map_status.json → HTML sẽ poll file này để biết khi nào cần reload
+        try:
+            import time as _time
+            status_path = os.path.join(os.path.dirname(config.__file__), config.STATUS_FILE)
+            data = {
+                "ts": _time.time(),
+                "done": len(self._visited),
+                "captured": len(self._captured),
+                "pois": len(self._results),
+            }
+            tmp = status_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, status_path)
+        except Exception as exc:
+            logger.debug("Could not write map_status.json: %s", exc)
 
     # ── Internal helpers ─────────────────────────────────────
 

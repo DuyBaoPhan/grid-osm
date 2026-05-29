@@ -137,7 +137,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     border-radius:99px; padding:2px 10px; font-size:11px; color:#94a3b8;
     margin-bottom:14px;
   }}
-  .dot-live {{ width:7px;height:7px;border-radius:50%;background:#94a3b8; }}
+  .dot-live {{ width:7px;height:7px;border-radius:50%;background:#94a3b8;transition:background 0.3s; }}
+  .dot-live.active {{ background:#22c55e; animation: pulse 1.5s infinite; }}
+  @keyframes pulse {{
+    0%, 100% {{ box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }}
+    50% {{ box-shadow: 0 0 0 5px rgba(34,197,94,0); }}
+  }}
 
   .stat {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
   .stat-label {{ font-size:13px; color:#94a3b8; }}
@@ -189,7 +194,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <div id="map"></div>
 <div id="panel">
-  <div class="badge-live"><div class="dot-live"></div> Không tự làm mới (F5 để cập nhật)</div>
+  <div class="badge-live"><div class="dot-live"></div> <span id="live-status">Đang kết nối...</span></div>
   <h2>Progress Overview</h2>
   <div class="stat"><span class="stat-label">Tổng số ô</span>      <span class="stat-value">{total}</span></div>
   <div class="stat"><span class="stat-label">Đã quét</span>       <span class="stat-value val-done">{done}</span></div>
@@ -298,6 +303,52 @@ map.on('moveend', () => {{
 map.on('zoomend', () => {{
   localStorage.setItem('map_zoom', map.getZoom());
 }});
+
+// ── Auto-reload khi file map_status.json được cập nhật ─────────────
+(function() {{
+  let lastTs = null;
+  const STATUS_URL = 'map_status.json';
+  const dot = document.querySelector('.dot-live');
+  const lbl = document.getElementById('live-status');
+
+  function setLive(active) {{
+    if (active) {{
+      dot.classList.add('active');
+      lbl.textContent = 'Tự động cập nhật (≲3s)';
+    }} else {{
+      dot.classList.remove('active');
+      lbl.textContent = 'Không có kết nối';
+    }}
+  }}
+
+  async function checkStatus() {{
+    try {{
+      const resp = await fetch(STATUS_URL + '?_=' + Date.now());
+      if (!resp.ok) {{ setLive(false); return; }}
+      const data = await resp.json();
+      setLive(true);
+      if (lastTs === null) {{
+        lastTs = data.ts;
+        return;
+      }}
+      if (data.ts !== lastTs) {{
+        lastTs = data.ts;
+        // Lưu vị trí trước khi reload
+        const c = map.getCenter();
+        localStorage.setItem('map_lat', c.lat);
+        localStorage.setItem('map_lng', c.lng);
+        localStorage.setItem('map_zoom', map.getZoom());
+        window.location.reload();
+      }}
+    }} catch (e) {{
+      setLive(false);
+    }}
+  }}
+
+  // Kiểm tra ngay lập tức rồi mỗi 3 giây
+  checkStatus();
+  setInterval(checkStatus, 3000);
+}})();
 </script>
 </body>
 </html>

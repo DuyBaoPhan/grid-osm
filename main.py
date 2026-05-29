@@ -3,7 +3,9 @@ import logging
 import os
 import signal
 import sys
+import threading
 import webbrowser
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # Đảm bảo thư mục hiện tại luôn nằm trong sys.path để tránh lỗi ModuleNotFoundError
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,6 +47,23 @@ def _setup_logging() -> None:
 
 logger = logging.getLogger(__name__)
 
+MAP_SERVER_PORT = 8765  # HTTP server phục vụ map_viewer.html qua localhost
+_http_server: ThreadingHTTPServer | None = None
+
+
+def _start_map_server(directory: str, port: int) -> ThreadingHTTPServer:
+    """Khởi chạy HTTP server nhỏ phục vụ map_viewer.html (cho phép fetch() hoạt động)."""
+    class _Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=directory, **kwargs)
+        def log_message(self, *args):  # noqa: tắt log request thừa
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', port), _Handler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    return server
+
 
 # ── Main async ───────────────────────────────────────────────
 
@@ -65,9 +84,14 @@ async def main() -> None:
                     "Delete checkpoint.json to restart.")
         return
 
-    # Mo ban do trong trinh duyet
+    # Khởi động HTTP server để phục vụ map_viewer.html qua localhost
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    global _http_server
+    _http_server = _start_map_server(project_dir, MAP_SERVER_PORT)
+
+    # Mở bản đồ trong trình duyệt (qua HTTP → fetch() hoạt động)
     map_path = _build_map(coord._all_tiles, coord._visited, coord._queued, len(coord._results), coord._discarded)
-    map_url = "file:///" + map_path.replace(os.sep, "/")
+    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/map_viewer.html"
     logger.info("Map viewer opened: %s", map_url)
     webbrowser.open(map_url)
 

@@ -40,6 +40,7 @@ EXPAND_EMPTY = False                   # True = expand cả tile trống
 CHECKPOINT_FILE = "checkpoint.json"
 RESULTS_FILE    = "results.json"
 LOG_FILE        = "scraper.log"
+STATUS_FILE     = "map_status.json"   # Dùng để HTML auto-reload khi có cập nhật
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING
