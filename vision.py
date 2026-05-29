@@ -24,33 +24,53 @@ _client = AsyncOpenAI(
     api_key="ollama",           # Ollama không cần API key thật
 )
 
+# ── System message (vai trò) ─────────────────────────────────
+SYSTEM_MESSAGE = (
+    "Bạn là công cụ OCR dùng để đọc và sao chép chính xác các nhãn chữ trên ảnh bản đồ. "
+    "Quy tắc tối thượng: chỉ ghi ra những chữ mà bạn đọc được rõ ràng từ ảnh. "
+    "Tuyệt đối không tưởng tượng, dịch, hay bịa ra bất kỳ tên nào không có trong ảnh."
+)
+
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-Bạn là chuyên gia số hóa bản đồ chuyên nghiệp. Hãy phân tích ảnh chụp bản đồ OpenStreetMap này.
+Ảnh này là ảnh chụp bản đồ OpenStreetMap của khu vực {district_name}.
 
-Bức ảnh này có kích thước 512x512 pixel. Ở CHÍNH GIỮA bức ảnh có một KHUNG QUÉT HÌNH VUÔNG MÀU XANH NEON (đường viền nét đứt màu xanh sáng, kích thước 256x256 pixel từ x=128 đến x=384, y=128 đến y=384 của ảnh).
+Biến thể của ảnh:
+- Kích thước ảnh: 256x256 pixel (toàn bộ ảnh là vùng quét cần phân tích).
+- Ảnh có thể có khung nét đứt màu xanh Neon ở viền — bỏ qua, không liên quan.
 
-Nhiệm vụ của bạn:
-1. Hãy tìm và xác định vị trí của khung quét hình vuông màu xanh Neon ở chính giữa ảnh.
-2. Đọc và trích xuất TẤT CẢ các địa điểm có tên riêng cụ thể (POI) có nhãn chữ hoặc biểu tượng (icon) nằm BÊN TRONG khung quét màu xanh Neon này.
-   - Chỉ lấy địa điểm có tên riêng rõ ràng (ví dụ: tên cửa hàng, trường học, khách sạn, quán cafe cụ thể hiển thị bằng chữ trên bản đồ).
-   - Tuyệt đối KHÔNG lấy các nhãn thể loại chung chung không có tên riêng (như: "Khách sạn", "Ngân hàng", "siêu thị", "Chùa", "Nhà thờ", "Cửa hàng", "Nhà hàng", "Đường phố", "Công viên").
-   - Tuyệt đối KHÔNG lấy bất kỳ địa điểm nào nằm hoàn toàn ngoài khung quét màu xanh Neon.
-3. Ước lượng tọa độ x, y (phần trăm từ 0 đến 100) của từng địa điểm ĐỐI VỚI KHUNG QUÉT MÀU XANH NEON:
-   - x: 0 = cạnh trái khung Neon (x=128 của ảnh), 100 = cạnh phải khung Neon (x=384 của ảnh).
-   - y: 0 = cạnh trên khung Neon (y=128 của ảnh), 100 = cạnh dưới khung Neon (y=384 của ảnh).
-4. Xác định xem vị trí hiển thị trong ảnh này có nằm HOÀN TOÀN BÊN NGOÀI {district_name} hay không.
-   Trả về "outside: true" nếu toàn bộ ảnh nằm ngoài {district_name}. Ngược lại trả về "outside: false".
+Nhiệm vụ của bạn (làm theo THỨ TỰ này):
 
-Hãy trả về kết quả theo định dạng văn bản đơn giản sau (thay thế bằng tên và tọa độ thực tế tìm được, tuyệt đối không dùng các từ "Tên địa điểm" hay giải thích nào khác):
-- Cafe A (x: 45, y: 30)
-- Store B (x: 75, y: 80)
+BƯỚC 1 — Đọc chữ trên ảnh:
+- Nhìn vào từng vị trí trên ảnh và đọc từng nhãn chữ hiển thị (tên cửa tiệm, cửa hàng, ngân hàng, trường học, quán cafe, khách sạn v.v.).
+- Sao chép NGUYÊN VĂN tên chữ như in trên bản đồ, kể cả chữ in hoa, dấu vầy, tiếng Việt hoặc tiếng Anh.
+- Nếu không đọc được rõ ràng một tên → BUỘC PHẢI bỏ qua, không đoán.
+
+BƯỚC 2 — Lọc địa điểm hợp lệ:
+- CHỈ giữ lại địa điểm có TÊN RIÊNG cụ thể (ví dụ thực tế: "Bưu điện Trung tâm Sài Gòn", "Highlands Coffee", "Vincom Center", "Trường Tiểu học Lê Lợi").
+- LOẠI BỎ hoàn toàn các nhãn thể loại chung không có tên riêng như: "Khách sạn", "Ngân hàng", "Siêu thị", "Café", "Nhà thờ", "Đường", "Công viên", "Nhà hàng", "Cửa hàng".
+- LOẠI BỎ bất kỳ tên nào bạn TỰ NGHĨ RA hoặc suy diễn — chỉ ghi được tên nào bạn đọc được từ chữ trên bản đồ.
+
+BƯỚC 3 — Ước lượng vị trí:
+- Với mỗi địa điểm hợp lệ, ước lượng toạ độ x (0=trái, 100=phải) và y (0=trên, 100=dưới) trong ảnh.
+
+BƯỚC 4 — Xác định ngoài quận:
+- Nếu toàn bộ ảnh nằm RÕ RÀNG ngoài {district_name} → outside: true.
+- Nếu nằm trong hoặc không chắc chắn → outside: false.
+
+CÁCH TRẢ LỚI (bắt buộc dùng đúng định dạng này, không giải thích thêm):
+- Bưu điện Trung tâm Sài Gòn (x: 45, y: 30)
+- Highlands Coffee (x: 75, y: 80)
 outside: false
 
-Lưu ý đặc biệt quan trọng để tránh lỗi:
-- Bạn phải trích xuất và ghi lại CHÍNH XÁC tên tiếng Việt hoặc tiếng Anh thực tế được ghi bằng chữ trên bản đồ (Ví dụ: "Bưu điện Trung tâm Sài Gòn", "Highlands Bưu Điện").
-- TUYỆT ĐỐI KHÔNG tự bịa ra tên, không tự dịch nghĩa tiếng Việt sang tiếng Anh, và không đặt tên theo chuỗi ký tự A, B, C, D (Ví dụ: KHÔNG được ghi "Cafe A", "Store B", "Coffee Shop C", "Restaurant D" nếu trên bản đồ không thực sự có chữ đó).
-- Chỉ trích xuất những địa điểm có nhãn chữ rõ ràng mà bạn đọc được trực tiếp từ ảnh. Nếu không đọc được chữ cụ thể, tuyệt đối bỏ qua.
+Nếu không có địa điểm nào hợp lệ, chỉ cần trả lời:
+outside: false
+
+NHỚ LẠI LUẬT QUAN TRỌNG NHẤT:
+✓ Chỉ ghi tên địa điểm nếu bạn ĐỌC ĐƯỢC chữ đó trực tiếp từ ảnh bản đồ.
+✕ Không được viết "Cafe A", "Store B", "Restaurant C" hay bất kỳ tên mẫu nào — đây là vi phạm nghiêm trọng.
+✕ Không tự dịch tên sang ngôn ngữ khác.
+✕ Không đoán hoặc suy diễn tên từ icon hoặc biểu tượng.
 """
 
 
@@ -72,19 +92,23 @@ async def extract_pois_from_screenshot(
                 model=OLLAMA_MODEL,
                 messages=[
                     {
+                        "role": "system",
+                        "content": SYSTEM_MESSAGE,
+                    },
+                    {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/png;base64,{img_b64}"
+                                    "url": f"data:image/jpeg;base64,{img_b64}"
                                 },
                             },
                         ],
                     }
                 ],
-                max_tokens=300,
+                max_tokens=400,
                 temperature=0.0,
             )
 
@@ -105,8 +129,18 @@ async def extract_pois_from_screenshot(
                         "y": p.get("y", 50)
                     })
 
-            logger.debug("Vision OK: %d POIs extracted, outside=%s", len(unique_pois), outside)
-            return unique_pois, outside
+            # Lọc bỏ các tên hallucination điển hình (Cafe A, Store B...)
+            filtered_pois = []
+            for p in unique_pois:
+                if _is_hallucinated_name(p["name"]):
+                    logger.warning(
+                        "  [AntiHalluc] Bỏ tên nghi hallucination: '%s'", p["name"]
+                    )
+                else:
+                    filtered_pois.append(p)
+
+            logger.debug("Vision OK: %d POIs extracted, outside=%s", len(filtered_pois), outside)
+            return filtered_pois, outside
 
         except Exception as exc:
             if attempt <= MAX_RETRIES:
@@ -121,6 +155,32 @@ async def extract_pois_from_screenshot(
                 return [], False
 
     return [], False  # unreachable but satisfies type checker
+
+
+# ── Bộ lọc tên hallucination ─────────────────────────────────
+
+# Pattern: "Cafe A", "Store B", "Restaurant C", "Coffee Shop D" v.v.
+# LLM thường bịa tên dạng [danh từ thể loại] + [chữ cái A-Z đơn lẻ hoặc số]
+_HALLUC_PATTERN = re.compile(
+    r"""^(
+        cafe|coffee|shop|store|restaurant|hotel|bank|market|church|
+        school|park|pharmacy|clinic|spa|gym|bar|pub|hostel|supermarket|
+        mall|center|centre|tower|building|office|station
+    )\s+[a-z\d]$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+# Cũng lọc pattern "[Tên] [A-Z]" tức là một từ + một chữ cái đơn lẻ ở cuối
+_SINGLE_LETTER_SUFFIX = re.compile(r'\s+[A-Z]$')
+
+def _is_hallucinated_name(name: str) -> bool:
+    """Trả về True nếu tên trông như hallucination điển hình của LLM."""
+    name = name.strip()
+    if _HALLUC_PATTERN.match(name):
+        return True
+    # "[Từ bất kỳ] [Chữ cái đơn]" — ví dụ "Store B", "Bank A"
+    if _SINGLE_LETTER_SUFFIX.search(name) and len(name.split()) <= 3:
+        return True
+    return False
 
 
 # ── JSON parser với fallback ──────────────────────────────────
@@ -198,19 +258,7 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
         except json.JSONDecodeError:
             pass
 
-    # 4. Fallback cấp cuối cùng: trích xuất tất cả chữ trong ngoặc kép
-    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text, flags=re.MULTILINE).strip()
-    fallback = re.findall(r'"([^"]{2,80})"', cleaned)
-    skip = {"pois", "outside_district", "name", "type", "lat", "lng", "x", "y"}
-    for s in fallback:
-        s_clean = s.strip().strip("[]\"' ")
-        if s_clean and s_clean.lower() not in skip:
-            pois.append({
-                "name": s_clean,
-                "x": 50,
-                "y": 50
-            })
-    if pois:
-        logger.debug("Used regex fallback, found %d items", len(pois))
-        
+    # 4. Fallback cuối: không tìm thấy POI nào — trả về rỗng thay vì đoán sắu
+    # (Xóa fallback regex trích xuất ngoặc kép vốn gây hallucination)
+    logger.debug("No POI pattern matched in LLM response.")
     return pois, outside_district
