@@ -150,6 +150,9 @@ class Coordinator:
                 len(self._all_tiles),
             )
 
+        # 6. Khởi tạo bản đồ và map_status.json ngay tại vạch xuất phát để HTML kết nối realtime lập tức
+        self._update_map()
+
     # ── Queue management ─────────────────────────────────────
 
     async def get_next_tile(self) -> Optional[TileCoord]:
