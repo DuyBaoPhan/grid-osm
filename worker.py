@@ -244,7 +244,9 @@ class Worker:
         logger.info("  [1/2] Screenshot captured -> sending to LLM...")
 
         # Nhận diện POI và cờ báo ranh giới quận
-        poi_names, outside_district = await extract_pois_from_screenshot(screenshot)
+        poi_names, outside_district = await extract_pois_from_screenshot(
+            screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM
+        )
         logger.info("  [2/2] LLM done.")
 
         # Đóng trình duyệt sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
@@ -282,12 +284,51 @@ class Worker:
                 poi_lat = dom_match["lat"]
                 poi_lng = dom_match["lng"]
             else:
-                # Fallback: toán học tile bbox từ ước lượng LLM x,y
-                x_pct = max(0.0, min(100.0, float(item.get("x", 50))))
-                y_pct = max(0.0, min(100.0, float(item.get("y", 50))))
-                poi_lat = lat_max - (y_pct / 100.0) * (lat_max - lat_min)
-                poi_lng = lng_min + (x_pct / 100.0) * (lng_max - lng_min)
-                logger.debug("  [Geo] Fallback visual coords for: %s", name)
+                # Giải quyết tọa độ từ nhãn ô lưới A1 -> C3 (GPS Grid Cell Resolver)
+                cell = str(item.get("cell", "B2")).strip().upper()
+                side = str(item.get("side", "center")).strip().lower()
+                r_idx, c_idx = 1, 1  # Mặc định là ô trung tâm B2
+                if len(cell) == 2:
+                    r_char, c_char = cell[0], cell[1]
+                    if r_char in "ABC" and c_char in "123":
+                        r_idx = "ABC".index(r_char)
+                        c_idx = "123".index(c_char)
+
+                # Sub-cell offset dựa trên vị trí (side) trong ô:
+                # sx, sy ∈ [0.0, 1.0] — tỉ lệ trong phạm vi của ô 1/3 đó
+                _SIDE_OFFSETS = {
+                    "top-left":     (0.2, 0.2),
+                    "top-center":   (0.5, 0.2),
+                    "top-right":    (0.8, 0.2),
+                    "left-center":  (0.2, 0.5),
+                    "center":       (0.5, 0.5),
+                    "right-center": (0.8, 0.5),
+                    "bottom-left":  (0.2, 0.8),
+                    "bottom-center":(0.5, 0.8),
+                    "bottom-right": (0.8, 0.8),
+                }
+                sx, sy = _SIDE_OFFSETS.get(side, (0.5, 0.5))
+
+                # x_pct, y_pct = vị trí % trong toàn bộ ảnh đã crop
+                x_pct = (c_idx + sx) * (100.0 / 3.0)
+                y_pct = (r_idx + sy) * (100.0 / 3.0)
+
+                # Chiều cao và chiều rộng của ô tile tiêu chuẩn là 256px
+                # Ảnh gửi cho LLM được crop rộng hơn: thêm padding 25px ở cả 4 cạnh (tổng kích thước 306x306px)
+                padding_lat = (25.0 / 256.0) * (lat_max - lat_min)
+                padding_lng = (25.0 / 256.0) * (lng_max - lng_min)
+
+                cropped_lat_max = lat_max + padding_lat
+                cropped_lat_min = lat_min - padding_lat
+                cropped_lng_min = lng_min - padding_lng
+                cropped_lng_max = lng_max + padding_lng
+
+                poi_lat = cropped_lat_max - (y_pct / 100.0) * (cropped_lat_max - cropped_lat_min)
+                poi_lng = cropped_lng_min + (x_pct / 100.0) * (cropped_lng_max - cropped_lng_min)
+                logger.info(
+                    "  [Geo] Resolved '%s' → cell=%s side=%s → (%.6f, %.6f) [x:%.1f%% y:%.1f%%]",
+                    name, cell, side, poi_lat, poi_lng, x_pct, y_pct
+                )
 
             # Lọc nghiêm ngặt: Chỉ giữ POI có tọa độ thực sự nằm trong khung quét (bbox) của tile hiện tại.
             eps = 1e-6
@@ -583,6 +624,59 @@ class Worker:
                     cropped_img = enhancer.enhance(1.25)
                 except Exception as enh_err:
                     logger.debug("Image enhancement failed: %s", enh_err)
+
+                # Vẽ lưới 3x3 ảo trực tiếp lên ảnh để hỗ trợ LLM định vị không gian chính xác tuyệt đối
+                try:
+                    from PIL import ImageDraw, ImageFont
+                    # Chuyển sang RGBA để vẽ bán trong suốt
+                    cropped_img = cropped_img.convert("RGBA")
+                    draw = ImageDraw.Draw(cropped_img)
+                    cw, ch = cropped_img.size
+                    
+                    # Vẽ lưới màu xanh neon dày và rõ nét hơn
+                    grid_color = (0, 210, 255, 180) # RGBA với độ mờ cao
+                    for i in range(1, 3):
+                        x = int(cw * i / 3)
+                        draw.line([(x, 0), (x, ch)], fill=grid_color, width=3)
+                    for i in range(1, 3):
+                        y = int(ch * i / 3)
+                        draw.line([(0, y), (cw, y)], fill=grid_color, width=3)
+                        
+                    # Vẽ nhãn A1 -> C3 vào góc các ô lưới để LLM định vị cực kỳ dễ dàng
+                    cells = [
+                        ("A1", 0, 0), ("A2", 1, 0), ("A3", 2, 0),
+                        ("B1", 0, 1), ("B2", 1, 1), ("B3", 2, 1),
+                        ("C1", 0, 2), ("C2", 1, 2), ("C3", 2, 2)
+                    ]
+                    
+                    # Tải font chữ rõ nét
+                    try:
+                        font = ImageFont.truetype("arial.ttf", 20)
+                    except Exception:
+                        try:
+                            font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 20)
+                        except Exception:
+                            font = ImageFont.load_default()
+
+                    for label, col, row in cells:
+                        lx = int(cw * col / 3) + 6
+                        ly = int(ch * row / 3) + 6
+                        
+                        try:
+                            l, t, r, b = draw.textbbox((lx, ly), label, font=font)
+                            rect_box = [l - 4, t - 2, r + 4, b + 2]
+                        except AttributeError:
+                            if hasattr(draw, "textsize"):
+                                w_t, h_t = draw.textsize(label, font=font)
+                            else:
+                                w_t, h_t = 16, 12
+                            rect_box = [lx - 4, ly - 2, lx + w_t + 4, ly + h_t + 2]
+                            
+                        # Vẽ hình chữ nhật nền tối làm nổi bật chữ
+                        draw.rectangle(rect_box, fill=(15, 23, 42, 220))
+                        draw.text((lx, ly), label, fill=(255, 255, 255), font=font)
+                except Exception as draw_err:
+                    logger.debug("Could not draw grid overlays on screenshot: %s", draw_err)
                 
                 rgb_img = cropped_img.convert("RGB")
                 output_bytes = io.BytesIO()

@@ -404,7 +404,7 @@ class Coordinator:
                 self._all_tiles,
                 self._visited,
                 self._queued,
-                len(self._results),
+                self._results,
                 self._discarded,
                 self._captured,
             )

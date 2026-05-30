@@ -90,7 +90,7 @@ async def main() -> None:
     _http_server = _start_map_server(project_dir, MAP_SERVER_PORT)
 
     # Mở bản đồ trong trình duyệt (qua HTTP → fetch() hoạt động)
-    map_path = _build_map(coord._all_tiles, coord._visited, coord._queued, len(coord._results), coord._discarded)
+    map_path = _build_map(coord._all_tiles, coord._visited, coord._queued, coord._results, coord._discarded)
     map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/map_viewer.html"
     logger.info("Map viewer opened: %s", map_url)
     webbrowser.open(map_url)

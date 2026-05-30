@@ -26,27 +26,60 @@ _client = AsyncOpenAI(
 
 # ── System message (vai trò) ─────────────────────────────────
 SYSTEM_MESSAGE = (
-    "Bạn là một công cụ OCR chuyên nghiệp để trích xuất tên địa điểm từ ảnh bản đồ. "
-    "Nhiệm vụ: chỉ trích xuất các TÊN RIÊNG địa điểm thực tế (ví dụ: cửa hàng, cafe, bưu điện, tòa nhà, địa danh...). "
-    "Quy tắc tối thượng: TUYỆT ĐỐI KHÔNG trích xuất tên đường phố, đường giao thông, đại lộ (như 'Hai Bà Trưng', 'Nguyễn Văn Bình', 'Lê Duẩn'...). "
-    "Tuyệt đối không đoán, không tự bịa tên mẫu."
+    "You are a professional OCR tool specialized in reading place labels from map images. "
+    "Task: extract only PROPER NAMES of real places (shops, cafes, banks, post offices, hotels, landmarks, etc.). "
+    "STRICT RULE: NEVER extract road/street names — they appear as small italic text running along road lines. "
+    "NEVER invent or hallucinate any name. If you cannot read a label clearly, skip it."
 )
 
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-Đây là ảnh bản đồ của {district_name}.
-Hãy đọc và trích xuất tất cả các tên riêng địa điểm tiếng Việt hiển thị trên ảnh bản đồ này.
+You are an AI specialized in reading place labels from map images.
+The image below is a real map divided into a 3×3 virtual grid for spatial reference.
 
-QUY TẮC CỰC KỲ QUAN TRỌNG:
-1. LOẠI BỎ hoàn toàn các tên đường phố, đường giao thông, đại lộ (ví dụ: "Hai Bà Trưng", "Nguyễn Văn Bình", "Lê Duẩn", "Đồng Khởi", "Đường...", "Street", "Rd", "Avenue"). Chỉ giữ lại điểm dịch vụ, cửa hiệu, địa danh du lịch, cơ quan.
-2. Chỉ ghi những tên địa điểm (POI) bạn thực sự đọc được trên ảnh. Không đoán, không bịa tên mẫu (Ví dụ: KHÔNG được viết "Cafe A", "Store B").
+=== MAP TILE INFO ===
+Tile: ({tx}, {ty}) @ Zoom {Z}
+Center: {center_lat:.6f}°N, {center_lng:.6f}°E
+Top-left: {lat_max:.6f}°N, {lng_min:.6f}°E
+Bottom-right: {lat_min:.6f}°N, {lng_max:.6f}°E
 
-Định dạng kết quả trả về bắt buộc (chỉ ghi kết quả này, không giải thích hay thêm bớt từ ngữ khác):
-- Tên Địa Điểm (x: tọa độ x từ 0-100, y: tọa độ y từ 0-100)
-outside: false
-Ví dụ:
-- Bưu điện Trung tâm Sài Gòn (x: 45, y: 60)
-outside: false
+=== 3×3 GRID REFERENCE ===
+The grid is already drawn on the image. Each cell is labeled at its top-left corner:
+  Row A (top):    A1 (top-left) | A2 (top-center) | A3 (top-right)
+  Row B (middle): B1 (mid-left) | B2 (center)     | B3 (mid-right)
+  Row C (bottom): C1 (bot-left) | C2 (bot-center) | C3 (bot-right)
+
+=== HOW TO DISTINGUISH POIs FROM ROAD NAMES ===
+✅ POI labels to EXTRACT (place names):
+  - Colored text labels with a map icon/symbol (blue, brown, orange, red...)
+  - Examples: "Diamond Plaza", "OCB", "Highlands Coffee", "Bưu điện Trung tâm Sài Gòn"
+  - Can be in Vietnamese, English, French, or mixed language
+  - Key: the label has a dedicated icon (building, shop, bank symbol etc.)
+
+❌ Road/street names — DO NOT extract:
+  - Small italic/gray text running along road lines
+  - Examples: "Lê Duẩn", "Nguyễn Văn Bình", "Đồng Khởi", "Hai Bà Trưng"
+  - Even if they look like a person's name, if text follows a road line → skip
+
+=== TASK ===
+Scan each cell A1→C3. For every place label CLEARLY VISIBLE on the map:
+1. Read the EXACT name as printed (keep diacritics: ả,ầ,ị,ỏ,ư,đ... e.g. "Bánh Mì" not "Banh Mi")
+2. Include ALL types — shops, cafes, banks, hotels, post offices, churches, temples, parks, monuments, squares, statues
+3. Identify the cell (A1-C3) that contains the icon or label start
+4. Identify position within that cell: "top-left"|"top-right"|"bottom-left"|"bottom-right"|"center"
+5. Skip if unclear or confidence < 0.7
+
+Return ONLY a JSON array:
+[
+  {{
+    "name": "exact name from map",
+    "type": "restaurant|cafe|bank|hotel|shop|hospital|school|post_office|parking|monument|church|park|square|landmark|other",
+    "cell": "A1|A2|A3|B1|B2|B3|C1|C2|C3",
+    "side": "top-left|top-right|bottom-left|bottom-right|center",
+    "confidence": 0.95
+  }}
+]
+No POIs visible → return: []
 """
 
 
@@ -54,13 +87,49 @@ outside: false
 
 async def extract_pois_from_screenshot(
     screenshot_bytes: bytes,
+    bbox: Tuple[float, float, float, float] = None,
+    tx: int = None,
+    ty: int = None,
+    zoom: int = None,
 ) -> Tuple[List[dict], bool]:
     """
     Gửi screenshot → Ollama → trả về tuple (list dict tên POI + vị trí, cờ outside_district).
     Tự động retry `MAX_RETRIES` lần nếu lỗi.
     """
     img_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-    prompt = _PROMPT_TEMPLATE.format(district_name=TARGET_DISTRICT)
+    
+    # Định dạng prompt với tọa độ thực địa
+    if bbox:
+        lat_min, lng_min, lat_max, lng_max = bbox
+    else:
+        import config as _cfg
+        lat_min, lng_min = _cfg.CENTER_LAT - 0.001, _cfg.CENTER_LNG - 0.001
+        lat_max, lng_max = _cfg.CENTER_LAT + 0.001, _cfg.CENTER_LNG + 0.001
+
+    # Tính toán tọa độ tâm và trung điểm lưới 3x3
+    center_lat = (lat_min + lat_max) / 2.0
+    center_lng = (lng_min + lng_max) / 2.0
+    lat_mid = center_lat
+    lng_mid = center_lng
+    
+    import config as _cfg
+    z_val = zoom if zoom is not None else getattr(_cfg, "SCREENSHOT_ZOOM", 19)
+    tx_val = tx if tx is not None else 0
+    ty_val = ty if ty is not None else 0
+
+    prompt = _PROMPT_TEMPLATE.format(
+        tx=tx_val,
+        ty=ty_val,
+        Z=z_val,
+        center_lat=center_lat,
+        center_lng=center_lng,
+        lat_max=lat_max,
+        lat_min=lat_min,
+        lng_min=lng_min,
+        lng_max=lng_max,
+        lat_mid=lat_mid,
+        lng_mid=lng_mid,
+    )
 
     for attempt in range(1, MAX_RETRIES + 2):  # 1..MAX_RETRIES+1
         try:
@@ -84,7 +153,7 @@ async def extract_pois_from_screenshot(
                         ],
                     }
                 ],
-                max_tokens=400,
+                max_tokens=800,
                 temperature=0.0,
             )
 
@@ -104,8 +173,7 @@ async def extract_pois_from_screenshot(
                     seen_pois.add(name_lower)
                     unique_pois.append({
                         "name": name_clean,
-                        "x": p.get("x", 50),
-                        "y": p.get("y", 50)
+                        "cell": p.get("cell", "B2"),
                     })
 
             # Lọc bỏ các tên nghi là tên đường hoặc hallucination điển hình
@@ -155,85 +223,150 @@ _HALLUC_PATTERN = re.compile(
 # Cũng lọc pattern "[Tên] [A-Z]" tức là một từ + một chữ cái đơn lẻ ở cuối
 _SINGLE_LETTER_SUFFIX = re.compile(r'\s+[A-Z]$')
 
+# Tập hợp các danh từ chỉ thể loại POI chung chung để lọc bỏ triệt để các hallucination một từ
+_GENERIC_POI_NAMES = {
+    "cafe", "coffee", "shop", "store", "restaurant", "hotel", "bank", "market",
+    "church", "school", "park", "pharmacy", "clinic", "spa", "gym", "bar",
+    "pub", "hostel", "supermarket", "mall", "center", "centre", "tower",
+    "building", "office", "station", "post office", "post_office", "landmark",
+    "nhà hàng", "quán ăn", "cà phê", "ngân hàng", "khách sạn", "trường học",
+    "bệnh viện", "chợ", "công viên", "nhà thờ", "siêu thị", "tòa nhà", "văn phòng",
+    "bưu điện", "trụ sở", "cửa hàng", "cửa hiệu", "hiệu thuốc", "quầy thuốc"
+}
+
 def _is_hallucinated_name(name: str) -> bool:
-    """Trả về True nếu tên trông như hallucination điển hình của LLM."""
+    """Trả về True nếu tên trông như hallucination điển hình của LLM hoặc là tên thể loại chung chung."""
     name = name.strip()
+    name_lower = name.lower()
+    
+    # 1. Lọc bỏ các từ thể loại chung chung một từ đơn độc
+    if name_lower in _GENERIC_POI_NAMES:
+        return True
+        
+    # 2. Lọc các pattern hallucinated (dạng danh từ loại + chữ cái đơn)
     if _HALLUC_PATTERN.match(name):
         return True
-    # "[Từ bất kỳ] [Chữ cái đơn]" — ví dụ "Store B", "Bank A"
+        
+    # 3. Lọc pattern "[Từ bất kỳ] [Chữ cái đơn]"
     if _SINGLE_LETTER_SUFFIX.search(name) and len(name.split()) <= 3:
         return True
+        
     return False
 
 
-# ── Bộ lọc tên đường giao thông (District 1 Streets Filter) ───
+# ── Bộ lọc tên đường giao thông (Universal Street Name Filter) ───
+# Không dùng danh sách cứng theo quận — nhận dạng bằng cấu trúc pattern
+# để hoạt động linh hoạt với mọi quận/tỉnh/thành phố.
 
-# Từ khóa liên quan đến giao thông để lọc bỏ
+# ① Từ khóa giao thông rõ ràng (tiền tố/loại đường)
 _STREET_KEYWORDS = re.compile(
-    r"\b(đường|phố|đại lộ|boulevard|avenue|street|st\.|rd\.|hẻm|ngõ|kiệt|vòng xoay|cầu|ngã tư|ngã sáu|ngã bảy|ngã ba)\b",
-    re.IGNORECASE
+    r"\b(đường|phố|đại lộ|quốc lộ|tỉnh lộ|liên tỉnh|liên huyện"
+    r"|boulevard|avenue|street|road|lane|alley|st\b|rd\b|ave\b|ln\b|blvd\b"
+    r"|hẻm|ngõ|kiệt|xóm|thôn\s+\d"
+    r"|vòng xoay|nút giao|ngã tư|ngã năm|ngã sáu|ngã bảy|ngã ba"
+    r"|cầu\s+\w|cống\s+\w"
+    r")\b",
+    re.IGNORECASE,
 )
 
-# Danh sách tên các con đường tại Quận 1 (được chuyển sang dạng không dấu để loại bỏ sai lệch dấu thanh/typo)
-_D1_STREETS_NO_ACCENT = {
-    "hai ba trung", "nguyen van binh", "le duan", "dong khoi", "ly tu trong",
-    "le thanh ton", "nguyen hue", "pasteur", "nam ky khoi nghia", "ham nghi",
-    "le loi", "nguyen thi minh khai", "ton duc thang", "cach mang thang tam",
-    "tran hung dao", "nguyen trai", "bui vien", "pham ngu lao", "de tham",
-    "nguyen du", "mac dinh chi", "phung khac khoan", "nguyen van chiem",
-    "pham ngoc thach", "vo van tan", "nguyen thi nghia", "ton that dam",
-    "huynh thuc khang", "nguyen cong tru", "pho duc chinh", "calmette",
-    "nguyen thai hoc", "ky con", "yersin", "tran dinh xu", "nguyen cu trinh",
-    "cong quynh", "mai thi luu", "dien bien phu", "nguyen binh khiem",
-    "nguyen dinh chieu", "truong dinh", "ba huyen thanh quan",
-    "suong nguyet anh", "ton that tung", "nguyen van trang", "nguyen thi dieu",
-    "huyen tran cong chua", "nguyen trung truc", "thu khoa huan", "phan chu trinh",
-    "phan boi chau", "nguyen an ninh", "le anh xuan",
-    "ton that thiep", "ngo duc ke", "ho huan nghiep", "mac thi buoi",
-    "nguyen thiep", "dong du", "thi sach", "thai van lung",
-    "chu manh trinh", "nguyen sieu", "nguyen trung ngan",
-    "vo thi sau", "thach thi thanh", "nguyen huu cau", "nguyen van thu",
-    "tran cao van", "tran quang khai", "nguyen phi khanh",
-    "dinh cong trang", "phan liem", "phan ke binh",
-    "huynh khuong ninh", "pham viet chanh", "nguyen huu canh"
-}
+# ② Cụm cần loại bỏ trước khi kiểm tra (tránh false positive)
+_FALSE_POSITIVE_PHRASES = re.compile(
+    r"\b(thành\s*phố|thành\s*thị|thị\s*xã|thị\s*trấn|tỉnh\s+\w+|quận\s+\d+|huyện\s+\w+)\b",
+    re.IGNORECASE,
+)
+
+# ③ Pattern nhận dạng cấu trúc tên đường Việt Nam KHÔNG có từ khóa tiền tố:
+#    - "Số [N]" hoặc "[N]/[M]" — đường có số hiệu (QL1, TL13, D1, D2...)
+_NUMBERED_ROAD = re.compile(
+    r"^(ql|tl|đt|nh|d|n|b|c|r|f|g|h|k|p|q|s|t|u|v|w|x|y|z)\s*\d+[a-z]?$",
+    re.IGNORECASE,
+)
+
 
 def _strip_vietnamese_accents(s: str) -> str:
     """Loại bỏ hoàn toàn dấu tiếng Việt và đưa về chữ thường."""
     s = s.lower()
-    # a
-    s = re.sub(r'[àáảãạăằắẳẵặâầấẩẫậ]', 'a', s)
-    # e
-    s = re.sub(r'[èéẻẽẹêềếểễệ]', 'e', s)
-    # i
-    s = re.sub(r'[ìíỉĩị]', 'i', s)
-    # o
-    s = re.sub(r'[òóỏõọôồốổỗộơờớởỡợ]', 'o', s)
-    # u
-    s = re.sub(r'[ùúủũụưừứửữự]', 'u', s)
-    # y
-    s = re.sub(r'[ỳýỷỹỵ]', 'y', s)
-    # d
-    s = re.sub(r'[đ]', 'd', s)
+    s = re.sub(r"[àáảãạăằắẳẵặâầấẩẫậ]", "a", s)
+    s = re.sub(r"[èéẻẽẹêềếểễệ]", "e", s)
+    s = re.sub(r"[ìíỉĩị]", "i", s)
+    s = re.sub(r"[òóỏõọôồốổỗộơờớởỡợ]", "o", s)
+    s = re.sub(r"[ùúủũụưừứửữự]", "u", s)
+    s = re.sub(r"[ỳýỷỹỵ]", "y", s)
+    s = re.sub(r"[đ]", "d", s)
     return s
 
+
 def _is_street_name(name: str) -> bool:
-    """Trả về True nếu tên truyền vào khớp với tên đường giao thông."""
+    """
+    Nhận dạng tên đường giao thông bằng pattern linh hoạt — hoạt động với
+    mọi quận/tỉnh/thành phố, không cần hardcode danh sách đường.
+
+    Logic nhận dạng:
+      1. Loại bỏ false-positive phrases (thành phố, quận, huyện...) khỏi chuỗi
+         trước khi kiểm tra, tránh nhầm "Bưu điện Thành Phố" là tên đường.
+      2. Kiểm tra từ khóa tiền tố giao thông rõ ràng (đường, phố, hẻm...).
+      3. Kiểm tra tiền tố số-hiệu đường (QL1, D3, TL13...).
+      4. Kiểm tra cấu trúc "[Tiền tố người Việt] + [Họ tên]" đứng độc lập
+         (không có icon/loại hình đi kèm) — tên đường Việt Nam thường dùng
+         họ tên anh hùng dân tộc 2-4 từ, không có từ chỉ loại hình.
+    """
     name_clean = name.strip()
+    if not name_clean:
+        return False
     name_lower = name_clean.lower()
-    
-    # 1. Nếu chứa từ khóa giao thông tiêu biểu -> Chắc chắn là tên đường
-    if _STREET_KEYWORDS.search(name_lower):
+
+    # Bước 1: bóc tách false-positive trước khi kiểm tra keyword
+    check_str = _FALSE_POSITIVE_PHRASES.sub("", name_lower).strip()
+
+    # Bước 2: từ khóa giao thông rõ ràng
+    if _STREET_KEYWORDS.search(check_str):
         return True
-        
-    # 2. Loại bỏ tiền tố "đường", "phố", "đại lộ", "hẻm" nếu có để lấy tên lõi
-    core_name = re.sub(r"^(đường|phố|đại lộ|hẻm|ngõ|kiệt)\s+", "", name_lower).strip()
-    
-    # 3. Chuyển sang không dấu để đối khớp danh sách đường Quận 1 một cách an toàn
-    no_accent_name = _strip_vietnamese_accents(core_name)
-    if no_accent_name in _D1_STREETS_NO_ACCENT:
+
+    # Bước 3: tên đường có số hiệu (D1, QL13, TL9B...)
+    no_accent = _strip_vietnamese_accents(check_str)
+    if _NUMBERED_ROAD.match(no_accent.strip()):
         return True
-        
+
+    # Bước 4: Heuristic cấu trúc tên đường Việt Nam
+    # Tên đường VN thường là: [họ] [đệm] [tên] — 2 đến 5 từ đơn, không có
+    # từ nào chỉ loại hình dịch vụ (plaza, coffee, bank, hotel...).
+    # Chỉ áp dụng khi chuỗi hoàn toàn là chữ (không có số, dấu ngoặc, ký hiệu).
+    words = check_str.split()
+    if 2 <= len(words) <= 5 and re.match(r"^[a-z\s]+$", no_accent):
+        # Kiểm tra không phải tên POI thực sự bằng cách loại trừ
+        # các từ chỉ loại hình kinh doanh/dịch vụ
+        _BUSINESS_WORDS = {
+            "plaza", "tower", "center", "centre", "mall", "market",
+            "coffee", "cafe", "hotel", "hostel", "restaurant", "clinic",
+            "hospital", "pharmacy", "bank", "school", "university",
+            "college", "church", "temple", "pagoda", "park", "garden",
+            "station", "port", "airport", "embassy", "consulate",
+            # tiếng Việt
+            "tháp", "trung tâm", "siêu thị", "chợ", "bệnh viện",
+            "trường", "đại học", "nhà thờ", "chùa", "công viên",
+            "sân bay", "bến xe", "ga", "cảng", "đại sứ quán",
+            "khách sạn", "nhà hàng", "quán", "tiệm", "cửa hàng",
+        }
+        words_set = set(no_accent.split())
+        if not words_set.intersection(_BUSINESS_WORDS):
+            # Kiểm tra thêm: tiền tố họ người Việt phổ biến dùng đặt tên đường
+            _VN_SURNAME_PREFIXES = {
+                "nguyen", "tran", "le", "pham", "huynh", "vo", "vu",
+                "dang", "bui", "do", "ho", "ngo", "duong", "ly",
+                "dinh", "truong", "phan", "luong", "chau", "luu",
+                "mai", "to", "cao", "lam", "thai", "trinh", "nhan",
+            }
+            # Họ đứng đầu: rất có thể là tên đường dạng "Nguyễn Văn X"
+            if words[0] in _VN_SURNAME_PREFIXES and len(words) >= 2:
+                return True
+            # Tiền tố nước ngoài phổ biến đặt tên đường tại VN
+            _FOREIGN_PREFIXES = {
+                "pasteur", "yersin", "calmette", "alexandre",
+                "lyautey", "gallieni", "luro",
+            }
+            if no_accent.split()[0] in _FOREIGN_PREFIXES:
+                return True
+
     return False
 
 
@@ -251,21 +384,18 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
     if re.search(r"outside\s*:\s*true", text, re.IGNORECASE) or re.search(r'"outside_district"\s*:\s*true', text, re.IGNORECASE):
         outside_district = True
 
-    # 2. Bước 1: Thử parse theo định dạng Text List mới: "- Tên (x: 45, y: 30)" hoặc "* Tên (x: 45%, y: 30%)"
-    # regex hỗ trợ dấu bullet point tùy chọn (?) giúp khớp cả trường hợp LLM không viết dấu gạch đầu dòng
-    pattern = r"(?:-|\*|\d+\.)?\s*([^(]+?)\s*\(\s*x\s*:\s*(\d+)\s*%?\s*,\s*y\s*:\s*(\d+)\s*%?\s*\)"
-    matches = re.findall(pattern, text)
+    # 2. Bước 1: Thử parse theo định dạng Text có chứa mã ô: "- Tên (cell: B2)" hoặc "- Tên [B2]"
+    pattern = r"(?:-|\*|\d+\.)?\s*([^(]+?)\s*\(cell\s*:\s*([A-C][1-3])\)"
+    matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
         for m in matches:
             name = m[0].strip()
-            # Dọn sạch các ký tự đặc biệt như ngoặc vuông, ngoặc kép, gạch ngang thừa
             name = re.sub(r"^-\s*", "", name)
             name = name.strip("[]\"' ")
             if name:
                 pois.append({
                     "name": name,
-                    "x": int(m[1]),
-                    "y": int(m[2])
+                    "cell": m[1].upper().strip()
                 })
         return pois, outside_district
 
@@ -297,15 +427,15 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
                         if name:
                             pois.append({
                                 "name": name,
-                                "x": p.get("x", 50),
-                                "y": p.get("y", 50)
+                                "cell": p.get("cell", "B2"),
+                                "side": p.get("side", "center"),
                             })
                     elif isinstance(p, str) and p.strip():
                         name = p.strip().strip("[]\"' ")
                         pois.append({
                             "name": name,
-                            "x": 50,
-                            "y": 50
+                            "cell": "B2",
+                            "side": "center",
                         })
                 if pois:
                     return pois, outside_district

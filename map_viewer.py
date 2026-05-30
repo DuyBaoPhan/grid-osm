@@ -22,6 +22,7 @@ def load_state():
     queued  = set()
     discarded = set()
     captured = set()
+    results = []
 
     if os.path.exists(config.CHECKPOINT_FILE):
         try:
@@ -34,16 +35,14 @@ def load_state():
         except Exception as e:
             print(f"[WARN] Cannot load checkpoint: {e}")
 
-    poi_count = 0
     if os.path.exists(config.RESULTS_FILE):
         try:
             with open(config.RESULTS_FILE, "r", encoding="utf-8") as f:
                 results = json.load(f)
-            poi_count = len(results)
         except Exception:
             pass
 
-    return visited, queued, poi_count, discarded, captured
+    return visited, queued, results, discarded, captured
 
 
 # ── Tao GeoJSON polygons cho cac tile ────────────────────────
@@ -301,6 +300,32 @@ function renderGeoJson(geoJsonData) {{
 // Vẽ lưới ban đầu
 renderGeoJson(geojson);
 
+// Vẽ các địa điểm (POIs) đã tìm thấy
+const poisData = {pois_data};
+const poiLayerGroup = L.layerGroup().addTo(map);
+
+function renderPois(poisList) {{
+  poiLayerGroup.clearLayers();
+  poisList.forEach(poi => {{
+    L.circleMarker([poi.lat, poi.lng], {{
+      radius: 6,
+      color: '#0f172a',
+      weight: 1.5,
+      opacity: 1.0,
+      fillColor: '#f43f5e',
+      fillOpacity: 0.95
+    }}).addTo(poiLayerGroup).bindPopup(`
+      <div style="font-family: 'Segoe UI', sans-serif; color: #0f172a; padding: 2px 0; min-width: 150px;">
+        <span style="font-size: 10px; font-weight: 700; color: #f43f5e; text-transform: uppercase; letter-spacing: 0.05em;">${{poi.type || 'Địa điểm'}}</span>
+        <h4 style="margin: 4px 0 2px 0; font-size: 13px; font-weight: 700; line-height: 1.3;">${{poi.name}}</h4>
+        <span style="font-size: 10px; color: #64748b;">Tọa độ: ${{poi.lat.toFixed(6)}}, ${{poi.lng.toFixed(6)}}</span>
+      </div>
+    `);
+  }});
+}}
+
+renderPois(poisData);
+
 function updateUI(data) {{
   document.querySelector('.val-done').textContent = data.done;
   document.querySelector('.val-discarded').textContent = data.discarded;
@@ -396,7 +421,7 @@ def build_and_save(
     all_tiles,
     visited: set,
     queued: set,
-    poi_count: int,
+    pois: list,
     discarded: set = None,
     captured: set = None,
     out_path: str = _MAP_OUT,
@@ -415,6 +440,7 @@ def build_and_save(
     disc    = len(discarded)
     pending = max(0, total - done - q_count)
     pct     = done / total * 100 if total else 0
+    poi_count = len(pois)
 
     # Đọc ranh giới hành chính của quận từ cache nếu có để vẽ lên bản đồ
     boundary_geojson_str = "null"
@@ -436,6 +462,21 @@ def build_and_save(
     geojson_obj = build_geojson(all_tiles, visited, queued, discarded, captured)
     geojson_str = json.dumps(geojson_obj)
     display_zoom = max(10, config.ZOOM_LEVEL - 6)
+
+    # Trích xuất dữ liệu POI nhẹ nhàng để nhúng trực tiếp vẽ lên bản đồ
+    formatted_pois = []
+    for p in pois:
+        lat = p.get("approx_lat")
+        lng = p.get("approx_lng")
+        name = p.get("name", "Không rõ tên")
+        if lat is not None and lng is not None:
+            formatted_pois.append({
+                "name": name,
+                "lat": lat,
+                "lng": lng,
+                "type": p.get("type", "Địa điểm")
+            })
+    pois_json_str = json.dumps(formatted_pois, ensure_ascii=False)
 
     # Ghi map_data.json để map_viewer.html fetch động (tránh load lại trang gây trắng màn hình)
     import time
@@ -478,6 +519,7 @@ def build_and_save(
         geojson=geojson_str,
         boundary_geojson=boundary_geojson_str,
         page_ts=current_ts,
+        pois_data=pois_json_str,
     )
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -485,7 +527,7 @@ def build_and_save(
 
 
 def main():
-    visited, queued, poi_count, discarded, captured = load_state()
+    visited, queued, results, discarded, captured = load_state()
 
     print("Generating tile grid...")
     all_tiles = generate_all_tiles(
@@ -507,8 +549,9 @@ def main():
     print(f"  Queued : {q_count}")
     print(f"  Pending: {pending}")
     print(f"  Done   : {pct:.2f}%")
+    print(f"  POIs   : {len(results)}")
 
-    out_path = build_and_save(all_tiles, visited, queued, poi_count, discarded, captured)
+    out_path = build_and_save(all_tiles, visited, queued, results, discarded, captured)
     print(f"\nMap saved: {out_path}")
     print("Opening in browser...")
     webbrowser.open(f"file:///{out_path.replace(os.sep, '/')}")
