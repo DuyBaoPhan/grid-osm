@@ -365,7 +365,7 @@ class Coordinator:
             }
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            os.replace(tmp, self.checkpoint_file)
+            _robust_replace(tmp, self.checkpoint_file)
         except Exception as exc:
             logger.warning("Could not save checkpoint: %s", exc)
 
@@ -390,7 +390,7 @@ class Coordinator:
         try:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self._results, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.results_file)
+            _robust_replace(tmp, self.results_file)
         except Exception as exc:
             logger.warning("Could not save results: %s", exc)
 
@@ -424,7 +424,7 @@ class Coordinator:
             tmp = status_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            os.replace(tmp, status_path)
+            _robust_replace(tmp, status_path)
         except Exception as exc:
             logger.debug("Could not write map_status.json: %s", exc)
 
@@ -468,3 +468,18 @@ def _sort_by_distance(
         return (clat - center_lat) ** 2 + (clng - center_lng) ** 2
 
     return sorted(tiles, key=_dist)
+
+
+def _robust_replace(src: str, dst: str, max_retries: int = 5, delay: float = 0.05) -> None:
+    """
+    Thay thế file an toàn với retry tự động để chống lỗi khóa file (WinError 5) trên Windows.
+    """
+    import time
+    for i in range(max_retries):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError:
+            if i == max_retries - 1:
+                raise
+            time.sleep(delay)

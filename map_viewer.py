@@ -198,10 +198,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <h2>Progress Overview</h2>
   <div class="stat"><span class="stat-label">Tổng số ô</span>      <span class="stat-value">{total}</span></div>
   <div class="stat"><span class="stat-label">Đã quét</span>       <span class="stat-value val-done">{done}</span></div>
-  <div class="stat"><span class="stat-label">Bỏ qua (Ngoài quận)</span> <span class="stat-value val-discarded">{discarded}</span></div>
-  <div class="stat"><span class="stat-label">Đang chờ (Queue)</span> <span class="stat-value val-queued">{queued}</span></div>
-  <div class="stat"><span class="stat-label">Chưa xử lý</span>      <span class="stat-value val-pending">{pending}</span></div>
-  <div class="stat"><span class="stat-label">Đã tìm thấy (POI)</span> <span class="stat-value val-poi">{pois}</span></div>
+  <div class="stat"><span class="stat-label">Đang chờ</span> <span class="stat-value val-queued">{queued}</span></div>
+  <div class="stat"><span class="stat-label">Đã tìm thấy</span> <span class="stat-value val-poi">{pois}</span></div>
 
   <div class="progress-bar"><div class="progress-fill" style="width:{pct:.2f}%"></div></div>
   <div class="progress-label">{pct:.2f}% hoàn thành</div>
@@ -211,8 +209,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="legend">
     <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div> Đã quét (Done)</div>
     <div class="leg-item"><div class="leg-dot" style="background:#00d2ff"></div> Đang xử lý AI (Captured)</div>
-    <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div> Đang chờ xử lý (Queue)</div>
-    <div class="leg-item"><div class="leg-dot" style="background:#475569"></div> Chưa bắt đầu (Pending)</div>
   </div>
 </div>
 <script>
@@ -326,9 +322,9 @@ map.on('zoomend', () => {{
   localStorage.setItem('map_zoom', map.getZoom());
 }});
 
-// ── Auto-update mượt mà in-place qua map_data.json ─────────────
+// ── Auto-update mượt mà in-place qua map_data.json hoặc map_data.js ─────────────
 (function() {{
-  let lastTs = null;
+  let lastTs = {page_ts};
   const DATA_URL = 'map_data.json';
   const dot = document.querySelector('.dot-live');
   const lbl = document.getElementById('live-status');
@@ -344,23 +340,43 @@ map.on('zoomend', () => {{
   }}
 
   async function checkStatus() {{
-    try {{
-      const resp = await fetch(DATA_URL + '?_=' + Date.now());
-      if (!resp.ok) {{ setLive(false); return; }}
-      const data = await resp.json();
-      setLive(true);
-      if (lastTs === null) {{
-        lastTs = data.ts;
-        return;
+    if (window.location.protocol === 'file:') {{
+      // Dùng thẻ script động để bypass CORS bảo mật của file://
+      const oldScript = document.getElementById('map-data-script');
+      if (oldScript) {{
+        oldScript.remove();
       }}
-      if (data.ts !== lastTs) {{
-        lastTs = data.ts;
-        // Cập nhật UI và bản đồ mượt mà in-place, không reload trang!
-        updateUI(data);
-        renderGeoJson(data.geojson);
+      const script = document.createElement('script');
+      script.id = 'map-data-script';
+      script.src = 'map_data.js?_=' + Date.now();
+      script.onload = function() {{
+        if (window.MAP_DATA) {{
+          setLive(true);
+          const data = window.MAP_DATA;
+          if (data.ts !== lastTs) {{
+            window.location.reload();
+          }}
+        }} else {{
+          setLive(false);
+        }}
+      }};
+      script.onerror = function() {{
+        setLive(false);
+      }};
+      document.body.appendChild(script);
+    }} else {{
+      // Dùng fetch thông thường khi chạy qua HTTP Server
+      try {{
+        const resp = await fetch(DATA_URL + '?_=' + Date.now());
+        if (!resp.ok) {{ setLive(false); return; }}
+        const data = await resp.json();
+        setLive(true);
+        if (data.ts !== lastTs) {{
+          window.location.reload();
+        }}
+      }} catch (e) {{
+        setLive(false);
       }}
-    }} catch (e) {{
-      setLive(false);
     }}
   }}
 
@@ -423,10 +439,11 @@ def build_and_save(
 
     # Ghi map_data.json để map_viewer.html fetch động (tránh load lại trang gây trắng màn hình)
     import time
+    current_ts = int(time.time() * 1000)
     map_data_path = os.path.join(os.path.dirname(out_path), "map_data.json")
     try:
         data = {
-            "ts": time.time(),
+            "ts": current_ts,
             "total": total,
             "done": done,
             "queued": q_count,
@@ -440,6 +457,14 @@ def build_and_save(
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, map_data_path)
+
+        # Ghi map_data.js để nhúng trực tiếp dạng script tag bypass CORS của file://
+        map_js_path = os.path.join(os.path.dirname(out_path), "map_data.js")
+        js_content = f"window.MAP_DATA = {json.dumps(data, ensure_ascii=False)};"
+        tmp_js = map_js_path + ".tmp"
+        with open(tmp_js, "w", encoding="utf-8") as f:
+            f.write(js_content)
+        os.replace(tmp_js, map_js_path)
     except Exception:
         pass
 
@@ -452,6 +477,7 @@ def build_and_save(
         target_district=config.TARGET_DISTRICT,
         geojson=geojson_str,
         boundary_geojson=boundary_geojson_str,
+        page_ts=current_ts,
     )
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
