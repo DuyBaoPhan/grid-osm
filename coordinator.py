@@ -429,7 +429,6 @@ class Coordinator:
             logger.debug("Could not write map_status.json: %s", exc)
 
     # ── Internal helpers ─────────────────────────────────────
-
     def _find_frontier_tiles(self) -> Set[TileCoord]:
         """
         Tìm các tile chưa xử lý kề với các tile đã xử lý (frontier BFS).

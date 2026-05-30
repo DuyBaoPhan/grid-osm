@@ -252,47 +252,69 @@ if (boundaryGeojson) {{
 }}
 
 const geojson = {geojson};
-let processedGeojson = {{ type: "FeatureCollection", features: [] }};
+let geoJsonLayer = null;
 
-if (typeof boundaryGeojson !== 'undefined' && boundaryGeojson && typeof turf !== 'undefined') {{
-  const boundaryPoly = boundaryGeojson.geometry;
-  
-  geojson.features.forEach(f => {{
-    try {{
-      const tilePoly = f.geometry;
-      
-      // 1. Tính phần giao nhau (nằm TRONG ranh giới quận) -> Giữ nguyên thuộc tính Done
-      const insideIntersection = turf.intersect(turf.feature(tilePoly), turf.feature(boundaryPoly));
-      if (insideIntersection) {{
-        const insideFeature = JSON.parse(JSON.stringify(f));
-        insideFeature.geometry = insideIntersection.geometry;
-        processedGeojson.features.push(insideFeature);
+function renderGeoJson(geoJsonData) {{
+  if (geoJsonLayer) {{
+    map.removeLayer(geoJsonLayer);
+  }}
+
+  let processedGeojson = {{ type: "FeatureCollection", features: [] }};
+
+  if (typeof boundaryGeojson !== 'undefined' && boundaryGeojson && typeof turf !== 'undefined') {{
+    const boundaryPoly = boundaryGeojson.geometry;
+    
+    geoJsonData.features.forEach(f => {{
+      try {{
+        const tilePoly = f.geometry;
+        
+        // 1. Tính phần giao nhau (nằm TRONG ranh giới quận) -> Giữ nguyên thuộc tính Done
+        const insideIntersection = turf.intersect(turf.feature(tilePoly), turf.feature(boundaryPoly));
+        if (insideIntersection) {{
+          const insideFeature = JSON.parse(JSON.stringify(f));
+          insideFeature.geometry = insideIntersection.geometry;
+          processedGeojson.features.push(insideFeature);
+        }}
+
+      }} catch (err) {{
+        processedGeojson.features.push(f);
       }}
+    }});
+  }} else {{
+    processedGeojson = geoJsonData;
+  }}
 
-    }} catch (err) {{
-      processedGeojson.features.push(f);
-    }}
-  }});
-}} else {{
-  processedGeojson = geojson;
+  geoJsonLayer = L.geoJSON(processedGeojson, {{
+    style: f => ({{
+      fillColor: f.properties.color, 
+      fillOpacity: f.properties.color === 'url(#stripes)' ? 0.90 : 0.80, 
+      color: f.properties.color === 'url(#stripes)' ? '#ff3355' : (f.properties.status === 'captured' ? '#00d2ff' : '#00ff66'), 
+      weight: 3.0, 
+      opacity: 1.0, 
+    }}),
+    onEachFeature: (f, layer) => {{
+      const p = f.properties;
+      layer.bindTooltip(
+        `Tile (${{p.tx}}, ${{p.ty}}) &mdash; <b>${{p.status === 'discarded' ? 'Ngoài ranh giới' : p.status}}</b>`,
+        {{ className: 'tile-tooltip', sticky: true }}
+      );
+    }},
+  }}).addTo(map);
 }}
 
-L.geoJSON(processedGeojson, {{
-  style: f => ({{
-    fillColor: f.properties.color, 
-    fillOpacity: f.properties.color === 'url(#stripes)' ? 0.90 : 0.80, 
-    color: f.properties.color === 'url(#stripes)' ? '#ff3355' : (f.properties.status === 'captured' ? '#00d2ff' : '#00ff66'), 
-    weight: 3.0, 
-    opacity: 1.0, 
-  }}),
-  onEachFeature: (f, layer) => {{
-    const p = f.properties;
-    layer.bindTooltip(
-      `Tile (${{p.tx}}, ${{p.ty}}) &mdash; <b>${{p.status === 'discarded' ? 'Ngoài ranh giới' : p.status}}</b>`,
-      {{ className: 'tile-tooltip', sticky: true }}
-    );
-  }},
-}}).addTo(map);
+// Vẽ lưới ban đầu
+renderGeoJson(geojson);
+
+function updateUI(data) {{
+  document.querySelector('.val-done').textContent = data.done;
+  document.querySelector('.val-discarded').textContent = data.discarded;
+  document.querySelector('.val-queued').textContent = data.queued;
+  document.querySelector('.val-pending').textContent = data.pending;
+  document.querySelector('.val-poi').textContent = data.pois;
+
+  document.querySelector('.progress-fill').style.width = data.pct.toFixed(2) + '%';
+  document.querySelector('.progress-label').textContent = data.pct.toFixed(2) + '% hoàn thành';
+}}
 
 // Tu dong luu trang thai map khi keo, zoom
 map.on('moveend', () => {{
@@ -304,17 +326,17 @@ map.on('zoomend', () => {{
   localStorage.setItem('map_zoom', map.getZoom());
 }});
 
-// ── Auto-reload khi file map_status.json được cập nhật ─────────────
+// ── Auto-update mượt mà in-place qua map_data.json ─────────────
 (function() {{
   let lastTs = null;
-  const STATUS_URL = 'map_status.json';
+  const DATA_URL = 'map_data.json';
   const dot = document.querySelector('.dot-live');
   const lbl = document.getElementById('live-status');
 
   function setLive(active) {{
     if (active) {{
       dot.classList.add('active');
-      lbl.textContent = 'Tự động cập nhật (≲3s)';
+      lbl.textContent = 'Tự động cập nhật (≲2s)';
     }} else {{
       dot.classList.remove('active');
       lbl.textContent = 'Không có kết nối';
@@ -323,7 +345,7 @@ map.on('zoomend', () => {{
 
   async function checkStatus() {{
     try {{
-      const resp = await fetch(STATUS_URL + '?_=' + Date.now());
+      const resp = await fetch(DATA_URL + '?_=' + Date.now());
       if (!resp.ok) {{ setLive(false); return; }}
       const data = await resp.json();
       setLive(true);
@@ -333,21 +355,18 @@ map.on('zoomend', () => {{
       }}
       if (data.ts !== lastTs) {{
         lastTs = data.ts;
-        // Lưu vị trí trước khi reload
-        const c = map.getCenter();
-        localStorage.setItem('map_lat', c.lat);
-        localStorage.setItem('map_lng', c.lng);
-        localStorage.setItem('map_zoom', map.getZoom());
-        window.location.reload();
+        // Cập nhật UI và bản đồ mượt mà in-place, không reload trang!
+        updateUI(data);
+        renderGeoJson(data.geojson);
       }}
     }} catch (e) {{
       setLive(false);
     }}
   }}
 
-  // Kiểm tra ngay lập tức rồi mỗi 3 giây
+  // Kiểm tra mỗi 2 giây
   checkStatus();
-  setInterval(checkStatus, 3000);
+  setInterval(checkStatus, 2000);
 }})();
 </script>
 </body>
@@ -398,8 +417,31 @@ def build_and_save(
         except Exception:
             pass
 
-    geojson_str = json.dumps(build_geojson(all_tiles, visited, queued, discarded, captured))
+    geojson_obj = build_geojson(all_tiles, visited, queued, discarded, captured)
+    geojson_str = json.dumps(geojson_obj)
     display_zoom = max(10, config.ZOOM_LEVEL - 6)
+
+    # Ghi map_data.json để map_viewer.html fetch động (tránh load lại trang gây trắng màn hình)
+    import time
+    map_data_path = os.path.join(os.path.dirname(out_path), "map_data.json")
+    try:
+        data = {
+            "ts": time.time(),
+            "total": total,
+            "done": done,
+            "queued": q_count,
+            "discarded": disc,
+            "pending": pending,
+            "pois": poi_count,
+            "pct": pct,
+            "geojson": geojson_obj
+        }
+        tmp = map_data_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, map_data_path)
+    except Exception:
+        pass
 
     html = HTML_TEMPLATE.format(
         total=total, done=done, queued=q_count, discarded=disc,

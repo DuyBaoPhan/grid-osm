@@ -17,6 +17,8 @@ import os
 import random
 import time
 import sys
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # Điều hướng import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +43,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DemoSimulation")
 
+MAP_SERVER_PORT = 8765
+_http_server = None
+
+def _start_map_server(directory: str, port: int) -> ThreadingHTTPServer:
+    """Khởi chạy HTTP server nhỏ phục vụ map_viewer.html (cho phép fetch() hoạt động)."""
+    class _Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=directory, **kwargs)
+        def log_message(self, *args):  # tắt log request thừa
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', port), _Handler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    return server
+
 # Ghi đè file lưu dữ liệu để tránh làm hỏng file kết quả thật của người dùng
 config.CHECKPOINT_FILE = "checkpoint_demo.json"
 config.RESULTS_FILE = "results_demo.json"
@@ -55,6 +73,7 @@ MOCK_POI_NAMES = [
 ]
 
 async def run_simulation():
+    global _http_server
     # Dọn dẹp checkpoint demo cũ để chạy mới tinh
     for f in [config.CHECKPOINT_FILE, config.RESULTS_FILE, config.CHECKPOINT_FILE + ".tmp", config.RESULTS_FILE + ".tmp"]:
         if os.path.exists(f):
@@ -81,84 +100,102 @@ async def run_simulation():
         logger.error("Không có tile nào trong đa giác Quận 1! Hãy kiểm tra file ranh giới.")
         return
 
-    # Tự động mở map_viewer.html trên trình duyệt để người dùng xem trực tiếp
-    map_url = "file:///" + os.path.abspath("map_viewer.html").replace(os.sep, "/")
+    # Khởi động HTTP server phục vụ map_viewer.html qua localhost
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    _http_server = _start_map_server(project_dir, MAP_SERVER_PORT)
+
+    # Mở bản đồ trong trình duyệt (qua HTTP → fetch() hoạt động hoàn hảo và tự động reload)
+    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/map_viewer.html"
     import webbrowser
     webbrowser.open(map_url)
-    logger.info("Đã mở bản đồ theo dõi Live: %s", map_url)
+    logger.info("Đã mở bản đồ theo dõi Live qua Localhost (cho phép Tự động cập nhật): %s", map_url)
     logger.info("Lời khuyên: Hãy đặt cửa sổ trình duyệt và cửa sổ Terminal cạnh nhau để xem hiệu ứng!")
     logger.info("Bắt đầu quét sau 3 giây...")
     await asyncio.sleep(3.0)
 
     start_time = time.time()
-    idx = 0
 
-    # Vòng lặp giống hệt worker thật trong main.py:
-    #   get_next_tile() → xử lý → report_result() → coordinator tự expand neighbor
-    # Không pre-sort, không biết trước thứ tự — hoàn toàn giống real crawl!
-    while True:
-        tile = await coord.get_next_tile()
-
-        if tile is None:
-            # Queue tạm trống — chờ một chút (giống worker.py)
-            await asyncio.sleep(0.05)
+    # Hàm đại diện cho vòng đời của 1 worker giả lập
+    async def worker_simulation_task(worker_id: int):
+        while True:
             tile = await coord.get_next_tile()
+
             if tile is None:
-                # Thực sự hết việc
-                break
+                # Queue tạm trống — chờ một chút (giống worker.py)
+                await asyncio.sleep(0.05)
+                tile = await coord.get_next_tile()
+                if tile is None:
+                    # Thực sự hết việc
+                    break
 
-        idx += 1
-        tx, ty = tile
+            tx, ty = tile
 
-        # 1. Lấy tọa độ tâm tile để sinh POI ảo
-        clat, clng = tile_center(tx, ty, config.ZOOM_LEVEL)
+            # 1. Lấy tọa độ tâm tile để sinh POI ảo
+            clat, clng = tile_center(tx, ty, config.ZOOM_LEVEL)
 
-        # 2. Giả lập thời gian worker chụp ảnh và phân tích
-        delay = random.uniform(0.06, 0.15)
-        await asyncio.sleep(delay)
+            # 2. Báo cáo CAPTURED (Đang chụp/chờ gửi LLM) -> Sẽ hiện màu xanh Neon Blue trên bản đồ
+            await coord.report_captured(tile)
+            
+            # Giả lập thời gian worker mở Chromium, di chuyển bản đồ và vẽ khung quét
+            await asyncio.sleep(0.1)
 
-        # 3. Tạo POI giả lập
-        pois = []
-        # Tỷ lệ 60% tìm thấy 1-3 địa điểm trong ô
-        if random.random() < 0.60:
-            num_pois = random.randint(1, 3)
-            selected_names = random.sample(MOCK_POI_NAMES, num_pois)
-            for name in selected_names:
-                poi_lat = clat + random.uniform(-0.0002, 0.0002)
-                poi_lng = clng + random.uniform(-0.0002, 0.0002)
-                pois.append({
-                    "name": f"{name} (Demo)",
-                    "approx_lat": poi_lat,
-                    "approx_lng": poi_lng,
-                    "tile_x": tx,
-                    "tile_y": ty,
-                })
+            # 3. Tạo POI giả lập
+            pois = []
+            # Tỷ lệ 60% tìm thấy 1-3 địa điểm trong ô
+            if random.random() < 0.60:
+                num_pois = random.randint(1, 3)
+                selected_names = random.sample(MOCK_POI_NAMES, num_pois)
+                for name in selected_names:
+                    poi_lat = clat + random.uniform(-0.0002, 0.0002)
+                    poi_lng = clng + random.uniform(-0.0002, 0.0002)
+                    pois.append({
+                        "name": f"{name} (Demo)",
+                        "approx_lat": poi_lat,
+                        "approx_lng": poi_lng,
+                        "tile_x": tx,
+                        "tile_y": ty,
+                    })
 
-        # 4. Không giả lập outside_district — coordinator đã tự geo-verify
-        #    chỉ tile trong polygon Quận 1 mới có trong queue
-        outside_district = False
+            # 4. Không giả lập outside_district — coordinator đã tự geo-verify
+            #    chỉ tile trong polygon Quận 1 mới có trong queue
+            outside_district = False
 
-        # 5. Báo kết quả cho coordinator — tự động expand neighbor vào queue
-        neighbors = [
-            (tx + dx, ty + dy)
-            for dx in [-1, 0, 1] for dy in [-1, 0, 1]
-            if not (dx == 0 and dy == 0)
-        ]
-        await coord.report_result(tile, pois, neighbors, outside_district)
+            # Giả lập thời gian LLM nhận diện hình ảnh
+            await asyncio.sleep(0.15)
 
-        # 6. Log tiến độ ra console
-        total_done = len(coord._visited)
-        total_tiles = len(coord._all_tiles)
-        pct = (total_done / total_tiles) * 100 if total_tiles else 0
-        speed = idx / (time.time() - start_time) * 60  # tiles/minute
-        remaining = total_tiles - total_done
-        eta_sec = remaining / (speed / 60) if speed > 0 else 0
+            # 5. Báo kết quả cho coordinator (DONE) -> Chuyển sang xanh lá trên bản đồ và expand hàng xóm
+            neighbors = [
+                (tx + dx, ty + dy)
+                for dx in [-1, 0, 1] for dy in [-1, 0, 1]
+                if not (dx == 0 and dy == 0)
+            ]
+            await coord.report_result(tile, pois, neighbors, outside_district)
 
-        status_text = f"ĐÃ QUÉT (+{len(pois)} POIs)"
-        logger.info(
-            " Tiến trình: %d/%d (%d%%) | Ô (%d, %d) -> %s | Tốc độ: %.0f ô/phút | Còn lại: %.0fs",
-            idx, total_tiles, int(pct), tile[0], tile[1], status_text, speed, eta_sec
-        )
+            # 6. Log tiến độ ra console
+            total_done = len(coord._visited)
+            total_tiles = len(coord._all_tiles)
+            pct = (total_done / total_tiles) * 100 if total_tiles else 0
+            elapsed = time.time() - start_time
+            speed = total_done / elapsed * 60 if elapsed > 0 else 0  # tiles/minute
+            remaining = total_tiles - total_done
+            eta_sec = remaining / (speed / 60) if speed > 0 else 0
+
+            status_text = f"ĐÃ QUÉT (+{len(pois)} POIs)"
+            logger.info(
+                " [Worker %d] %d/%d (%d%%) | Ô (%d, %d) -> %s | Tốc độ gộp: %.0f ô/phút | Còn lại: %.0fs",
+                worker_id, total_done, total_tiles, int(pct), tile[0], tile[1], status_text, speed, eta_sec
+            )
+
+    # Khởi chạy song song 4 workers giả lập
+    num_simulation_workers = 4
+    logger.info("Khởi chạy %d worker giả lập song song để tăng tốc độ quét...", num_simulation_workers)
+    
+    simulation_tasks = [
+        asyncio.create_task(worker_simulation_task(i))
+        for i in range(num_simulation_workers)
+    ]
+    
+    await asyncio.gather(*simulation_tasks)
 
     elapsed = time.time() - start_time
     logger.info("=" * 60)
@@ -168,10 +205,15 @@ async def run_simulation():
     logger.info("  POIs giả lập   : %d địa điểm", len(coord._results))
     logger.info("  File kết quả   : %s", config.RESULTS_FILE)
     logger.info("=" * 60)
-    logger.info("Hãy tải lại (F5) trang trình duyệt bản đồ để xem toàn bộ kết quả nhé!")
+
+    # Đóng HTTP server
+    if _http_server:
+        _http_server.shutdown()
 
 if __name__ == "__main__":
     try:
         asyncio.run(run_simulation())
     except KeyboardInterrupt:
         logger.warning("\n[!] Đã dừng giả lập bằng Ctrl+C.")
+        if _http_server:
+            _http_server.shutdown()

@@ -44,7 +44,6 @@ QUY TẮC CỰC KỲ QUAN TRỌNG:
 Định dạng kết quả trả về bắt buộc (chỉ ghi kết quả này, không giải thích hay thêm bớt từ ngữ khác):
 - Tên Địa Điểm (x: tọa độ x từ 0-100, y: tọa độ y từ 0-100)
 outside: false
-
 Ví dụ:
 - Bưu điện Trung tâm Sài Gòn (x: 45, y: 60)
 outside: false
