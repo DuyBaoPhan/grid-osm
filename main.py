@@ -7,8 +7,9 @@ import threading
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# Đảm bảo thư mục hiện tại luôn nằm trong sys.path để tránh lỗi ModuleNotFoundError
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Đảm bảo src/ luôn nằm trong sys.path để tìm thấy các module
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))
 
 # Fix Windows terminal encoding (cp1252 không hỗ trợ tiếng Việt có dấu)
 import io

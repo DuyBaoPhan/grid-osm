@@ -414,7 +414,7 @@ map.on('zoomend', () => {{
 </html>
 """
 
-_MAP_OUT = os.path.join(os.path.dirname(__file__), "map_viewer.html")
+_MAP_OUT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "map_viewer.html")
 
 
 def build_and_save(

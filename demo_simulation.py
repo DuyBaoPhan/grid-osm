@@ -20,8 +20,9 @@ import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# Điều hướng import
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Đảm bảo src/ luôn nằm trong sys.path để tìm thấy các module
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))
 
 import config
 from coordinator import Coordinator
@@ -60,8 +61,8 @@ def _start_map_server(directory: str, port: int) -> ThreadingHTTPServer:
     return server
 
 # Ghi đè file lưu dữ liệu để tránh làm hỏng file kết quả thật của người dùng
-config.CHECKPOINT_FILE = "checkpoint_demo.json"
-config.RESULTS_FILE = "results_demo.json"
+config.CHECKPOINT_FILE = os.path.join(_PROJECT_ROOT, "checkpoint_demo.json")
+config.RESULTS_FILE = os.path.join(_PROJECT_ROOT, "results_demo.json")
 config.TARGET_DISTRICT = "Quận 1"
 
 # Danh sách một số tên địa điểm ảo để giả lập kết quả POI phong phú

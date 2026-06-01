@@ -4,6 +4,11 @@
 # Chỉnh sửa file này để điều chỉnh hành vi scraper.
 # =============================================================
 
+from pathlib import Path
+
+# Root directory của project (thư mục cha của src/)
+BASE_DIR = Path(__file__).parent.parent
+
 # ── Ollama / Local LLM ───────────────────────────────────────
 OLLAMA_API_BASE   = "http://localhost:11434/v1"
 OLLAMA_MODEL      = "qwen2.5vl:3b"           # Tên model 3B siêu nhẹ của Qwen2.5-VL
@@ -26,7 +31,7 @@ TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM t�
 # ── Screenshot ───────────────────────────────────────────────
 SCREENSHOT_W = 1024
 SCREENSHOT_H = 768
-SCREENSHOT_DIR = "screenshots"          # thư mục lưu ảnh debug (tùy chọn)
+SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True                # Đổi thành True để lưu ảnh xuống ổ đĩa!
 
 # ── Map load ─────────────────────────────────────────────────
@@ -37,10 +42,10 @@ PAGE_SETTLE_MS     = 1_500            # ms — chờ sau networkidle
 EXPAND_EMPTY = False                   # True = expand cả tile trống
 
 # ── File I/O ─────────────────────────────────────────────────
-CHECKPOINT_FILE = "checkpoint.json"
-RESULTS_FILE    = "results.json"
-LOG_FILE        = "scraper.log"
-STATUS_FILE     = "map_status.json"   # Dùng để HTML auto-reload khi có cập nhật
+CHECKPOINT_FILE = str(BASE_DIR / "checkpoint.json")
+RESULTS_FILE    = str(BASE_DIR / "results.json")
+LOG_FILE        = str(BASE_DIR / "scraper.log")
+STATUS_FILE     = str(BASE_DIR / "map_status.json")   # Dùng để HTML auto-reload khi có cập nhật
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING
