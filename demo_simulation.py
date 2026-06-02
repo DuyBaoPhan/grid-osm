@@ -138,7 +138,7 @@ async def run_simulation():
             await coord.report_captured(tile)
             
             # Giả lập thời gian worker mở Chromium, di chuyển bản đồ và vẽ khung quét
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.2)
 
             # 3. Tạo POI giả lập
             pois = []
@@ -162,7 +162,7 @@ async def run_simulation():
             outside_district = False
 
             # Giả lập thời gian LLM nhận diện hình ảnh
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(1.8)
 
             # 5. Báo kết quả cho coordinator (DONE) -> Chuyển sang xanh lá trên bản đồ và expand hàng xóm
             neighbors = [
@@ -187,9 +187,9 @@ async def run_simulation():
                 worker_id, total_done, total_tiles, int(pct), tile[0], tile[1], status_text, speed, eta_sec
             )
 
-    # Khởi chạy song song 4 workers giả lập
-    num_simulation_workers = 4
-    logger.info("Khởi chạy %d worker giả lập song song để tăng tốc độ quét...", num_simulation_workers)
+    # Khởi chạy song song 1 worker giả lập cho chạy chậm từ từ
+    num_simulation_workers = 1
+    logger.info("Khởi chạy %d worker giả lập để quét từ từ dễ quan sát...", num_simulation_workers)
     
     simulation_tasks = [
         asyncio.create_task(worker_simulation_task(i))

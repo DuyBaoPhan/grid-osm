@@ -376,7 +376,7 @@ class Worker:
                     name, poi_lat, poi_lng
                 )
 
-        # 8 hàng xóm
+        # 8 hàng xóm trong lưới tọa độ custom
         neighbors: List[TileCoord] = [
             (tx + dx, ty + dy)
             for dx in [-1, 0, 1]

@@ -43,70 +43,79 @@ def _std_tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, fl
     return lat_min, lng_min, lat_max, lng_max
 
 
-# ── Shift Calculation to center exactly on the Epicenter ──────
-# We calculate the offset so that the tile containing (CENTER_LAT, CENTER_LNG)
-# is centered exactly on (CENTER_LAT, CENTER_LNG).
+# ── Custom Grid coordinates for Perfect Edge-to-Edge Tiling ──
 
-_tx_c, _ty_c = _std_lat_lng_to_tile(config.CENTER_LAT, config.CENTER_LNG, config.ZOOM_LEVEL)
-_lat_c, _lng_c = _std_tile_center(_tx_c, _ty_c, config.ZOOM_LEVEL)
-OFFSET_LAT = config.CENTER_LAT - _lat_c
-OFFSET_LNG = config.CENTER_LNG - _lng_c
+_n = 2 ** config.ZOOM_LEVEL
+_cx_frac = (config.CENTER_LNG + 180.0) / 360.0 * _n
+_lat_rad = math.radians(config.CENTER_LAT)
+_cy_frac = (1.0 - math.asinh(math.tan(_lat_rad)) / math.pi) / 2.0 * _n
 
-
-# ── Shifted API functions ────────────────────────────────────
 
 def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
-    """Chuyển tọa độ địa lý → chỉ số tile OSM (tx, ty) dịch chuyển."""
-    return _std_lat_lng_to_tile(lat - OFFSET_LAT, lng - OFFSET_LNG, zoom)
-
-
-def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
-    """Trả về tọa độ tâm của tile dịch chuyển (lat, lng)."""
-    lat, lng = _std_tile_center(tx, ty, zoom)
-    return lat + OFFSET_LAT, lng + OFFSET_LNG
-
-
-def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    """Trả về bounding box của tile dịch chuyển (lat_min, lng_min, lat_max, lng_max)."""
-    lat_min, lng_min, lat_max, lng_max = _std_tile_bbox(tx, ty, zoom)
-    return (
-        lat_min + OFFSET_LAT,
-        lng_min + OFFSET_LNG,
-        lat_max + OFFSET_LAT,
-        lng_max + OFFSET_LNG
-    )
-
-
-def tile_viewport_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    """
-    Trả về bounding box thực tế của viewport worker (SCREENSHOT_W x SCREENSHOT_H CSS pixels)
-    xoay quanh tâm của tile (tx, ty).
-    """
-    lat, lng = tile_center(tx, ty, zoom)
-    
+    """Chuyển tọa độ địa lý → chỉ số grid (tx, ty) custom gần nhất."""
     n = 2 ** zoom
-    
     cx_frac = (lng + 180.0) / 360.0 * n
     lat_rad = math.radians(lat)
     cy_frac = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
     
-    dx = config.SCREENSHOT_W / 512.0
-    dy = config.SCREENSHOT_H / 512.0
+    step_x = 4.0
+    step_y = config.SCREENSHOT_H / 256.0
     
-    x_min = cx_frac - dx
-    x_max = cx_frac + dx
-    y_min = cy_frac - dy
-    y_max = cy_frac + dy
+    tx = int(round((cx_frac - _cx_frac) / step_x))
+    ty = int(round((cy_frac - _cy_frac) / step_y))
+    return tx, ty
+
+
+def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
+    """
+    Trả về tọa độ tâm của custom grid cell (tx, ty) dịch chuyển.
+    tx: bước nhảy ngang (mỗi bước = 1024 px = 4.0 tile units)
+    ty: bước nhảy dọc (mỗi bước = SCREENSHOT_H px = SCREENSHOT_H/256 tile units)
+    """
+    step_x = 4.0
+    step_y = config.SCREENSHOT_H / 256.0
     
-    def _y_to_lat(y_frac: float) -> float:
-        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_frac / n))))
+    x_c = _cx_frac + tx * step_x
+    y_c = _cy_frac + ty * step_y
+    
+    def _y_to_lat(y_f: float) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_f / _n))))
         
-    lng_min = x_min / n * 360.0 - 180.0
-    lng_max = x_max / n * 360.0 - 180.0
+    lng = x_c / _n * 360.0 - 180.0
+    lat = _y_to_lat(y_c)
+    return lat, lng
+
+
+def tile_viewport_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
+    """
+    Trả về bounding box thực tế của custom grid cell (tx, ty)
+    tiếp giáp khít mép (edge-to-edge) 0% gap và 0% overlap.
+    """
+    step_x = 4.0
+    step_y = config.SCREENSHOT_H / 256.0
+    
+    x_c = _cx_frac + tx * step_x
+    y_c = _cy_frac + ty * step_y
+    
+    x_min = x_c - 2.0
+    x_max = x_c + 2.0
+    y_min = y_c - (step_y / 2.0)
+    y_max = y_c + (step_y / 2.0)
+    
+    def _y_to_lat(y_f: float) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_f / _n))))
+        
+    lng_min = x_min / _n * 360.0 - 180.0
+    lng_max = x_max / _n * 360.0 - 180.0
     lat_max = _y_to_lat(y_min)
     lat_min = _y_to_lat(y_max)
     
     return lat_min, lng_min, lat_max, lng_max
+
+
+def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
+    """Trả về bounding box giống tile_viewport_bbox."""
+    return tile_viewport_bbox(tx, ty, zoom)
 
 
 # ── Radius-based tile set ────────────────────────────────────
@@ -272,23 +281,33 @@ def generate_all_tiles(
                     lat_min, lat_max, lng_min, lng_max
                 )
                 
-                tx1, ty1 = lat_lng_to_tile(lat_min, lng_min, zoom)
-                tx2, ty2 = lat_lng_to_tile(lat_max, lng_max, zoom)
-                tx_min, tx_max = min(tx1, tx2), max(tx1, tx2)
-                ty_min, ty_max = min(ty1, ty2), max(ty1, ty2)
+                # Chuyển boundary lat/lng sang fractional tile coordinates
+                x1 = (lng_min + 180.0) / 360.0 * _n
+                x2 = (lng_max + 180.0) / 360.0 * _n
                 
-                logger.info(
-                    "Generating tiles within district boundary grid box: tx=[%d, %d], ty=[%d, %d]",
-                    tx_min, tx_max, ty_min, ty_max
-                )
+                def _lat_to_y(lt: float) -> float:
+                    return (1.0 - math.asinh(math.tan(math.radians(lt))) / math.pi) / 2.0 * _n
+                
+                y1 = _lat_to_y(lat_min)
+                y2 = _lat_to_y(lat_max)
+                
+                x_min_frac, x_max_frac = min(x1, x2), max(x1, x2)
+                y_min_frac, y_max_frac = min(y1, y2), max(y1, y2)
+                
+                step_x = 4.0
+                step_y = config.SCREENSHOT_H / 256.0
+                
+                # Tính phạm vi chỉ số tx, ty quanh tâm
+                tx_min = int(math.floor((x_min_frac - _cx_frac) / step_x))
+                tx_max = int(math.ceil((x_max_frac - _cx_frac) / step_x))
+                ty_min = int(math.floor((y_min_frac - _cy_frac) / step_y))
+                ty_max = int(math.ceil((y_max_frac - _cy_frac) / step_y))
                 
                 tiles: List[Tuple[int, int]] = []
                 for tx in range(tx_min, tx_max + 1):
                     for ty in range(ty_min, ty_max + 1):
                         clat, clng = tile_center(tx, ty, zoom)
-                        # Phủ kín hoàn hảo ranh giới: chỉ cần tâm hoặc bất kỳ góc nào của ô
-                        # nằm trong đa giác quận thì chấp nhận ô đó thuộc quận để quét.
-                        t_lat_min, t_lng_min, t_lat_max, t_lng_max = tile_bbox(tx, ty, zoom)
+                        t_lat_min, t_lng_min, t_lat_max, t_lng_max = tile_viewport_bbox(tx, ty, zoom)
                         corners = [
                             (t_lat_min, t_lng_min),
                             (t_lat_min, t_lng_max),
@@ -304,15 +323,17 @@ def generate_all_tiles(
 
     # Fallback to circle radius
     logger.info("Falling back to traditional circular radius-based tile generation.")
-    cx_t, cy_t = lat_lng_to_tile(center_lat, center_lng, zoom)
     tile_r = km_to_tile_radius(radius_km, center_lat, zoom)
 
+    step_x = 4.0
+    step_y = config.SCREENSHOT_H / 256.0
+    
+    tx_r = int(math.ceil(tile_r / step_x))
+    ty_r = int(math.ceil(tile_r / step_y))
+
     tiles = []
-    for dy in range(-tile_r, tile_r + 1):
-        for dx in range(-tile_r, tile_r + 1):
-            tx, ty = cx_t + dx, cy_t + dy
-            if tx < 0 or ty < 0:
-                continue
+    for ty in range(-ty_r, ty_r + 1):
+        for tx in range(-tx_r, tx_r + 1):
             clat, clng = tile_center(tx, ty, zoom)
             if _haversine(center_lat, center_lng, clat, clng) <= radius_km:
                 tiles.append((tx, ty))
