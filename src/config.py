@@ -28,11 +28,14 @@ CENTER_LNG       = 106.70003066390481
 RADIUS_KM        = 3.0                  # Bán kính 3km để bao phủ toàn bộ Quận 1
 TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM tự động nhận diện biên giới và bỏ qua vùng ngoài quận
 
-# ── Screenshot ───────────────────────────────────────────────
-SCREENSHOT_W = 1024
-SCREENSHOT_H = 768
+# ── Screenshot / Tile (đã chuyển sang OSM Tile API) ────────────────────────────────────
+OSM_TILE_URL   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"  # Direct tile API
+TILE_UPSCALE   = 2               # Upscale 256×256 → 512×512 trước khi gửi LLM
+GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 19
+SCREENSHOT_W   = 1024            # Chỉ dùng cho DOM extraction (không còn crop tile)
+SCREENSHOT_H   = 713
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
-SAVE_SCREENSHOTS = True                # Đổi thành True để lưu ảnh xuống ổ đĩa!
+SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
 
 # ── Map load ─────────────────────────────────────────────────
 PAGE_LOAD_TIMEOUT  = 20_000            # ms — timeout goto()

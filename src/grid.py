@@ -77,6 +77,38 @@ def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
     )
 
 
+def tile_viewport_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
+    """
+    Trả về bounding box thực tế của viewport worker (SCREENSHOT_W x SCREENSHOT_H CSS pixels)
+    xoay quanh tâm của tile (tx, ty).
+    """
+    lat, lng = tile_center(tx, ty, zoom)
+    
+    n = 2 ** zoom
+    
+    cx_frac = (lng + 180.0) / 360.0 * n
+    lat_rad = math.radians(lat)
+    cy_frac = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+    
+    dx = config.SCREENSHOT_W / 512.0
+    dy = config.SCREENSHOT_H / 512.0
+    
+    x_min = cx_frac - dx
+    x_max = cx_frac + dx
+    y_min = cy_frac - dy
+    y_max = cy_frac + dy
+    
+    def _y_to_lat(y_frac: float) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_frac / n))))
+        
+    lng_min = x_min / n * 360.0 - 180.0
+    lng_max = x_max / n * 360.0 - 180.0
+    lat_max = _y_to_lat(y_min)
+    lat_min = _y_to_lat(y_max)
+    
+    return lat_min, lng_min, lat_max, lng_max
+
+
 # ── Radius-based tile set ────────────────────────────────────
 
 def km_to_tile_radius(km: float, lat: float, zoom: int) -> int:

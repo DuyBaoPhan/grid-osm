@@ -34,48 +34,56 @@ SYSTEM_MESSAGE = (
 
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-You are an AI specialized in reading place labels from map images.
-The image below is a real map divided into a 3×3 virtual grid for spatial reference.
+You are an AI specialized in reading place labels and finding their precise icon positions from map images.
+The image below is a clean map screenshot centered exactly at a known GPS coordinate.
 
 === MAP TILE INFO ===
 Tile: ({tx}, {ty}) @ Zoom {Z}
-Center: {center_lat:.6f}°N, {center_lng:.6f}°E
-Top-left: {lat_max:.6f}°N, {lng_min:.6f}°E
-Bottom-right: {lat_min:.6f}°N, {lng_max:.6f}°E
+Center GPS: {center_lat:.6f}°N, {center_lng:.6f}°E
 
-=== 3×3 GRID REFERENCE ===
-The grid is already drawn on the image. Each cell is labeled at its top-left corner:
-  Row A (top):    A1 (top-left) | A2 (top-center) | A3 (top-right)
-  Row B (middle): B1 (mid-left) | B2 (center)     | B3 (mid-right)
-  Row C (bottom): C1 (bot-left) | C2 (bot-center) | C3 (bot-right)
+=== IMAGE RESOLUTION & COORDINATES ===
+- Width: {img_w} pixels
+- Height: {img_h} pixels
+- Center: ({center_x:.1f}, {center_y:.1f}) (This corresponds exactly to the Center GPS {center_lat:.6f}°N, {center_lng:.6f}°E)
+- Top-left corner: (0, 0)
+- Bottom-right corner: ({img_w}, {img_h})
 
 === HOW TO DISTINGUISH POIs FROM ROAD NAMES ===
 ✅ POI labels to EXTRACT (place names):
   - Colored text labels with a map icon/symbol (blue, brown, orange, red...)
-  - Examples: "Diamond Plaza", "OCB", "Highlands Coffee", "Bưu điện Trung tâm Sài Gòn"
-  - Can be in Vietnamese, English, French, or mixed language
-  - Key: the label has a dedicated icon (building, shop, bank symbol etc.)
+  - Key: the label has a dedicated icon (building, shop, bank symbol, post office symbol, food/beverage cup etc.)
+  - Examples: "Highlands Coffee", "Bưu điện Trung tâm Sài Gòn", "OCB", "Circle K"
 
 ❌ Road/street names — DO NOT extract:
   - Small italic/gray text running along road lines
-  - Examples: "Lê Duẩn", "Nguyễn Văn Bình", "Đồng Khởi", "Hai Bà Trưng"
-  - Even if they look like a person's name, if text follows a road line → skip
+  - Examples: "Lê Duẩn", "Nguyễn Văn Bình", "Hai Bà Trưng", "Đồng Khởi"
+
+=== COORDINATE GUIDE ===
+To locate the colored icon center precisely on this {img_w}x{img_h} image:
+- Locate the exact center of the colored graphic icon/marker itself (the graphic symbol, e.g. the green envelope icon, coffee cup, bank symbol etc.).
+- Use the actual physical pixels of the image as the coordinates (0 to {img_w} for x, and 0 to {img_h} for y).
+- If the icon is physically above the center of the image, y MUST be less than {center_y:.1f}.
+- If the icon is physically to the left of the center, x MUST be less than {center_x:.1f}.
+- Estimate x and y based on the actual visual position of the icon graphic in physical pixels.
 
 === TASK ===
-Scan each cell A1→C3. For every place label CLEARLY VISIBLE on the map:
+Scan the clean map image. For every place label CLEARLY VISIBLE on the map:
 1. Read the EXACT name as printed (keep diacritics: ả,ầ,ị,ỏ,ư,đ... e.g. "Bánh Mì" not "Banh Mi")
-2. Include ALL types — shops, cafes, banks, hotels, post offices, churches, temples, parks, monuments, squares, statues
-3. Identify the cell (A1-C3) that contains the icon or label start
-4. Identify position within that cell: "top-left"|"top-right"|"bottom-left"|"bottom-right"|"center"
-5. Skip if unclear or confidence < 0.7
+2. Identify the precise pixel coordinate (x, y) in physical pixels of the POI's icon/symbol.
+   DO NOT locate the text label. Locate the exact center of the colored graphic icon/marker itself.
+   If the graphic icon/marker is missing (extremely rare), use the center of its text label.
+3. First, write a one-sentence "reasoning" analyzing the spatial position of the icon relative to the center ({center_x:.1f}, {center_y:.1f}).
+4. Then output the precise "x" and "y" coordinates in physical pixels.
+5. CRITICAL: NEVER copy the example values ({ex_x:.1f}, {ex_y:.1f}) unless the icon is visually located at that exact location. Always estimate the real coordinates (x, y) from the visual position of the icon.
 
 Return ONLY a JSON array:
 [
   {{
     "name": "exact name from map",
     "type": "restaurant|cafe|bank|hotel|shop|hospital|school|post_office|parking|monument|church|park|square|landmark|other",
-    "cell": "A1|A2|A3|B1|B2|B3|C1|C2|C3",
-    "side": "top-left|top-right|bottom-left|bottom-right|center",
+    "reasoning": "The icon is located in the {ex_tb} and to the {ex_lr} of the center ({center_x:.1f}, {center_y:.1f}), so its estimated position is x={ex_x:.1f}, y={ex_y:.1f}.",
+    "x": {ex_x:.1f},
+    "y": {ex_y:.1f},
     "confidence": 0.95
   }}
 ]
@@ -91,6 +99,7 @@ async def extract_pois_from_screenshot(
     tx: int = None,
     ty: int = None,
     zoom: int = None,
+    img_metadata: dict = None,
 ) -> Tuple[List[dict], bool]:
     """
     Gửi screenshot → Ollama → trả về tuple (list dict tên POI + vị trí, cờ outside_district).
@@ -106,16 +115,35 @@ async def extract_pois_from_screenshot(
         lat_min, lng_min = _cfg.CENTER_LAT - 0.001, _cfg.CENTER_LNG - 0.001
         lat_max, lng_max = _cfg.CENTER_LAT + 0.001, _cfg.CENTER_LNG + 0.001
 
-    # Tính toán tọa độ tâm và trung điểm lưới 3x3
+    # Tính toán tọa độ tâm và trung điểm
     center_lat = (lat_min + lat_max) / 2.0
     center_lng = (lng_min + lng_max) / 2.0
-    lat_mid = center_lat
-    lng_mid = center_lng
     
     import config as _cfg
     z_val = zoom if zoom is not None else getattr(_cfg, "SCREENSHOT_ZOOM", 19)
     tx_val = tx if tx is not None else 0
     ty_val = ty if ty is not None else 0
+
+    if img_metadata is None:
+        img_metadata = {
+            "width": 612,
+            "height": 612,
+            "center_x": 306.0,
+            "center_y": 306.0,
+            "scale": 2.0,
+        }
+
+    img_w = img_metadata.get("width", 612)
+    img_h = img_metadata.get("height", 612)
+    center_x = img_metadata.get("center_x", img_w / 2.0)
+    center_y = img_metadata.get("center_y", img_h / 2.0)
+
+    # Sinh tọa độ ví dụ ngẫu nhiên động để chặn đứng model học vẹt ví dụ tĩnh
+    import random
+    ex_x = round(random.uniform(img_w * 0.25, img_w * 0.75), 1)
+    ex_y = round(random.uniform(img_h * 0.25, img_h * 0.75), 1)
+    lr_desc = "left" if ex_x < center_x else "right"
+    tb_desc = "upper area, clearly above" if ex_y < center_y else "lower area, clearly below"
 
     prompt = _PROMPT_TEMPLATE.format(
         tx=tx_val,
@@ -123,12 +151,14 @@ async def extract_pois_from_screenshot(
         Z=z_val,
         center_lat=center_lat,
         center_lng=center_lng,
-        lat_max=lat_max,
-        lat_min=lat_min,
-        lng_min=lng_min,
-        lng_max=lng_max,
-        lat_mid=lat_mid,
-        lng_mid=lng_mid,
+        img_w=img_w,
+        img_h=img_h,
+        center_x=center_x,
+        center_y=center_y,
+        ex_x=ex_x,
+        ex_y=ex_y,
+        ex_lr=lr_desc,
+        ex_tb=tb_desc,
     )
 
     for attempt in range(1, MAX_RETRIES + 2):  # 1..MAX_RETRIES+1
@@ -171,10 +201,14 @@ async def extract_pois_from_screenshot(
                 name_lower = name_clean.lower()
                 if name_clean and name_lower not in seen_pois:
                     seen_pois.add(name_lower)
-                    unique_pois.append({
+                    poi_entry = {
                         "name": name_clean,
-                        "cell": p.get("cell", "B2"),
-                    })
+                    }
+                    if "x" in p:
+                        poi_entry["x"] = p["x"]
+                    if "y" in p:
+                        poi_entry["y"] = p["y"]
+                    unique_pois.append(poi_entry)
 
             # Lọc bỏ các tên nghi là tên đường hoặc hallucination điển hình
             filtered_pois = []
@@ -375,7 +409,7 @@ def _is_street_name(name: str) -> bool:
 def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
     """
     Parse kết quả từ response của LLM.
-    Hỗ trợ cả định dạng Text List mới và JSON fallback cũ.
+    Chỉ trích xuất JSON của danh sách POIs.
     """
     pois = []
     outside_district = False
@@ -384,22 +418,7 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
     if re.search(r"outside\s*:\s*true", text, re.IGNORECASE) or re.search(r'"outside_district"\s*:\s*true', text, re.IGNORECASE):
         outside_district = True
 
-    # 2. Bước 1: Thử parse theo định dạng Text có chứa mã ô: "- Tên (cell: B2)" hoặc "- Tên [B2]"
-    pattern = r"(?:-|\*|\d+\.)?\s*([^(]+?)\s*\(cell\s*:\s*([A-C][1-3])\)"
-    matches = re.findall(pattern, text, re.IGNORECASE)
-    if matches:
-        for m in matches:
-            name = m[0].strip()
-            name = re.sub(r"^-\s*", "", name)
-            name = name.strip("[]\"' ")
-            if name:
-                pois.append({
-                    "name": name,
-                    "cell": m[1].upper().strip()
-                })
-        return pois, outside_district
-
-    # 3. Bước 2: Trích xuất JSON từ text nếu LLM xuất JSON (tìm cặp ngoặc nhọn hoặc vuông ngoài cùng)
+    # 2. Trích xuất JSON từ text nếu LLM xuất JSON (tìm cặp ngoặc nhọn hoặc vuông ngoài cùng)
     start_bracket = min(
         [idx for idx in [text.find('{'), text.find('[')] if idx != -1],
         default=-1
@@ -425,23 +444,24 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
                         name = str(p.get("name", "")).strip()
                         name = name.strip("[]\"' ")
                         if name:
-                            pois.append({
+                            poi_dict = {
                                 "name": name,
-                                "cell": p.get("cell", "B2"),
-                                "side": p.get("side", "center"),
-                            })
+                            }
+                            if "x" in p:
+                                poi_dict["x"] = p["x"]
+                            if "y" in p:
+                                poi_dict["y"] = p["y"]
+                            pois.append(poi_dict)
                     elif isinstance(p, str) and p.strip():
                         name = p.strip().strip("[]\"' ")
                         pois.append({
                             "name": name,
-                            "cell": "B2",
-                            "side": "center",
                         })
                 if pois:
                     return pois, outside_district
         except json.JSONDecodeError:
             pass
 
-    # 4. Fallback cuối: không tìm thấy POI nào
-    logger.debug("No POI pattern matched in LLM response.")
+    # 3. Fallback cuối: không tìm thấy POI nào
+    logger.debug("No POI JSON found in LLM response.")
     return pois, outside_district

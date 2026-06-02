@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import config
-from grid import generate_all_tiles, tile_bbox
+from grid import generate_all_tiles, tile_bbox, tile_viewport_bbox
 
 
 # ── Doc du lieu hien tai ─────────────────────────────────────
@@ -60,7 +60,7 @@ def build_geojson(all_tiles, visited, queued, discarded=None, captured=None):
         if tile not in visited and tile not in discarded and tile not in captured:
             continue
 
-        lat_min, lng_min, lat_max, lng_max = tile_bbox(tx, ty, config.ZOOM_LEVEL)
+        lat_min, lng_min, lat_max, lng_max = tile_viewport_bbox(tx, ty, config.ZOOM_LEVEL)
 
         # Xac dinh trang thai
         if tile in discarded:

@@ -106,11 +106,14 @@ def export_json(data: list, path: str) -> None:
     # Chỉ giữ các field cần thiết
     clean = [
         {
-            "name":     item["name"].strip(),
-            "lat":      item.get("approx_lat"),
-            "lng":      item.get("approx_lng"),
-            "tile_x":   item.get("tile_x"),
-            "tile_y":   item.get("tile_y"),
+            "name":             item["name"].strip(),
+            "lat":              item.get("approx_lat"),
+            "lng":              item.get("approx_lng"),
+            "tile_x":           item.get("tile_x"),
+            "tile_y":           item.get("tile_y"),
+            "distance_pixels":  item.get("distance_pixels"),
+            "distance_meters":  item.get("distance_meters"),
+            "bearing_degrees":  item.get("bearing_degrees"),
         }
         for item in data
     ]
@@ -120,17 +123,20 @@ def export_json(data: list, path: str) -> None:
 
 
 def export_csv(data: list, path: str) -> None:
-    fieldnames = ["name", "lat", "lng", "tile_x", "tile_y"]
+    fieldnames = ["name", "lat", "lng", "tile_x", "tile_y", "distance_pixels", "distance_meters", "bearing_degrees"]
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for item in data:
             writer.writerow({
-                "name":   item["name"].strip(),
-                "lat":    item.get("approx_lat", ""),
-                "lng":    item.get("approx_lng", ""),
-                "tile_x": item.get("tile_x", ""),
-                "tile_y": item.get("tile_y", ""),
+                "name":             item["name"].strip(),
+                "lat":              item.get("approx_lat", ""),
+                "lng":              item.get("approx_lng", ""),
+                "tile_x":           item.get("tile_x", ""),
+                "tile_y":           item.get("tile_y", ""),
+                "distance_pixels":  item.get("distance_pixels", ""),
+                "distance_meters":  item.get("distance_meters", ""),
+                "bearing_degrees":  item.get("bearing_degrees", ""),
             })
     logger.info("CSV exported → %s (%d records)", path, len(data))
 
@@ -239,6 +245,49 @@ def clean_and_deduplicate(
         if exact_coords:
             item["approx_lat"] = exact_coords[0]
             item["approx_lng"] = exact_coords[1]
+            
+            # Tính toán lại distance_meters và bearing_degrees từ tọa độ Geocoding Nominatim mới so với tâm tile
+            try:
+                import math
+                from grid import tile_center
+                import config
+                
+                tx = item.get("tile_x")
+                ty = item.get("tile_y")
+                if tx is not None and ty is not None:
+                    # Lấy tọa độ tâm tile
+                    tile_lat, tile_lng = tile_center(tx, ty, config.ZOOM_LEVEL)
+                    
+                    # Tính khoảng cách thực địa (mét) và góc quay bearing (độ)
+                    meters_per_degree_lat = 111132.9
+                    meters_per_degree_lng = 111412.8 * math.cos(math.radians(tile_lat))
+                    
+                    dlat = exact_coords[0] - tile_lat
+                    dlng = exact_coords[1] - tile_lng
+                    
+                    dy = dlat * meters_per_degree_lat
+                    dx = dlng * meters_per_degree_lng
+                    
+                    new_dist = math.sqrt(dx**2 + dy**2)
+                    new_bearing = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
+                    
+                    item["distance_meters"] = round(new_dist, 1)
+                    item["bearing_degrees"] = round(new_bearing, 1)
+                    
+                    # Tính toán lại distance_pixels tương ứng với distance_meters mới
+                    scale = 2.0  # Mặc định scale = 2.0
+                    # Số mét trên mỗi CSS pixel ở vĩ độ hiện tại
+                    R_earth = 6378137.0
+                    tile_width_meters = (2 * math.pi * R_earth * math.cos(math.radians(tile_lat))) / (2 ** config.SCREENSHOT_ZOOM)
+                    meters_per_css_pixel = tile_width_meters / 256.0
+                    
+                    # Quy đổi khoảng cách mét sang pixel vật lý
+                    new_dist_css = new_dist / meters_per_css_pixel
+                    new_dist_phys = new_dist_css * scale
+                    item["distance_pixels"] = round(new_dist_phys, 1)
+            except Exception as e:
+                logger.debug("Failed to recalculate distance/bearing after geocoding: %s", e)
+                
             geocoded_count += 1
         else:
             logger.info("  [Keep Visual] Keeping estimated coordinates: %.6f, %.6f", approx_lat, approx_lng)

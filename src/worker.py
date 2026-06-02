@@ -30,7 +30,7 @@ from config import (
     ZOOM_LEVEL,
     HEADLESS,
 )
-from grid import tile_center, tile_bbox
+from grid import tile_center, tile_bbox, tile_viewport_bbox
 from vision import extract_pois_from_screenshot
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class Worker:
         await self._page.add_init_script("""
             const style = document.createElement('style');
             style.textContent = `
-                #header, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent {
+                header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container {
                     display: none !important;
                 }
                 #map {
@@ -202,16 +202,17 @@ class Worker:
         """
         tx, ty = tile
         lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
-        bbox = tile_bbox(tx, ty, ZOOM_LEVEL)
+        bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
         url = _OSM_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
 
         # Đảm bảo khởi động trình duyệt cho ô quét này
         await self._start_browser()
 
         browser_coords = {}
+        img_metadata = {}
         for attempt in range(1, MAX_RETRIES + 2):
             try:
-                screenshot = await self._capture_screenshot(url, bbox)
+                screenshot, img_metadata = await self._capture_screenshot(url, bbox)
                 # Trích xuất toàn bộ nhãn và tọa độ hiển thị trong DOM hiện tại
                 browser_coords = await self._extract_all_visible_poi_coords_from_browser()
                 # Báo cáo ngay cho coordinator rằng đã chụp ảnh xong để vẽ ô màu xanh neon blue lên bản đồ!
@@ -238,14 +239,14 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        # Lưu screenshot debug nếu cần
+        # Lưu screenshot gốc (không có lưới) nếu cần debug
         if SAVE_SCREENSHOTS:
             await self._save_screenshot(screenshot, tx, ty)
         logger.info("  [1/2] Screenshot captured -> sending to LLM...")
 
-        # Nhận diện POI và cờ báo ranh giới quận
+        # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ, không dùng lưới cho LLM)
         poi_names, outside_district = await extract_pois_from_screenshot(
-            screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM
+            screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
         logger.info("  [2/2] LLM done.")
 
@@ -273,62 +274,85 @@ class Worker:
             return None
 
         pois = []
+        pois = []
         for item in poi_names:
             name = item.get("name", "").strip()
             if not name:
                 continue
 
             dom_match = find_dom_match(name, browser_coords)
-            if dom_match:
-                # Tọa độ lấy từ Leaflet DOM — chính xác tuyệt đối
-                poi_lat = dom_match["lat"]
-                poi_lng = dom_match["lng"]
-            else:
-                # Giải quyết tọa độ từ nhãn ô lưới A1 -> C3 (GPS Grid Cell Resolver)
-                cell = str(item.get("cell", "B2")).strip().upper()
-                side = str(item.get("side", "center")).strip().lower()
-                r_idx, c_idx = 1, 1  # Mặc định là ô trung tâm B2
-                if len(cell) == 2:
-                    r_char, c_char = cell[0], cell[1]
-                    if r_char in "ABC" and c_char in "123":
-                        r_idx = "ABC".index(r_char)
-                        c_idx = "123".index(c_char)
+            
+            try:
+                import math
+                img_w = img_metadata.get("width", 612)
+                img_h = img_metadata.get("height", 612)
+                center_x = img_metadata.get("center_x", img_w / 2.0)
+                center_y = img_metadata.get("center_y", img_h / 2.0)
+                scale = img_metadata.get("scale", 2.0)
+                crop_x1 = img_metadata.get("crop_x1", 0.0)
+                crop_y1 = img_metadata.get("crop_y1", 0.0)
 
-                # Sub-cell offset dựa trên vị trí (side) trong ô:
-                # sx, sy ∈ [0.0, 1.0] — tỉ lệ trong phạm vi của ô 1/3 đó
-                _SIDE_OFFSETS = {
-                    "top-left":     (0.2, 0.2),
-                    "top-center":   (0.5, 0.2),
-                    "top-right":    (0.8, 0.2),
-                    "left-center":  (0.2, 0.5),
-                    "center":       (0.5, 0.5),
-                    "right-center": (0.8, 0.5),
-                    "bottom-left":  (0.2, 0.8),
-                    "bottom-center":(0.5, 0.8),
-                    "bottom-right": (0.8, 0.8),
-                }
-                sx, sy = _SIDE_OFFSETS.get(side, (0.5, 0.5))
+                # 1. Vision: Lấy tọa độ x, y của icon
+                if dom_match:
+                    # Nếu khớp DOM, quy đổi từ vị trí CSS trong DOM (cx, cy) sang tọa độ pixel thực trên ảnh crop
+                    cx = dom_match.get("cx", center_x / scale)
+                    cy = dom_match.get("cy", center_y / scale)
+                    x_val = cx * scale - crop_x1
+                    y_val = cy * scale - crop_y1
+                    poi_lat = dom_match["lat"]
+                    poi_lng = dom_match["lng"]
+                else:
+                    x_val = float(item.get("x", center_x))
+                    y_val = float(item.get("y", center_y))
 
-                # x_pct, y_pct = vị trí % trong toàn bộ ảnh đã crop
-                x_pct = (c_idx + sx) * (100.0 / 3.0)
-                y_pct = (r_idx + sy) * (100.0 / 3.0)
+                # 2. Tính khoảng cách pixel vật lý (distance_pixels) từ tâm
+                distance_pixels = math.sqrt((x_val - center_x)**2 + (y_val - center_y)**2)
 
-                # Chiều cao và chiều rộng của ô tile tiêu chuẩn là 256px
-                # Ảnh gửi cho LLM được crop rộng hơn: thêm padding 25px ở cả 4 cạnh (tổng kích thước 306x306px)
-                padding_lat = (25.0 / 256.0) * (lat_max - lat_min)
-                padding_lng = (25.0 / 256.0) * (lng_max - lng_min)
+                # 3. Tính bearing từ tâm theo pixel
+                dx = x_val - center_x
+                dy = center_y - y_val  # Trục Oy hướng lên (Bắc) là dương, pixel y đi xuống
+                bearing_rad = math.atan2(dx, dy)
+                bearing_deg = (math.degrees(bearing_rad) + 360.0) % 360.0
 
-                cropped_lat_max = lat_max + padding_lat
-                cropped_lat_min = lat_min - padding_lat
-                cropped_lng_min = lng_min - padding_lng
-                cropped_lng_max = lng_max + padding_lng
+                # 4. Quy đổi pixel ➔ GPS
+                # a. Quy đổi sang CSS pixels
+                dist_css = distance_pixels / scale
+                # b. Số mét trên mỗi CSS pixel ở vĩ độ hiện tại
+                R_earth = 6378137.0
+                tile_width_meters = (2 * math.pi * R_earth * math.cos(math.radians(lat))) / (2 ** SCREENSHOT_ZOOM)
+                meters_per_css_pixel = tile_width_meters / 256.0
+                # c. Tính khoảng cách mét
+                distance_meters = dist_css * meters_per_css_pixel
 
-                poi_lat = cropped_lat_max - (y_pct / 100.0) * (cropped_lat_max - cropped_lat_min)
-                poi_lng = cropped_lng_min + (x_pct / 100.0) * (cropped_lng_max - cropped_lng_min)
-                logger.info(
-                    "  [Geo] Resolved '%s' → cell=%s side=%s → (%.6f, %.6f) [x:%.1f%% y:%.1f%%]",
-                    name, cell, side, poi_lat, poi_lng, x_pct, y_pct
-                )
+                if not dom_match:
+                    # Quy đổi khoảng cách và góc sang delta lat, lng
+                    meters_per_degree_lat = 111132.9
+                    meters_per_degree_lng = 111412.8 * math.cos(math.radians(lat))
+
+                    dlat = (distance_meters * math.cos(bearing_rad)) / meters_per_degree_lat
+                    dlng = (distance_meters * math.sin(bearing_rad)) / meters_per_degree_lng
+
+                    # 5. Tọa độ POI
+                    poi_lat = lat + dlat
+                    poi_lng = lng + dlng
+                    
+                    logger.info(
+                        "  [GeoPixel] Resolved '%s' via GPS tâm & pixel → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
+                    )
+                else:
+                    logger.info(
+                        "  [LeafletDOM] Resolved '%s' via exact DOM matching → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
+                    )
+
+            except Exception as geo_err:
+                logger.warning("  [GeoPixel] Lỗi khi tính toán tọa độ và khoảng cách: %s. Trở về center GPS mặc định.", geo_err)
+                poi_lat = lat
+                poi_lng = lng
+                distance_pixels = 0.0
+                distance_meters = 0.0
+                bearing_deg = 0.0
 
             # Lọc nghiêm ngặt: Chỉ giữ POI có tọa độ thực sự nằm trong khung quét (bbox) của tile hiện tại.
             eps = 1e-6
@@ -337,11 +361,14 @@ class Worker:
 
             if in_lat and in_lng:
                 pois.append({
-                    "name":       name,
-                    "approx_lat": poi_lat,
-                    "approx_lng": poi_lng,
-                    "tile_x":     tx,
-                    "tile_y":     ty,
+                    "name":             name,
+                    "approx_lat":       poi_lat,
+                    "approx_lng":       poi_lng,
+                    "tile_x":           tx,
+                    "tile_y":           ty,
+                    "distance_pixels":  round(distance_pixels, 1),
+                    "distance_meters":  round(distance_meters, 1),
+                    "bearing_degrees":  round(bearing_deg, 1),
                 })
             else:
                 logger.info(
@@ -416,7 +443,7 @@ class Worker:
                             const cy = rect.top + rect.height / 2;
                             try {
                                 const ll = mapInstance.containerPointToLatLng([cx, cy]);
-                                results[content] = { lat: ll.lat, lng: ll.lng, source: 'svg-text' };
+                                results[content] = { lat: ll.lat, lng: ll.lng, cx: cx, cy: cy, source: 'svg-text' };
                             } catch(e) {}
                         }
                     }
@@ -434,7 +461,7 @@ class Worker:
                             const cy = rect.top + rect.height / 2;
                             try {
                                 const ll = mapInstance.containerPointToLatLng([cx, cy]);
-                                results[content] = { lat: ll.lat, lng: ll.lng, source: 'leaflet-label' };
+                                results[content] = { lat: ll.lat, lng: ll.lng, cx: cx, cy: cy, source: 'leaflet-label' };
                             } catch(e) {}
                         }
                     }
@@ -448,8 +475,77 @@ class Worker:
             logger.warning("[Worker %d] Failed to extract DOM coords: %s", self.id, exc)
             return {}
 
-    async def _capture_screenshot(self, url: str, bbox: Tuple[float, float, float, float]) -> bytes:
-        """Điều hướng đến URL và chụp screenshot."""
+    def _create_grid_overlay(self, img_bytes: bytes) -> bytes:
+        """
+        Vẽ lưới tham chiếu 5×5 (A-E × 1-5) lên ảnh screenshot.
+        Giúp LLM xác định vị trí icon POI qua tên ô lưới (VD: 'C2')
+        thay vì phải đoán tọa độ pixel chính xác.
+        """
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        draw = ImageDraw.Draw(img)
+        w, h = img.size
+
+        cols, rows = 5, 5
+        cell_w = w / cols
+        cell_h = h / rows
+        col_labels = "ABCDE"
+        line_color = (220, 50, 50)
+
+        # Chọn font rõ ràng
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except Exception:
+            try:
+                font = ImageFont.load_default(size=16)
+            except TypeError:
+                font = ImageFont.load_default()
+
+        # Vẽ đường kẻ lưới dọc
+        for i in range(1, cols):
+            x = int(i * cell_w)
+            draw.line([(x, 0), (x, h)], fill=line_color, width=2)
+        # Vẽ đường kẻ lưới ngang
+        for j in range(1, rows):
+            y = int(j * cell_h)
+            draw.line([(0, y), (w, y)], fill=line_color, width=2)
+        # Viền ngoài
+        draw.rectangle([(0, 0), (w - 1, h - 1)], outline=line_color, width=2)
+
+        # Vẽ nhãn ô ở góc trên-trái mỗi ô
+        for i in range(cols):
+            for j in range(rows):
+                label = f"{col_labels[i]}{j + 1}"
+                lx = int(i * cell_w + 4)
+                ly = int(j * cell_h + 3)
+                # Nền trắng cho dễ đọc
+                try:
+                    bbox_t = draw.textbbox((lx, ly), label, font=font)
+                    draw.rectangle(
+                        [bbox_t[0] - 2, bbox_t[1] - 1, bbox_t[2] + 2, bbox_t[3] + 1],
+                        fill=(255, 255, 255),
+                    )
+                except Exception:
+                    pass
+                draw.text((lx, ly), label, fill=line_color, font=font)
+
+        # Vẽ dấu + ở tâm ảnh để LLM dễ định hướng
+        cx, cy = w // 2, h // 2
+        cross_size = 8
+        draw.line([(cx - cross_size, cy), (cx + cross_size, cy)], fill=line_color, width=1)
+        draw.line([(cx, cy - cross_size), (cx, cy + cross_size)], fill=line_color, width=1)
+
+        output = io.BytesIO()
+        img.save(output, format="JPEG", quality=95)
+        logger.info("  [GridOverlay] Đã vẽ lưới 5×5 lên ảnh %dx%d px", w, h)
+        return output.getvalue()
+
+    async def _capture_screenshot(self, url: str, bbox: Tuple[float, float, float, float]) -> Tuple[bytes, dict]:
+        """Điều hướng đến URL và chụp screenshot và trả về ảnh cùng metadata kích thước."""
         assert self._page is not None, "Page is not initialized"
         await self._page.goto(
             url,
@@ -459,7 +555,7 @@ class Worker:
         
         # 1. Inject CSS ẩn toàn bộ UI rác (welcome panel, header, banner) và cho bản đồ phóng full màn hình
         css_hide_clutter = """
-        #header, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent {
+        header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container {
             display: none !important;
         }
         #map {
@@ -477,13 +573,13 @@ class Worker:
         except Exception as exc:
             logger.debug("Could not hide OSM UI elements: %s", exc)
 
-        # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM, vẽ khung quét màu Neon Blue bằng DOM và tính toán ô cắt (crop_box)
+        # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM và tính toán ô cắt (crop_box)
         crop_box = None
         try:
             crop_box = await self._page.evaluate(f"""async () => {{
                 const selectors = [
-                    '#header', '#sidebar', '.welcome', '#banner', '.banner', 
-                    '.announcement', '.flash-wrap', '#flash', '.cookie-consent'
+                    'header', '.header', '.header-main', '#header', '.sidebar', '#sidebar', '.welcome', '#banner', '.banner', 
+                    '.announcement', '.flash-wrap', '#flash', '.cookie-consent', '.leaflet-control-container'
                 ];
                 selectors.forEach(sel => {{
                     document.querySelectorAll(sel).forEach(el => el.remove());
@@ -541,7 +637,7 @@ class Worker:
                 
                 await waitAndCenter();
 
-                // Vẽ khung quét Neon Blue bằng DOM Injection (đảm bảo hiển thị 100% đáng tin cậy trên mọi giao diện)
+                // Vẽ khung quét bao toàn viewport (đúng với những gì worker thấy)
                 let scanBox = document.getElementById('active-worker-scan-box');
                 if (!scanBox) {{
                     scanBox = document.createElement('div');
@@ -549,22 +645,17 @@ class Worker:
                     document.body.appendChild(scanBox);
                 }}
                 scanBox.style.position = 'fixed';
-                scanBox.style.left = '384px';
-                scanBox.style.top = '256px';
-                scanBox.style.width = '256px';
-                scanBox.style.height = '256px';
-                scanBox.style.border = '3px dashed #00d2ff';
-                scanBox.style.backgroundColor = 'rgba(0, 210, 255, 0.08)';
+                scanBox.style.left = '0px';
+                scanBox.style.top = '0px';
+                scanBox.style.width = '100vw';
+                scanBox.style.height = '100vh';
+                scanBox.style.border = '2px solid rgba(0, 210, 255, 0.4)';
+                scanBox.style.backgroundColor = 'transparent';
                 scanBox.style.pointerEvents = 'none';
                 scanBox.style.zIndex = '99999';
 
-                // Trả về tọa độ pixel hình học chuẩn xác của ô tile 256x256 ở giữa màn hình 1024x768
-                return {{
-                    x: 384,
-                    y: 256,
-                    width: 256,
-                    height: 256
-                }};
+                // Trả về null — dùng full viewport, không crop
+                return null;
             }}""")
         except Exception as exc:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
@@ -572,126 +663,62 @@ class Worker:
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
         screenshot_bytes = await self._page.screenshot(type="png")
 
-        # 3. Sử dụng Pillow để crop và nén ảnh dưới dạng JPEG chất lượng cao cùng các kỹ thuật nâng cao chất lượng nhận diện!
+        # 3. Nén ảnh full viewport sang JPEG chất lượng cao — không crop, LLM thấy đúng như worker
         try:
             from PIL import Image, ImageEnhance, ImageFilter
             import io
-            
+
             img = Image.open(io.BytesIO(screenshot_bytes))
             w, h = img.size
-            
-            # Tỷ lệ scale giữa pixel thực tế (physical pixels) và tọa độ CSS (logical pixels)
-            scale = w / SCREENSHOT_W
-            
-            # Thêm border padding (khoảng đệm biên) để lấy trọn vẹn nhãn chữ ở sát rìa ô quét
-            padding = 25
-            padding_scaled = int(padding * scale)
-            use_fallback = True
-            
-            if crop_box and all(k in crop_box for k in ["x", "y", "width", "height"]):
-                try:
-                    # Nhân tọa độ CSS từ DOM với tỷ lệ scale để chuyển đổi sang tọa độ pixel thực tế của màn hình High-DPI
-                    x1 = max(0, int(crop_box["x"] * scale) - padding_scaled)
-                    y1 = max(0, int(crop_box["y"] * scale) - padding_scaled)
-                    x2 = min(w, int((crop_box["x"] + crop_box["width"]) * scale) + padding_scaled)
-                    y2 = min(h, int((crop_box["y"] + crop_box["height"]) * scale) + padding_scaled)
-                    if x2 > x1 and y2 > y1:
-                        use_fallback = False
-                except Exception:
-                    pass
-            
-            if use_fallback:
-                # Tính toán hình học cố định (Do OSM tự động căn giữa ô tile ở tâm màn hình)
-                cx, cy = w / 2, h / 2
-                tile_w = 256 * (w / 1024)
-                tile_h = 256 * (h / 768)
-                pad_w = padding * (w / 1024)
-                pad_h = padding * (h / 768)
-                
-                x1 = max(0, int(cx - tile_w / 2 - pad_w))
-                y1 = max(0, int(cy - tile_h / 2 - pad_h))
-                x2 = min(w, int(cx + tile_w / 2 + pad_w))
-                y2 = min(h, int(cy + tile_h / 2 + pad_h))
-            
-            # Thực hiện crop và áp dụng bộ lọc nâng cao chất lượng chữ
-            if x2 > x1 and y2 > y1:
-                cropped_img = img.crop((x1, y1, x2, y2))
-                
-                # Áp dụng bộ lọc làm sắc nét chữ và tăng tương phản giúp OCR đọc tốt hơn
-                try:
-                    cropped_img = cropped_img.filter(ImageFilter.SHARPEN)
-                    enhancer = ImageEnhance.Contrast(cropped_img)
-                    cropped_img = enhancer.enhance(1.25)
-                except Exception as enh_err:
-                    logger.debug("Image enhancement failed: %s", enh_err)
+            scale = w / SCREENSHOT_W  # High-DPI scale factor
 
-                # Vẽ lưới 3x3 ảo trực tiếp lên ảnh để hỗ trợ LLM định vị không gian chính xác tuyệt đối
-                try:
-                    from PIL import ImageDraw, ImageFont
-                    # Chuyển sang RGBA để vẽ bán trong suốt
-                    cropped_img = cropped_img.convert("RGBA")
-                    draw = ImageDraw.Draw(cropped_img)
-                    cw, ch = cropped_img.size
-                    
-                    # Vẽ lưới màu xanh neon dày và rõ nét hơn
-                    grid_color = (0, 210, 255, 180) # RGBA với độ mờ cao
-                    for i in range(1, 3):
-                        x = int(cw * i / 3)
-                        draw.line([(x, 0), (x, ch)], fill=grid_color, width=3)
-                    for i in range(1, 3):
-                        y = int(ch * i / 3)
-                        draw.line([(0, y), (cw, y)], fill=grid_color, width=3)
-                        
-                    # Vẽ nhãn A1 -> C3 vào góc các ô lưới để LLM định vị cực kỳ dễ dàng
-                    cells = [
-                        ("A1", 0, 0), ("A2", 1, 0), ("A3", 2, 0),
-                        ("B1", 0, 1), ("B2", 1, 1), ("B3", 2, 1),
-                        ("C1", 0, 2), ("C2", 1, 2), ("C3", 2, 2)
-                    ]
-                    
-                    # Tải font chữ rõ nét
-                    try:
-                        font = ImageFont.truetype("arial.ttf", 20)
-                    except Exception:
-                        try:
-                            font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 20)
-                        except Exception:
-                            font = ImageFont.load_default()
+            # Áp dụng bộ lọc làm sắc nét và tăng tương phản
+            try:
+                img = img.filter(ImageFilter.SHARPEN)
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.25)
+            except Exception as enh_err:
+                logger.debug("Image enhancement failed: %s", enh_err)
 
-                    for label, col, row in cells:
-                        lx = int(cw * col / 3) + 6
-                        ly = int(ch * row / 3) + 6
-                        
-                        try:
-                            l, t, r, b = draw.textbbox((lx, ly), label, font=font)
-                            rect_box = [l - 4, t - 2, r + 4, b + 2]
-                        except AttributeError:
-                            if hasattr(draw, "textsize"):
-                                w_t, h_t = draw.textsize(label, font=font)
-                            else:
-                                w_t, h_t = 16, 12
-                            rect_box = [lx - 4, ly - 2, lx + w_t + 4, ly + h_t + 2]
-                            
-                        # Vẽ hình chữ nhật nền tối làm nổi bật chữ
-                        draw.rectangle(rect_box, fill=(15, 23, 42, 220))
-                        draw.text((lx, ly), label, fill=(255, 255, 255), font=font)
-                except Exception as draw_err:
-                    logger.debug("Could not draw grid overlays on screenshot: %s", draw_err)
-                
-                rgb_img = cropped_img.convert("RGB")
-                output_bytes = io.BytesIO()
-                # Lưu JPEG chất lượng cao 95% để giảm tối đa nhiễu nén làm hỏng viền chữ
-                rgb_img.save(output_bytes, format="JPEG", quality=95)
-                method_str = "Leaflet DOM" if not use_fallback else "Viewport Center Fallback"
-                logger.info(
-                    "  [Crop & Compress] Screenshot cropped via %s to %dx%d px (High-DPI 2x, quality=95%%) and enhanced with SHARPEN+Contrast",
-                    method_str, x2 - x1, y2 - y1
-                )
-                return output_bytes.getvalue()
+            rgb_img = img.convert("RGB")
+            output_bytes = io.BytesIO()
+            rgb_img.save(output_bytes, format="JPEG", quality=95)
+            logger.info(
+                "  [Full Viewport] Screenshot full %dx%d px (High-DPI %.1fx, quality=95%%) — no crop",
+                w, h, scale
+            )
+
+            img_metadata = {
+                "width": w,
+                "height": h,
+                "center_x": w / 2.0,
+                "center_y": h / 2.0,
+                "scale": scale,
+                "crop_x1": 0,
+                "crop_y1": 0,
+            }
+            return output_bytes.getvalue(), img_metadata
         except Exception as crop_err:
-            logger.warning("Could not crop or compress screenshot: %s", crop_err)
+            logger.warning("Could not compress screenshot: %s", crop_err)
 
-        return screenshot_bytes
+        # Fallback: trả ảnh PNG gốc
+        try:
+            from PIL import Image
+            import io as _io
+            _img = Image.open(_io.BytesIO(screenshot_bytes))
+            w, h = _img.size
+        except Exception:
+            w, h = SCREENSHOT_W * 2, SCREENSHOT_H * 2
+        img_metadata = {
+            "width": w,
+            "height": h,
+            "center_x": w / 2.0,
+            "center_y": h / 2.0,
+            "scale": 2.0,
+            "crop_x1": 0,
+            "crop_y1": 0,
+        }
+        return screenshot_bytes, img_metadata
 
     async def _save_screenshot(self, data: bytes, tx: int, ty: int) -> None:
         """Lưu screenshot ra disk (chỉ dùng khi debug)."""
