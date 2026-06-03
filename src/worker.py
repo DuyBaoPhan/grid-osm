@@ -218,7 +218,9 @@ class Worker:
         img_metadata = {}
         for attempt in range(1, MAX_RETRIES + 2):
             try:
-                raw_screenshot, compressed_screenshot, img_metadata = await self._capture_screenshot(url, bbox)
+                raw_screenshot, compressed_screenshot, img_metadata = await self._capture_screenshot(
+                    url, bbox, self.coord._boundary
+                )
                 # Override bbox bằng góc thực tế của ảnh (khớp đúng vùng hiển thị, không phụ thuộc SCREENSHOT_H cứng)
                 if img_metadata:
                     bbox = (
@@ -571,7 +573,12 @@ class Worker:
         logger.info("  [GridOverlay] Đã vẽ lưới 5×5 lên ảnh %dx%d px", w, h)
         return output.getvalue()
 
-    async def _capture_screenshot(self, url: str, bbox: Tuple[float, float, float, float]) -> Tuple[bytes, dict]:
+    async def _capture_screenshot(
+        self,
+        url: str,
+        bbox: Tuple[float, float, float, float],
+        boundary_geometry: Optional[dict] = None
+    ) -> Tuple[bytes, bytes, dict]:
         """Điều hướng đến URL và chụp screenshot và trả về ảnh cùng metadata kích thước."""
         lat = (bbox[0] + bbox[2]) / 2.0
         lng = (bbox[1] + bbox[3]) / 2.0
@@ -633,7 +640,7 @@ class Worker:
         # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM và tính toán ô cắt (crop_box)
         crop_box = None
         try:
-            crop_box = await self._page.evaluate(f"""async () => {{
+            crop_box = await self._page.evaluate(f"""async (boundaryGeom) => {{
                 const selectors = [
                     'header', '.header', '.header-main', '#header', '.sidebar', '#sidebar', '.welcome', '#banner', '.banner', 
                     '.announcement', '.flash-wrap', '#flash', '.cookie-consent', '.leaflet-control-container'
@@ -680,6 +687,41 @@ class Worker:
                                 clearInterval(interval);
                                 mapInstance.invalidateSize({{ animate: false }});
                                 mapInstance.setView([{lat}, {lng}], {SCREENSHOT_ZOOM}, {{ animate: false }});
+                                
+                                // Vẽ mặt nạ che khuất khu vực ngoài quận mục tiêu
+                                if (boundaryGeom && typeof L !== 'undefined') {{
+                                    const worldCoords = [
+                                        [-90, -180],
+                                        [-90, 180],
+                                        [90, 180],
+                                        [90, -180],
+                                        [-90, -180]
+                                    ];
+                                    let latLngRings = [];
+                                    if (boundaryGeom.type === 'Polygon') {{
+                                        const innerRing = boundaryGeom.coordinates[0].map(coord => [coord[1], coord[0]]);
+                                        latLngRings = [worldCoords, innerRing];
+                                    }} else if (boundaryGeom.type === 'MultiPolygon') {{
+                                        latLngRings = [worldCoords];
+                                        boundaryGeom.coordinates.forEach(polygonCoords => {{
+                                            if (polygonCoords && polygonCoords[0]) {{
+                                                const innerRing = polygonCoords[0].map(coord => [coord[1], coord[0]]);
+                                                latLngRings.push(innerRing);
+                                            }}
+                                        }});
+                                    }}
+                                    if (latLngRings.length > 1) {{
+                                        L.polygon(latLngRings, {{
+                                            color: '#f2efe9',
+                                            weight: 2,
+                                            opacity: 1,
+                                            fillColor: '#f2efe9',
+                                            fillOpacity: 1,
+                                            interactive: false
+                                        }}).addTo(mapInstance);
+                                    }}
+                                }}
+                                
                                 resolve(true);
                             }} else {{
                                 attempts++;
@@ -714,7 +756,7 @@ class Worker:
 
                 // Trả về null — dùng full viewport, không crop
                 return null;
-            }}""")
+            }}""", boundary_geometry)
         except Exception as exc:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
 

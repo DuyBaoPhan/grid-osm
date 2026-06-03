@@ -267,8 +267,21 @@ function renderGeoJson(geoJsonData) {{
     map.removeLayer(geoJsonLayer);
   }}
 
-  // Hiển thị đầy đủ hình chữ nhật vùng quét để khớp 100% với ảnh chụp gốc
-  let processedGeojson = geoJsonData;
+  let processedGeojson = JSON.parse(JSON.stringify(geoJsonData));
+  if (boundaryGeojson) {{
+    processedGeojson.features = processedGeojson.features.map(f => {{
+      try {{
+        let intersection = turf.intersect(f, boundaryGeojson);
+        if (intersection) {{
+          intersection.properties = f.properties;
+          return intersection;
+        }}
+      }} catch (e) {{
+        console.warn("Intersection failed for tile", f.properties, e);
+      }}
+      return f;
+    }}).filter(f => f !== null);
+  }}
 
   geoJsonLayer = L.geoJSON(processedGeojson, {{
     style: f => ({{
