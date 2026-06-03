@@ -63,6 +63,7 @@ class Coordinator:
         self._discarded: Set[TileCoord] = set()
         self._queued: Set[TileCoord] = set()
         self._captured: Set[TileCoord] = set()
+        self._tile_bboxes: Dict[TileCoord, Tuple[float, float, float, float]] = {}
         self._queue: asyncio.Queue = asyncio.Queue()
         self._results: List[dict] = []
         self._boundary: Optional[dict] = None
@@ -183,10 +184,12 @@ class Coordinator:
         except asyncio.QueueEmpty:
             return None
 
-    async def report_captured(self, tile: TileCoord) -> None:
+    async def report_captured(self, tile: TileCoord, bbox: Optional[Tuple[float, float, float, float]] = None) -> None:
         """Báo cáo rằng tile đã được chụp ảnh xong, đang gửi sang LLM."""
         async with self._lock:
             self._captured.add(tile)
+            if bbox:
+                self._tile_bboxes[tile] = bbox
             await self._save_checkpoint()
             self._update_map()
 
@@ -333,9 +336,18 @@ class Coordinator:
             visited = {tuple(t) for t in data.get("visited", [])}
             queued  = {tuple(t) for t in data.get("queue",   [])}
             self._captured = {tuple(t) for t in data.get("captured", [])}
+            
+            self._tile_bboxes = {}
+            for k, v in data.get("tile_bboxes", {}).items():
+                try:
+                    tx, ty = map(int, k.split(","))
+                    self._tile_bboxes[(tx, ty)] = tuple(v)
+                except Exception:
+                    pass
+
             logger.info(
-                "Checkpoint loaded: %d visited, %d queued, %d captured",
-                len(visited), len(queued), len(self._captured),
+                "Checkpoint loaded: %d visited, %d queued, %d captured, %d custom bboxes",
+                len(visited), len(queued), len(self._captured), len(self._tile_bboxes),
             )
             return visited, queued
         except Exception as exc:
@@ -362,6 +374,7 @@ class Coordinator:
                 "queue":     [list(t) for t in self._queued - self._visited],
                 "discarded": [list(t) for t in self._discarded],
                 "captured":  [list(t) for t in self._captured],
+                "tile_bboxes": {f"{t[0]},{t[1]}": list(bbox) for t, bbox in self._tile_bboxes.items()},
             }
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f)
@@ -407,6 +420,7 @@ class Coordinator:
                 self._results,
                 self._discarded,
                 self._captured,
+                tile_bboxes=self._tile_bboxes,
             )
         except Exception as exc:
             logger.debug("Could not update map viewer: %s", exc)

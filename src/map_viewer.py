@@ -23,6 +23,7 @@ def load_state():
     discarded = set()
     captured = set()
     results = []
+    tile_bboxes = {}
 
     if os.path.exists(config.CHECKPOINT_FILE):
         try:
@@ -32,6 +33,13 @@ def load_state():
             queued  = {tuple(t) for t in data.get("queue",   [])}
             discarded = {tuple(t) for t in data.get("discarded", [])}
             captured = {tuple(t) for t in data.get("captured", [])}
+            
+            for k, v in data.get("tile_bboxes", {}).items():
+                try:
+                    tx, ty = map(int, k.split(","))
+                    tile_bboxes[(tx, ty)] = tuple(v)
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[WARN] Cannot load checkpoint: {e}")
 
@@ -42,16 +50,18 @@ def load_state():
         except Exception:
             pass
 
-    return visited, queued, results, discarded, captured
+    return visited, queued, results, discarded, captured, tile_bboxes
 
 
 # ── Tao GeoJSON polygons cho cac tile ────────────────────────
 
-def build_geojson(all_tiles, visited, queued, discarded=None, captured=None):
+def build_geojson(all_tiles, visited, queued, discarded=None, captured=None, tile_bboxes=None):
     if discarded is None:
         discarded = set()
     if captured is None:
         captured = set()
+    if tile_bboxes is None:
+        tile_bboxes = {}
     features = []
     for tile in all_tiles:
         tx, ty = tile
@@ -60,7 +70,10 @@ def build_geojson(all_tiles, visited, queued, discarded=None, captured=None):
         if tile not in visited and tile not in discarded and tile not in captured:
             continue
 
-        lat_min, lng_min, lat_max, lng_max = tile_viewport_bbox(tx, ty, config.ZOOM_LEVEL)
+        if tile in tile_bboxes:
+            lat_min, lng_min, lat_max, lng_max = tile_bboxes[tile]
+        else:
+            lat_min, lng_min, lat_max, lng_max = tile_viewport_bbox(tx, ty, config.ZOOM_LEVEL)
 
         # Xac dinh trang thai
         if tile in discarded:
@@ -425,6 +438,7 @@ def build_and_save(
     discarded: set = None,
     captured: set = None,
     out_path: str = _MAP_OUT,
+    tile_bboxes: dict = None,
 ) -> str:
     """
     Sinh map_viewer.html tu trang thai hien tai va ghi ra disk.
@@ -459,7 +473,7 @@ def build_and_save(
         except Exception:
             pass
 
-    geojson_obj = build_geojson(all_tiles, visited, queued, discarded, captured)
+    geojson_obj = build_geojson(all_tiles, visited, queued, discarded, captured, tile_bboxes)
     geojson_str = json.dumps(geojson_obj)
     display_zoom = max(10, config.ZOOM_LEVEL - 6)
 
@@ -527,7 +541,7 @@ def build_and_save(
 
 
 def main():
-    visited, queued, results, discarded, captured = load_state()
+    visited, queued, results, discarded, captured, tile_bboxes = load_state()
 
     print("Generating tile grid...")
     all_tiles = generate_all_tiles(
@@ -551,7 +565,7 @@ def main():
     print(f"  Done   : {pct:.2f}%")
     print(f"  POIs   : {len(results)}")
 
-    out_path = build_and_save(all_tiles, visited, queued, results, discarded, captured)
+    out_path = build_and_save(all_tiles, visited, queued, results, discarded, captured, tile_bboxes=tile_bboxes)
     print(f"\nMap saved: {out_path}")
     print("Opening in browser...")
     webbrowser.open(f"file:///{out_path.replace(os.sep, '/')}")

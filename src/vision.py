@@ -150,7 +150,7 @@ async def extract_pois_from_screenshot(
                         ],
                     }
                 ],
-                max_tokens=800,
+                max_tokens=2000,
                 temperature=0.0,
             )
 

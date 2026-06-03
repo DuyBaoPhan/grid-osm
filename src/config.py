@@ -23,8 +23,8 @@ HEADLESS               = False          # Set False để hiển thị giao di�
 # ── Địa lý ───────────────────────────────────────────────────
 ZOOM_LEVEL       = 19                   # zoom chia luoi tile (anh huong so luong tile)
 SCREENSHOT_ZOOM  = 19                   # zoom hien thi trong URL browser (cang cao cang thay ro ten dia diem)
-CENTER_LAT       = 10.779921962399342   # Tọa độ Bưu điện Thành phố làm trung tâm Quận 1
-CENTER_LNG       = 106.70003066390481
+CENTER_LAT       = 10.779930   # Tọa độ Bưu điện Thành phố làm trung tâm Quận 1
+CENTER_LNG       = 106.699994
 RADIUS_KM        = 3.0                  # Bán kính 3km để bao phủ toàn bộ Quận 1
 TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM tự động nhận diện biên giới và bỏ qua vùng ngoài quận
 

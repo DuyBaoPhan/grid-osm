@@ -219,10 +219,18 @@ class Worker:
         for attempt in range(1, MAX_RETRIES + 2):
             try:
                 screenshot, img_metadata = await self._capture_screenshot(url, bbox)
+                # Override bbox bằng góc thực tế của ảnh (khớp đúng vùng hiển thị, không phụ thuộc SCREENSHOT_H cứng)
+                if img_metadata:
+                    bbox = (
+                        min(img_metadata["bottom_left_lat"], img_metadata["bottom_right_lat"]),
+                        min(img_metadata["top_left_lng"],    img_metadata["bottom_left_lng"]),
+                        max(img_metadata["top_left_lat"],    img_metadata["top_right_lat"]),
+                        max(img_metadata["top_right_lng"],   img_metadata["bottom_right_lng"]),
+                    )
                 # Trích xuất toàn bộ nhãn và tọa độ hiển thị trong DOM hiện tại
                 browser_coords = await self._extract_all_visible_poi_coords_from_browser()
                 # Báo cáo ngay cho coordinator rằng đã chụp ảnh xong để vẽ ô màu xanh neon blue lên bản đồ!
-                await self.coord.report_captured(tile)
+                await self.coord.report_captured(tile, bbox)
                 break
             except Exception as exc:
                 if attempt <= MAX_RETRIES:

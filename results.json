@@ -1,0 +1,198 @@
+[
+  {
+    "name": "Highlands Coffee",
+    "approx_lat": 10.779806160820819,
+    "approx_lng": 106.69875213722611,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 465.4,
+    "distance_meters": 136.5,
+    "bearing_degrees": 264.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Công trường Công xã Paris",
+    "approx_lat": 10.779806160820819,
+    "approx_lng": 106.69875213722611,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 465.4,
+    "distance_meters": 136.5,
+    "bearing_degrees": 264.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Trường Trung học cơ sở và Trung học phổ thông Trần Đại Nghĩa",
+    "approx_lat": 10.779574291582339,
+    "approx_lng": 106.70142093519593,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 548.9,
+    "distance_meters": 161.0,
+    "bearing_degrees": 104.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Trường Tiểu học",
+    "approx_lat": 10.779806160820819,
+    "approx_lng": 106.69875213722611,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 465.4,
+    "distance_meters": 136.5,
+    "bearing_degrees": 264.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Hàm 59 Nguyễn Du",
+    "approx_lat": 10.779574291582339,
+    "approx_lng": 106.70061627249146,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 268.4,
+    "distance_meters": 78.7,
+    "bearing_degrees": 120.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Nguyễn Du",
+    "approx_lat": 10.779574291582339,
+    "approx_lng": 106.70061627249146,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 268.4,
+    "distance_meters": 78.7,
+    "bearing_degrees": 120.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  },
+  {
+    "name": "Hàm Phố 3",
+    "approx_lat": 10.779806160820819,
+    "approx_lng": 106.69875213722611,
+    "tile_x": 0,
+    "tile_y": 0,
+    "distance_pixels": 465.4,
+    "distance_meters": 136.5,
+    "bearing_degrees": 264.2,
+    "image_corners": {
+      "top_left": {
+        "lat": 10.780892,
+        "lng": 106.697934
+      },
+      "top_right": {
+        "lat": 10.780892,
+        "lng": 106.702054
+      },
+      "bottom_left": {
+        "lat": 10.778968,
+        "lng": 106.697934
+      },
+      "bottom_right": {
+        "lat": 10.778968,
+        "lng": 106.702054
+      }
+    }
+  }
+]
