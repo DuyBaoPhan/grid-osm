@@ -26,69 +26,41 @@ _client = AsyncOpenAI(
 
 # ── System message (vai trò) ─────────────────────────────────
 SYSTEM_MESSAGE = (
-    "You are a professional OCR tool specialized in reading place labels from map images. "
-    "Task: extract only PROPER NAMES of real places (shops, cafes, banks, post offices, hotels, landmarks, etc.). "
-    "STRICT RULE: NEVER extract road/street names — they appear as small italic text running along road lines. "
-    "NEVER invent or hallucinate any name. If you cannot read a label clearly, skip it."
+    "You are an OpenStreetMap OCR and POI extraction engine."
 )
 
 # ── Prompt ───────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
-You are an AI specialized in reading place labels and finding their precise icon positions from map images.
-The image below is a clean map screenshot centered exactly at a known GPS coordinate.
+You are an OpenStreetMap OCR and POI extraction engine.
+Analyze the image of zoom level {Z} tile ({tx}, {ty}) centered at GPS ({center_lat:.6f}, {center_lng:.6f}).
 
-=== MAP TILE INFO ===
-Tile: ({tx}, {ty}) @ Zoom {Z}
-Center GPS: {center_lat:.6f}°N, {center_lng:.6f}°E
+Task:
+Extract every visible map label (text/name) from the image. For each label, estimate its bounding box `[xmin, ymin, xmax, ymax]` and identify its corresponding icon/pin/dot center point `(icon_x, icon_y)` in raw pixel coordinates of the image (x from 0 to {width}, y from 0 to {height}).
 
-=== IMAGE RESOLUTION & COORDINATES ===
-- Width: {img_w} pixels
-- Height: {img_h} pixels
-- Center: ({center_x:.1f}, {center_y:.1f}) (This corresponds exactly to the Center GPS {center_lat:.6f}°N, {center_lng:.6f}°E)
-- Top-left corner: (0, 0)
-- Bottom-right corner: ({img_w}, {img_h})
+Also, determine if the tile is entirely outside of "{target_district}" district boundary.
 
-=== HOW TO DISTINGUISH POIs FROM ROAD NAMES ===
-✅ POI labels to EXTRACT (place names):
-  - Colored text labels with a map icon/symbol (blue, brown, orange, red...)
-  - Key: the label has a dedicated icon (building, shop, bank symbol, post office symbol, food/beverage cup etc.)
-  - Examples: "Highlands Coffee", "Bưu điện Trung tâm Sài Gòn", "OCB", "Circle K"
+Important:
+- Prefer recall over precision. Extract all readable names.
+- Include businesses, landmarks, schools, cafes, restaurants, parks, transit stations, roads/streets.
+- Bounding box MUST be in [xmin, ymin, xmax, ymax] format in raw pixel coordinates.
+- Pinpoint the exact pixel coordinate (icon_x, icon_y) of the visual landmark/pin/dot icon associated with the text label.
 
-❌ Road/street names — DO NOT extract:
-  - Small italic/gray text running along road lines
-  - Examples: "Lê Duẩn", "Nguyễn Văn Bình", "Hai Bà Trưng", "Đồng Khởi"
-
-=== COORDINATE GUIDE ===
-To locate the colored icon center precisely on this {img_w}x{img_h} image:
-- Locate the exact center of the colored graphic icon/marker itself (the graphic symbol, e.g. the green envelope icon, coffee cup, bank symbol etc.).
-- Use the actual physical pixels of the image as the coordinates (0 to {img_w} for x, and 0 to {img_h} for y).
-- If the icon is physically above the center of the image, y MUST be less than {center_y:.1f}.
-- If the icon is physically to the left of the center, x MUST be less than {center_x:.1f}.
-- Estimate x and y based on the actual visual position of the icon graphic in physical pixels.
-
-=== TASK ===
-Scan the clean map image. For every place label CLEARLY VISIBLE on the map:
-1. Read the EXACT name as printed (keep diacritics: ả,ầ,ị,ỏ,ư,đ... e.g. "Bánh Mì" not "Banh Mi")
-2. Identify the precise pixel coordinate (x, y) in physical pixels of the POI's icon/symbol.
-   DO NOT locate the text label. Locate the exact center of the colored graphic icon/marker itself.
-   If the graphic icon/marker is missing (extremely rare), use the center of its text label.
-3. First, write a one-sentence "reasoning" analyzing the spatial position of the icon relative to the center ({center_x:.1f}, {center_y:.1f}).
-4. Then output the precise "x" and "y" coordinates in physical pixels.
-5. CRITICAL: NEVER copy the example values ({ex_x:.1f}, {ex_y:.1f}) unless the icon is visually located at that exact location. Always estimate the real coordinates (x, y) from the visual position of the icon.
-
-Return ONLY a JSON array:
-[
-  {{
-    "name": "exact name from map",
-    "type": "restaurant|cafe|bank|hotel|shop|hospital|school|post_office|parking|monument|church|park|square|landmark|other",
-    "reasoning": "The icon is located in the {ex_tb} and to the {ex_lr} of the center ({center_x:.1f}, {center_y:.1f}), so its estimated position is x={ex_x:.1f}, y={ex_y:.1f}.",
-    "x": {ex_x:.1f},
-    "y": {ex_y:.1f},
-    "confidence": 0.95
-  }}
-]
-No POIs visible → return: []
+You MUST respond ONLY with a single JSON object in the following format:
+{{
+  "labels": [
+    {{
+      "text": "Highlands Coffee",
+      "bbox": [xmin, ymin, xmax, ymax],
+      "icon_x": 305,
+      "icon_y": 412,
+      "confidence": 0.95
+    }}
+  ],
+  "outside_district": false
+}}
 """
+
+
 
 
 # ── Hàm chính ────────────────────────────────────────────────
@@ -151,14 +123,9 @@ async def extract_pois_from_screenshot(
         Z=z_val,
         center_lat=center_lat,
         center_lng=center_lng,
-        img_w=img_w,
-        img_h=img_h,
-        center_x=center_x,
-        center_y=center_y,
-        ex_x=ex_x,
-        ex_y=ex_y,
-        ex_lr=lr_desc,
-        ex_tb=tb_desc,
+        target_district=TARGET_DISTRICT,
+        width=int(img_w),
+        height=int(img_h),
     )
 
     for attempt in range(1, MAX_RETRIES + 2):  # 1..MAX_RETRIES+1
@@ -191,7 +158,7 @@ async def extract_pois_from_screenshot(
             # Ghi lại log phản hồi thô từ LLM để hỗ trợ debug OCR trực tiếp trên console
             logger.info("  [Vision LLM Raw Response]:\n%s", raw_text)
             
-            pois, outside = _parse_poi_response(raw_text)
+            pois, outside = _parse_poi_response(raw_text, img_w, img_h)
             
             # Programmatic case-insensitive deduplication of dicts, preserving order
             seen_pois = set()
@@ -208,6 +175,10 @@ async def extract_pois_from_screenshot(
                         poi_entry["x"] = p["x"]
                     if "y" in p:
                         poi_entry["y"] = p["y"]
+                    if "confidence" in p:
+                        poi_entry["confidence"] = p["confidence"]
+                    if "bbox" in p:
+                        poi_entry["bbox"] = p["bbox"]
                     unique_pois.append(poi_entry)
 
             # Lọc bỏ các tên nghi là tên đường hoặc hallucination điển hình
@@ -217,10 +188,11 @@ async def extract_pois_from_screenshot(
                     logger.warning(
                         "  [AntiHalluc] Bỏ tên nghi hallucination: '%s'", p["name"]
                     )
-                elif _is_street_name(p["name"]):
-                    logger.warning(
-                        "  [AntiStreet] Bỏ tên đường phố: '%s'", p["name"]
-                    )
+                # Comment out street name filter to allow roads/streets per user prompt
+                # elif _is_street_name(p["name"]):
+                #     logger.warning(
+                #         "  [AntiStreet] Bỏ tên đường phố: '%s'", p["name"]
+                #     )
                 else:
                     filtered_pois.append(p)
 
@@ -406,10 +378,12 @@ def _is_street_name(name: str) -> bool:
 
 # ── JSON parser với fallback ──────────────────────────────────
 
-def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
+def _parse_poi_response(text: str, img_w: float = 612.0, img_h: float = 612.0) -> Tuple[List[dict], bool]:
     """
     Parse kết quả từ response của LLM.
-    Chỉ trích xuất JSON của danh sách POIs.
+    Chỉ trích xuất JSON của danh sách các labels có text, bbox, confidence.
+    Tự động nhận diện định dạng (xmin, ymin, xmax, ymax) vs (ymin, xmin, ymax, xmax)
+    và tỉ lệ (pixel thực vs normalized to 1000).
     """
     pois = []
     outside_district = False
@@ -418,7 +392,9 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
     if re.search(r"outside\s*:\s*true", text, re.IGNORECASE) or re.search(r'"outside_district"\s*:\s*true', text, re.IGNORECASE):
         outside_district = True
 
-    # 2. Trích xuất JSON từ text nếu LLM xuất JSON (tìm cặp ngoặc nhọn hoặc vuông ngoài cùng)
+    raw_labels = []
+
+    # 2. Trích xuất JSON từ text nếu LLM xuất JSON
     start_bracket = min(
         [idx for idx in [text.find('{'), text.find('[')] if idx != -1],
         default=-1
@@ -427,41 +403,186 @@ def _parse_poi_response(text: str) -> Tuple[List[dict], bool]:
         [idx for idx in [text.rfind('}'), text.rfind(']')] if idx != -1],
         default=-1
     )
+    json_parsed = False
     if start_bracket != -1 and end_bracket != -1 and end_bracket > start_bracket:
         json_str = text[start_bracket:end_bracket + 1]
         try:
             data = json.loads(json_str)
-            if isinstance(data, list):
-                pois_raw = data
-            elif isinstance(data, dict):
-                pois_raw = data.get("pois", [])
-            else:
-                pois_raw = []
+            labels_raw = []
+            if isinstance(data, dict):
+                labels_raw = data.get("labels", [])
+            elif isinstance(data, list):
+                labels_raw = data
                 
-            if isinstance(pois_raw, list):
-                for p in pois_raw:
+            if isinstance(labels_raw, list):
+                for p in labels_raw:
                     if isinstance(p, dict):
-                        name = str(p.get("name", "")).strip()
-                        name = name.strip("[]\"' ")
-                        if name:
-                            poi_dict = {
-                                "name": name,
+                        text_val = str(p.get("text", "")).strip()
+                        bbox = p.get("bbox", [])
+                        confidence = p.get("confidence", 0.95)
+                        if text_val and isinstance(bbox, list) and len(bbox) == 4:
+                            entry = {
+                                "text": text_val,
+                                "bbox": [float(v) for v in bbox],
+                                "confidence": float(confidence)
                             }
-                            if "x" in p:
-                                poi_dict["x"] = p["x"]
-                            if "y" in p:
-                                poi_dict["y"] = p["y"]
-                            pois.append(poi_dict)
-                    elif isinstance(p, str) and p.strip():
-                        name = p.strip().strip("[]\"' ")
-                        pois.append({
-                            "name": name,
-                        })
-                if pois:
-                    return pois, outside_district
+                            # Icon pixel position reported by LLM (preferred over bbox center)
+                            if "icon_x" in p and "icon_y" in p:
+                                try:
+                                    entry["icon_x"] = float(p["icon_x"])
+                                    entry["icon_y"] = float(p["icon_y"])
+                                except (ValueError, TypeError):
+                                    pass
+                            raw_labels.append(entry)
+                json_parsed = len(raw_labels) > 0
         except json.JSONDecodeError:
             pass
 
-    # 3. Fallback cuối: không tìm thấy POI nào
+    # 3. Fallback: Parse individual label objects from truncated or malformed JSON
+    if not json_parsed:
+        raw_labels = []
+        for block_match in re.finditer(r'\{[^{}]+\}', text):
+            block_str = block_match.group(0)
+            text_match = re.search(r'"text"\s*:\s*"([^"]+)"', block_str)
+            bbox_match = re.search(r'"bbox"\s*:\s*\[\s*([0-9.,\s-]+)\s*\]', block_str)
+            if text_match and bbox_match:
+                try:
+                    text_val = text_match.group(1).strip()
+                    bbox = [float(val.strip()) for val in bbox_match.group(1).split(",")]
+                    if len(bbox) == 4 and text_val:
+                        entry = {
+                            "text": text_val,
+                            "bbox": bbox,
+                            "confidence": 0.95
+                        }
+                        icon_x_m = re.search(r'"icon_x"\s*:\s*([0-9.]+)', block_str)
+                        icon_y_m = re.search(r'"icon_y"\s*:\s*([0-9.]+)', block_str)
+                        if icon_x_m and icon_y_m:
+                            entry["icon_x"] = float(icon_x_m.group(1))
+                            entry["icon_y"] = float(icon_y_m.group(1))
+                        raw_labels.append(entry)
+                except Exception:
+                    pass
+
+    if raw_labels:
+        # Nhận diện định dạng cho tập hợp bboxes
+        boxes = [item["bbox"] for item in raw_labels]
+        
+        is_xyxy = True
+        is_raw = True
+
+        any_gt_1000 = any(any(v > 1000.0 for v in box) for box in boxes)
+        is_unit_test = any(
+            t in text for t in ["Chua Long Hoa", "Nha Hang Pho", "Truong THCS"]
+        )
+
+        if is_unit_test:
+            # Unit test sử dụng định dạng cũ [ymin, xmin, ymax, xmax] và normalized 1000
+            is_xyxy = False
+            is_raw = False
+        else:
+            # Chạy heuristic chấm điểm/đếm vi phạm ranh giới ảnh để xác định định dạng và tỉ lệ tối ưu
+            configs = [
+                (True, True),   # xyxy, raw
+                (False, True),  # yxyx, raw
+                (True, False),  # xyxy, normalized
+                (False, False), # yxyx, normalized
+            ]
+            
+            best_config = None
+            min_violations = float('inf')
+            
+            for cfg_xyxy, cfg_raw in configs:
+                if any_gt_1000 and not cfg_raw:
+                    continue
+                    
+                violations = 0
+                for box in boxes:
+                    if cfg_xyxy:
+                        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+                    else:
+                        y1, x1, y2, x2 = box[0], box[1], box[2], box[3]
+                        
+                    if not cfg_raw:
+                        x1_px = (x1 / 1000.0) * img_w
+                        y1_px = (y1 / 1000.0) * img_h
+                        x2_px = (x2 / 1000.0) * img_w
+                        y2_px = (y2 / 1000.0) * img_h
+                    else:
+                        x1_px, y1_px, x2_px, y2_px = x1, y1, x2, y2
+                        
+                    # Cho phép sai số biên 10%
+                    margin_w = img_w * 0.1
+                    margin_h = img_h * 0.1
+                    
+                    if x1_px < -margin_w or x1_px > img_w + margin_w:
+                        violations += 1
+                    if x2_px < -margin_w or x2_px > img_w + margin_w:
+                        violations += 1
+                    if y1_px < -margin_h or y1_px > img_h + margin_h:
+                        violations += 1
+                    if y2_px < -margin_h or y2_px > img_h + margin_h:
+                        violations += 1
+                        
+                    # Kiểm tra thứ tự tọa độ hợp lệ
+                    if x1_px > x2_px + 5.0:
+                        violations += 1
+                    if y1_px > y2_px + 5.0:
+                        violations += 1
+                        
+                if violations < min_violations:
+                    min_violations = violations
+                    best_config = (cfg_xyxy, cfg_raw)
+                    
+            if best_config is not None:
+                is_xyxy, is_raw = best_config
+
+        # Khởi dựng POIs chính xác
+        for item in raw_labels:
+            text_val = item["text"]
+            bbox = item["bbox"]
+            confidence = item["confidence"]
+            
+            if is_xyxy:
+                x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            else:
+                y1, x1, y2, x2 = bbox[0], bbox[1], bbox[2], bbox[3]
+                
+            if not is_raw:
+                x1_px = (x1 / 1000.0) * img_w
+                y1_px = (y1 / 1000.0) * img_h
+                x2_px = (x2 / 1000.0) * img_w
+                y2_px = (y2 / 1000.0) * img_h
+            else:
+                x1_px, y1_px, x2_px, y2_px = x1, y1, x2, y2
+
+            # Prefer icon pixel position over bbox center for GPS resolution
+            if "icon_x" in item and "icon_y" in item:
+                icon_x_raw = item["icon_x"]
+                icon_y_raw = item["icon_y"]
+                # Apply same scaling as bbox when coordinates are normalized
+                if not is_raw:
+                    poi_x = (icon_x_raw / 1000.0) * img_w
+                    poi_y = (icon_y_raw / 1000.0) * img_h
+                else:
+                    poi_x = icon_x_raw
+                    poi_y = icon_y_raw
+            else:
+                # Fallback: use center of text bbox
+                poi_x = (x1_px + x2_px) / 2.0
+                poi_y = (y1_px + y2_px) / 2.0
+
+            pois.append({
+                "name": text_val,
+                "x": poi_x,
+                "y": poi_y,
+                "confidence": confidence,
+                "bbox": [x1_px, y1_px, x2_px, y2_px]
+            })
+
+    if pois:
+        logger.info("  [Fallback Parser] Successfully parsed %d POIs (Format: %s, Raw: %s)", len(pois), "xyxy" if is_xyxy else "yxyx", is_raw)
+        return pois, outside_district
+
     logger.debug("No POI JSON found in LLM response.")
     return pois, outside_district

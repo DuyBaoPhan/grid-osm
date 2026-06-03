@@ -30,7 +30,7 @@ from config import (
     ZOOM_LEVEL,
     HEADLESS,
 )
-from grid import tile_center, tile_bbox, tile_viewport_bbox
+from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
 from vision import extract_pois_from_screenshot
 
 logger = logging.getLogger(__name__)
@@ -78,11 +78,11 @@ class Worker:
                 "--disable-extensions",
                 "--disable-background-networking",
                 "--disable-default-apps",
+                "--start-maximized",
             ],
         )
         self._context = await self._browser.new_context(
-            viewport={"width": SCREENSHOT_W, "height": SCREENSHOT_H},
-            device_scale_factor=2,  # Kích hoạt chế độ High DPI giúp chữ siêu sắc nét
+            no_viewport=True,
             user_agent=(
                 "Mozilla/5.0 (compatible; OSM-Research-Bot/2.0; "
                 "+https://github.com/DuyBaoPhan/grid-osm)"
@@ -95,17 +95,23 @@ class Worker:
         await self._page.add_init_script("""
             const style = document.createElement('style');
             style.textContent = `
-                header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container {
+                header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container, #top-bar, .top-bar, #navbar, .navbar {
                     display: none !important;
                 }
                 #map {
                     left: 0 !important;
                     top: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
                     margin: 0 !important;
                     padding: 0 !important;
-                    position: absolute !important;
+                    position: fixed !important;
+                    z-index: 999999 !important;
+                }
+                body, html {
+                    overflow: hidden !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
                 }
             `;
             document.documentElement.appendChild(style);
@@ -325,19 +331,26 @@ class Worker:
                 distance_meters = dist_css * meters_per_css_pixel
 
                 if not dom_match:
-                    # Quy đổi khoảng cách và góc sang delta lat, lng
-                    meters_per_degree_lat = 111132.9
-                    meters_per_degree_lng = 111412.8 * math.cos(math.radians(lat))
+                    # Quy đổi kích thước ảnh và vị trí pixel từ vật lý sang CSS pixels trước khi tính toán
+                    width_css = img_w / scale
+                    height_css = img_h / scale
+                    pixel_x_css = x_val / scale
+                    pixel_y_css = y_val / scale
 
-                    dlat = (distance_meters * math.cos(bearing_rad)) / meters_per_degree_lat
-                    dlng = (distance_meters * math.sin(bearing_rad)) / meters_per_degree_lng
-
-                    # 5. Tọa độ POI
-                    poi_lat = lat + dlat
-                    poi_lng = lng + dlng
+                    # Áp dụng công thức pixel_to_gps chính xác tiêu chuẩn Web Mercator
+                    poi_lat, poi_lng = pixel_to_gps(
+                        center_lat=lat,
+                        center_lon=lng,
+                        zoom=SCREENSHOT_ZOOM,
+                        width=width_css,
+                        height=height_css,
+                        pixel_x=pixel_x_css,
+                        pixel_y=pixel_y_css,
+                        tile_size=256
+                    )
                     
                     logger.info(
-                        "  [GeoPixel] Resolved '%s' via GPS tâm & pixel → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        "  [GeoPixel] Resolved '%s' via exact Web Mercator pixel_to_gps → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
                         name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
                     )
                 else:
@@ -369,6 +382,12 @@ class Worker:
                     "distance_pixels":  round(distance_pixels, 1),
                     "distance_meters":  round(distance_meters, 1),
                     "bearing_degrees":  round(bearing_deg, 1),
+                    "image_corners": {
+                        "top_left":     {"lat": round(img_metadata.get("top_left_lat", 0.0), 6), "lng": round(img_metadata.get("top_left_lng", 0.0), 6)},
+                        "top_right":    {"lat": round(img_metadata.get("top_right_lat", 0.0), 6), "lng": round(img_metadata.get("top_right_lng", 0.0), 6)},
+                        "bottom_left":  {"lat": round(img_metadata.get("bottom_left_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_left_lng", 0.0), 6)},
+                        "bottom_right": {"lat": round(img_metadata.get("bottom_right_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_right_lng", 0.0), 6)},
+                    }
                 })
             else:
                 logger.info(
@@ -546,26 +565,56 @@ class Worker:
 
     async def _capture_screenshot(self, url: str, bbox: Tuple[float, float, float, float]) -> Tuple[bytes, dict]:
         """Điều hướng đến URL và chụp screenshot và trả về ảnh cùng metadata kích thước."""
+        lat = (bbox[0] + bbox[2]) / 2.0
+        lng = (bbox[1] + bbox[3]) / 2.0
         assert self._page is not None, "Page is not initialized"
-        await self._page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=PAGE_LOAD_TIMEOUT,
-        )
+        # OSM uses hash-based URLs (#map=zoom/lat/lng) which can cause ERR_ABORTED
+        # when Playwright fires domcontentloaded too early. Retry with 'load' on abort.
+        try:
+            await self._page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=PAGE_LOAD_TIMEOUT,
+            )
+        except Exception as nav_exc:
+            nav_msg = str(nav_exc)
+            if "ERR_ABORTED" in nav_msg or "frame was detached" in nav_msg or "net::" in nav_msg:
+                logger.warning("  [Nav] goto ERR_ABORTED (hash URL quirk) — retrying with 'load': %s", nav_msg[:120])
+                try:
+                    await self._page.goto(
+                        url,
+                        wait_until="load",
+                        timeout=PAGE_LOAD_TIMEOUT,
+                    )
+                except Exception as retry_exc:
+                    retry_msg = str(retry_exc)
+                    if "ERR_ABORTED" in retry_msg or "frame was detached" in retry_msg:
+                        # ERR_ABORTED on hash navigation is non-fatal — page content still loaded
+                        logger.debug("  [Nav] Second goto also aborted (non-fatal for hash URL): %s", retry_msg[:80])
+                    else:
+                        raise
+            else:
+                raise
         
         # 1. Inject CSS ẩn toàn bộ UI rác (welcome panel, header, banner) và cho bản đồ phóng full màn hình
         css_hide_clutter = """
-        header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container {
+        header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container, #top-bar, .top-bar, #navbar, .navbar {
             display: none !important;
         }
         #map {
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
+            width: 100vw !important;
+            height: 100vh !important;
             margin: 0 !important;
             padding: 0 !important;
-            position: absolute !important;
+            position: fixed !important;
+            z-index: 999999 !important;
+        }
+        body, html {
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         """
         try:
@@ -592,7 +641,7 @@ class Worker:
                     mapEl.style.setProperty('top', '0px', 'important');
                     mapEl.style.setProperty('width', '100%', 'important');
                     mapEl.style.setProperty('height', '100%', 'important');
-                    mapEl.style.setProperty('position', 'absolute', 'important');
+                    mapEl.style.setProperty('position', 'fixed', 'important');
                     mapEl.style.setProperty('margin', '0px', 'important');
                     mapEl.style.setProperty('padding', '0px', 'important');
                 }}
@@ -661,6 +710,17 @@ class Worker:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
 
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
+        
+        # Get actual viewport size dynamically via Javascript since page.viewport_size is None when no_viewport=True
+        w_viewport, h_viewport = SCREENSHOT_W, SCREENSHOT_H
+        try:
+            v_size = await self._page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
+            if v_size and "width" in v_size and "height" in v_size:
+                w_viewport = int(v_size["width"])
+                h_viewport = int(v_size["height"])
+        except Exception as eval_exc:
+            logger.debug("Failed to evaluate viewport size via JS: %s", eval_exc)
+
         screenshot_bytes = await self._page.screenshot(type="png")
 
         # 3. Nén ảnh full viewport sang JPEG chất lượng cao — không crop, LLM thấy đúng như worker
@@ -669,10 +729,15 @@ class Worker:
             import io
 
             img = Image.open(io.BytesIO(screenshot_bytes))
-            w, h = img.size
-            scale = w / SCREENSHOT_W  # High-DPI scale factor
+            w_orig, h_orig = img.size
+            scale_orig = w_orig / w_viewport
 
-            # Áp dụng bộ lọc làm sắc nét và tăng tương phản
+            # Hạ độ phân giải ảnh chụp xuống kích thước CSS chuẩn để tăng tốc Ollama 4 lần
+            img = img.resize((w_viewport, h_viewport), Image.Resampling.LANCZOS)
+            w, h = img.size
+            scale = 1.0  # Đã chuyển đổi sang tỷ lệ CSS chuẩn
+
+            # Áp dụng bộ lọc làm sắc nét và tăng tương phản trên ảnh đã thu nhỏ
             try:
                 img = img.filter(ImageFilter.SHARPEN)
                 enhancer = ImageEnhance.Contrast(img)
@@ -682,10 +747,59 @@ class Worker:
 
             rgb_img = img.convert("RGB")
             output_bytes = io.BytesIO()
-            rgb_img.save(output_bytes, format="JPEG", quality=95)
+            rgb_img.save(output_bytes, format="JPEG", quality=80)
             logger.info(
-                "  [Full Viewport] Screenshot full %dx%d px (High-DPI %.1fx, quality=95%%) — no crop",
-                w, h, scale
+                "  [Downscale Viewport] Screenshot downscaled from %dx%d to %dx%d px (High-DPI original %.1fx -> target %.1fx, quality=80%%)",
+                w_orig, h_orig, w, h, scale_orig, scale
+            )
+
+            # Tính toán tọa độ 4 góc của ảnh qua pixel_to_gps chính xác Web Mercator
+            center_lat = lat
+            center_lng = lng
+            tl_lat, tl_lng = pixel_to_gps(
+                center_lat=center_lat,
+                center_lon=center_lng,
+                zoom=SCREENSHOT_ZOOM,
+                width=w,
+                height=h,
+                pixel_x=0,
+                pixel_y=0
+            )
+            tr_lat, tr_lng = pixel_to_gps(
+                center_lat=center_lat,
+                center_lon=center_lng,
+                zoom=SCREENSHOT_ZOOM,
+                width=w,
+                height=h,
+                pixel_x=w,
+                pixel_y=0
+            )
+            bl_lat, bl_lng = pixel_to_gps(
+                center_lat=center_lat,
+                center_lon=center_lng,
+                zoom=SCREENSHOT_ZOOM,
+                width=w,
+                height=h,
+                pixel_x=0,
+                pixel_y=h
+            )
+            br_lat, br_lng = pixel_to_gps(
+                center_lat=center_lat,
+                center_lon=center_lng,
+                zoom=SCREENSHOT_ZOOM,
+                width=w,
+                height=h,
+                pixel_x=w,
+                pixel_y=h
+            )
+
+            logger.info(
+                "  [Tile Corners Reference]:\n"
+                "    Top-Left:     (%.6f, %.6f)\n"
+                "    Top-Right:    (%.6f, %.6f)\n"
+                "    Bottom-Left:  (%.6f, %.6f)\n"
+                "    Bottom-Right: (%.6f, %.6f)",
+                tl_lat, tl_lng, tr_lat, tr_lng, bl_lat, bl_lng, br_lat, br_lng
             )
 
             img_metadata = {
@@ -696,6 +810,14 @@ class Worker:
                 "scale": scale,
                 "crop_x1": 0,
                 "crop_y1": 0,
+                "top_left_lat": tl_lat,
+                "top_left_lng": tl_lng,
+                "top_right_lat": tr_lat,
+                "top_right_lng": tr_lng,
+                "bottom_left_lat": bl_lat,
+                "bottom_left_lng": bl_lng,
+                "bottom_right_lat": br_lat,
+                "bottom_right_lng": br_lng,
             }
             return output_bytes.getvalue(), img_metadata
         except Exception as crop_err:
@@ -708,7 +830,47 @@ class Worker:
             _img = Image.open(_io.BytesIO(screenshot_bytes))
             w, h = _img.size
         except Exception:
-            w, h = SCREENSHOT_W * 2, SCREENSHOT_H * 2
+            w, h = w_viewport * 2, h_viewport * 2
+
+        center_lat = lat
+        center_lng = lng
+        tl_lat, tl_lng = pixel_to_gps(
+            center_lat=center_lat,
+            center_lon=center_lng,
+            zoom=SCREENSHOT_ZOOM,
+            width=w,
+            height=h,
+            pixel_x=0,
+            pixel_y=0
+        )
+        tr_lat, tr_lng = pixel_to_gps(
+            center_lat=center_lat,
+            center_lon=center_lng,
+            zoom=SCREENSHOT_ZOOM,
+            width=w,
+            height=h,
+            pixel_x=w,
+            pixel_y=0
+        )
+        bl_lat, bl_lng = pixel_to_gps(
+            center_lat=center_lat,
+            center_lon=center_lng,
+            zoom=SCREENSHOT_ZOOM,
+            width=w,
+            height=h,
+            pixel_x=0,
+            pixel_y=h
+        )
+        br_lat, br_lng = pixel_to_gps(
+            center_lat=center_lat,
+            center_lon=center_lng,
+            zoom=SCREENSHOT_ZOOM,
+            width=w,
+            height=h,
+            pixel_x=w,
+            pixel_y=h
+        )
+
         img_metadata = {
             "width": w,
             "height": h,
@@ -717,6 +879,14 @@ class Worker:
             "scale": 2.0,
             "crop_x1": 0,
             "crop_y1": 0,
+            "top_left_lat": tl_lat,
+            "top_left_lng": tl_lng,
+            "top_right_lat": tr_lat,
+            "top_right_lng": tr_lng,
+            "bottom_left_lat": bl_lat,
+            "bottom_left_lng": bl_lng,
+            "bottom_right_lat": br_lat,
+            "bottom_right_lng": br_lng,
         }
         return screenshot_bytes, img_metadata
 

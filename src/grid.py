@@ -351,6 +351,55 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def pixel_to_gps(
+    center_lat: float,
+    center_lon: float,
+    zoom: int,
+    width: float,
+    height: float,
+    pixel_x: float,
+    pixel_y: float,
+    tile_size: int = 256
+) -> Tuple[float, float]:
+    """
+    Chuyển pixel trên ảnh Google Maps/OSM -> GPS sử dụng Web Mercator Projection.
+    """
+    scale = tile_size * (2 ** zoom)
+
+    # ===== GPS tâm -> World Pixel =====
+    center_world_x = (center_lon + 180.0) / 360.0 * scale
+
+    sin_lat = math.sin(math.radians(center_lat))
+    sin_lat = max(min(sin_lat, 0.9999), -0.9999)
+
+    center_world_y = (
+        0.5
+        - math.log((1 + sin_lat) / (1 - sin_lat))
+        / (4 * math.pi)
+    ) * scale
+
+    # ===== Pixel tương đối so với tâm =====
+    dx = pixel_x - width / 2
+    dy = pixel_y - height / 2
+
+    # ===== World Pixel của điểm cần tìm =====
+    world_x = center_world_x + dx
+    world_y = center_world_y + dy
+
+    # ===== World Pixel -> GPS =====
+    lon = world_x / scale * 360.0 - 180.0
+
+    n = math.pi - (2 * math.pi * world_y / scale)
+
+    lat = math.degrees(
+        math.atan(
+            math.sinh(n)
+        )
+    )
+
+    return lat, lon
+
+
 # ── Quick self-test ──────────────────────────────────────────
 if __name__ == "__main__":
     zoom = 18

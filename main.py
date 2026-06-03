@@ -26,9 +26,9 @@ else:
 from playwright.async_api import async_playwright
 
 from config import LOG_FILE, LOG_LEVEL, NUM_WORKERS
-from coordinator import Coordinator
-from map_viewer import build_and_save as _build_map
-from worker import Worker
+from src.coordinator import Coordinator
+from src.map_viewer import build_and_save as _build_map
+from src.worker import Worker
 
 
 # ── Logging setup ─────────────────────────────────────────────

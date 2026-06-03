@@ -155,6 +155,12 @@ async def run_simulation():
                         "approx_lng": poi_lng,
                         "tile_x": tx,
                         "tile_y": ty,
+                        "image_corners": {
+                            "top_left":     {"lat": round(clat + 0.001, 6), "lng": round(clng - 0.001, 6)},
+                            "top_right":    {"lat": round(clat + 0.001, 6), "lng": round(clng + 0.001, 6)},
+                            "bottom_left":  {"lat": round(clat - 0.001, 6), "lng": round(clng - 0.001, 6)},
+                            "bottom_right": {"lat": round(clat - 0.001, 6), "lng": round(clng + 0.001, 6)},
+                        }
                     })
 
             # 4. Không giả lập outside_district — coordinator đã tự geo-verify
