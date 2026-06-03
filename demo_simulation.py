@@ -25,8 +25,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))
 
 import config
-from coordinator import Coordinator
-from grid import generate_all_tiles, tile_center
+from src.coordinator import Coordinator
+from src.grid import generate_all_tiles, tile_center
 
 # Fix Windows terminal encoding (cp1252 không hỗ trợ tiếng Việt có dấu)
 import io
