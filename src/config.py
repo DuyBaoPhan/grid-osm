@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).parent.parent
 
 # ── Ollama / Local LLM ───────────────────────────────────────
 OLLAMA_API_BASE   = "http://localhost:11434/v1"
-OLLAMA_MODEL      = "qwen2.5vl:3b"           # Tên model 3B siêu nhẹ của Qwen2.5-VL
+OLLAMA_MODEL      = "qwen2.5vl:3b"           
 
 # ── Worker ───────────────────────────────────────────────────
 NUM_WORKERS            = 1              # Để 1 worker cho độ ổn định tối đa (tránh quá tải GPU/VRAM khi gọi Ollama song song)

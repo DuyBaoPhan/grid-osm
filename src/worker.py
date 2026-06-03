@@ -218,7 +218,7 @@ class Worker:
         img_metadata = {}
         for attempt in range(1, MAX_RETRIES + 2):
             try:
-                screenshot, img_metadata = await self._capture_screenshot(url, bbox)
+                raw_screenshot, compressed_screenshot, img_metadata = await self._capture_screenshot(url, bbox)
                 # Override bbox bằng góc thực tế của ảnh (khớp đúng vùng hiển thị, không phụ thuộc SCREENSHOT_H cứng)
                 if img_metadata:
                     bbox = (
@@ -253,14 +253,14 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        # Lưu screenshot gốc (không có lưới) nếu cần debug
+        # Lưu screenshot gốc (không có lưới, không bị giảm chất lượng) nếu cần debug
         if SAVE_SCREENSHOTS:
-            await self._save_screenshot(screenshot, tx, ty)
+            await self._save_screenshot(raw_screenshot, tx, ty)
         logger.info("  [1/2] Screenshot captured -> sending to LLM...")
 
         # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ, không dùng lưới cho LLM)
         poi_names, outside_district = await extract_pois_from_screenshot(
-            screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            compressed_screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
         logger.info("  [2/2] LLM done.")
 
@@ -678,8 +678,8 @@ class Worker:
                             }}
                             if (mapInstance) {{
                                 clearInterval(interval);
+                                mapInstance.invalidateSize({{ animate: false }});
                                 mapInstance.setView([{lat}, {lng}], {SCREENSHOT_ZOOM}, {{ animate: false }});
-                                mapInstance.invalidateSize();
                                 resolve(true);
                             }} else {{
                                 attempts++;
@@ -709,7 +709,8 @@ class Worker:
                 scanBox.style.border = '2px solid rgba(0, 210, 255, 0.4)';
                 scanBox.style.backgroundColor = 'transparent';
                 scanBox.style.pointerEvents = 'none';
-                scanBox.style.zIndex = '99999';
+                scanBox.style.zIndex = '10000000';
+                scanBox.style.boxSizing = 'border-box';
 
                 // Trả về null — dùng full viewport, không crop
                 return null;
@@ -717,6 +718,10 @@ class Worker:
         except Exception as exc:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
 
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            pass
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
         
         # Get actual viewport size dynamically via Javascript since page.viewport_size is None when no_viewport=True
@@ -827,7 +832,7 @@ class Worker:
                 "bottom_right_lat": br_lat,
                 "bottom_right_lng": br_lng,
             }
-            return output_bytes.getvalue(), img_metadata
+            return screenshot_bytes, output_bytes.getvalue(), img_metadata
         except Exception as crop_err:
             logger.warning("Could not compress screenshot: %s", crop_err)
 
@@ -896,7 +901,7 @@ class Worker:
             "bottom_right_lat": br_lat,
             "bottom_right_lng": br_lng,
         }
-        return screenshot_bytes, img_metadata
+        return screenshot_bytes, screenshot_bytes, img_metadata
 
     async def _save_screenshot(self, data: bytes, tx: int, ty: int) -> None:
         """Lưu screenshot ra disk (chỉ dùng khi debug)."""

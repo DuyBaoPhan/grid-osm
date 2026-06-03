@@ -267,30 +267,8 @@ function renderGeoJson(geoJsonData) {{
     map.removeLayer(geoJsonLayer);
   }}
 
-  let processedGeojson = {{ type: "FeatureCollection", features: [] }};
-
-  if (typeof boundaryGeojson !== 'undefined' && boundaryGeojson && typeof turf !== 'undefined') {{
-    const boundaryPoly = boundaryGeojson.geometry;
-    
-    geoJsonData.features.forEach(f => {{
-      try {{
-        const tilePoly = f.geometry;
-        
-        // 1. Tính phần giao nhau (nằm TRONG ranh giới quận) -> Giữ nguyên thuộc tính Done
-        const insideIntersection = turf.intersect(turf.feature(tilePoly), turf.feature(boundaryPoly));
-        if (insideIntersection) {{
-          const insideFeature = JSON.parse(JSON.stringify(f));
-          insideFeature.geometry = insideIntersection.geometry;
-          processedGeojson.features.push(insideFeature);
-        }}
-
-      }} catch (err) {{
-        processedGeojson.features.push(f);
-      }}
-    }});
-  }} else {{
-    processedGeojson = geoJsonData;
-  }}
+  // Hiển thị đầy đủ hình chữ nhật vùng quét để khớp 100% với ảnh chụp gốc
+  let processedGeojson = geoJsonData;
 
   geoJsonLayer = L.geoJSON(processedGeojson, {{
     style: f => ({{
