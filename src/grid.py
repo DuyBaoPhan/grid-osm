@@ -58,7 +58,7 @@ def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
     lat_rad = math.radians(lat)
     cy_frac = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
     
-    step_x = 4.0
+    step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
     
     tx = int(round((cx_frac - _cx_frac) / step_x))
@@ -72,7 +72,7 @@ def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
     tx: bước nhảy ngang (mỗi bước = 1024 px = 4.0 tile units)
     ty: bước nhảy dọc (mỗi bước = SCREENSHOT_H px = SCREENSHOT_H/256 tile units)
     """
-    step_x = 4.0
+    step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
     
     x_c = _cx_frac + tx * step_x
@@ -91,14 +91,14 @@ def tile_viewport_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float
     Trả về bounding box thực tế của custom grid cell (tx, ty)
     tiếp giáp khít mép (edge-to-edge) 0% gap và 0% overlap.
     """
-    step_x = 4.0
+    step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
     
     x_c = _cx_frac + tx * step_x
     y_c = _cy_frac + ty * step_y
     
-    x_min = x_c - 2.0
-    x_max = x_c + 2.0
+    x_min = x_c - (step_x / 2.0)
+    x_max = x_c + (step_x / 2.0)
     y_min = y_c - (step_y / 2.0)
     y_max = y_c + (step_y / 2.0)
     
@@ -294,7 +294,7 @@ def generate_all_tiles(
                 x_min_frac, x_max_frac = min(x1, x2), max(x1, x2)
                 y_min_frac, y_max_frac = min(y1, y2), max(y1, y2)
                 
-                step_x = 4.0
+                step_x = config.SCREENSHOT_W / 256.0
                 step_y = config.SCREENSHOT_H / 256.0
                 
                 # Tính phạm vi chỉ số tx, ty quanh tâm
@@ -325,7 +325,7 @@ def generate_all_tiles(
     logger.info("Falling back to traditional circular radius-based tile generation.")
     tile_r = km_to_tile_radius(radius_km, center_lat, zoom)
 
-    step_x = 4.0
+    step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
     
     tx_r = int(math.ceil(tile_r / step_x))

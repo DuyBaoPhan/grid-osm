@@ -100,7 +100,7 @@ class Coordinator:
 
         # 3. Nạp checkpoint
         visited_from_checkpoint, queued_from_checkpoint = self._load_checkpoint()
-        self._results = self._load_results()
+        self._results = _deduplicate_pois(self._load_results())
 
         # 4. Xác định tile ban đầu (tile chứa tâm quận)
         center_tile = lat_lng_to_tile(CENTER_LAT, CENTER_LNG, ZOOM_LEVEL)
@@ -260,6 +260,7 @@ class Coordinator:
             # ── Cập nhật trạng thái ──
             self._visited.add(tile)
             self._results.extend(filtered_pois)
+            self._results = _deduplicate_pois(self._results)
 
             if filtered_pois:
                 logger.info(
@@ -497,3 +498,61 @@ def _robust_replace(src: str, dst: str, max_retries: int = 5, delay: float = 0.0
             if i == max_retries - 1:
                 raise
             time.sleep(delay)
+
+
+def _deduplicate_pois(pois: List[dict]) -> List[dict]:
+    """
+    Loại bỏ các POI trùng lặp dựa trên khoảng cách địa lý và độ tương đồng tên.
+    """
+    from vision import _strip_vietnamese_accents
+    
+    def clean_name(name: str) -> str:
+        s = _strip_vietnamese_accents(name)
+        # Giữ lại các chữ cái và chữ số
+        return "".join(c for c in s if c.isalnum())
+
+    # Sắp xếp các POI theo chiều dài tên giảm dần để ưu tiên giữ tên đầy đủ hơn
+    sorted_pois = sorted(pois, key=lambda p: len(p.get("name", "")), reverse=True)
+    
+    unique_pois = []
+    for poi in sorted_pois:
+        lat = poi.get("approx_lat")
+        lng = poi.get("approx_lng")
+        name = poi.get("name", "").strip()
+        
+        if lat is None or lng is None or not name:
+            unique_pois.append(poi)
+            continue
+            
+        c_name = clean_name(name)
+        
+        is_dup = False
+        for upoi in unique_pois:
+            u_lat = upoi.get("approx_lat")
+            u_lng = upoi.get("approx_lng")
+            u_name = upoi.get("name", "").strip()
+            
+            if u_lat is None or u_lng is None or not u_name:
+                continue
+                
+            # Tính khoảng cách địa lý Haversine (mét)
+            import math
+            phi1 = math.radians(lat)
+            phi2 = math.radians(u_lat)
+            dphi = math.radians(u_lat - lat)
+            dlng = math.radians(u_lng - lng)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlng / 2) ** 2
+            dist = 6371000.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            
+            # Ngưỡng khoảng cách trùng lặp là 12 mét
+            if dist < 12.0:
+                uc_name = clean_name(u_name)
+                # Nếu tên trùng khớp hoặc là chuỗi con của nhau (dài hơn 3 ký tự)
+                if c_name == uc_name or (len(c_name) > 3 and c_name in uc_name) or (len(uc_name) > 3 and uc_name in c_name):
+                    is_dup = True
+                    break
+                    
+        if not is_dup:
+            unique_pois.append(poi)
+            
+    return unique_pois

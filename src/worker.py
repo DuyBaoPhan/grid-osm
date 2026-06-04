@@ -260,11 +260,11 @@ class Worker:
             await self._save_screenshot(raw_screenshot, tx, ty)
         logger.info("  [1/2] Screenshot captured -> sending to LLM...")
 
-        # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ, không dùng lưới cho LLM)
+        # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
         poi_names, outside_district = await extract_pois_from_screenshot(
-            compressed_screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            raw_screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
-        logger.info("  [2/2] LLM done.")
+        logger.info("  [2/2] OCR Vision done.")
 
         # Đóng trình duyệt sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
         await self._close_browser()
@@ -778,45 +778,26 @@ class Worker:
 
         screenshot_bytes = await self._page.screenshot(type="png")
 
-        # 3. Nén ảnh full viewport sang JPEG chất lượng cao — không crop, LLM thấy đúng như worker
+        # 3. Tính toán thông tin ảnh mà không co dãn (no downscale) để giữ nguyên độ phân giải và nét chữ
         try:
-            from PIL import Image, ImageEnhance, ImageFilter
+            from PIL import Image
             import io
 
             img = Image.open(io.BytesIO(screenshot_bytes))
             w_orig, h_orig = img.size
-            scale_orig = w_orig / w_viewport
-
-            # Hạ độ phân giải ảnh chụp xuống kích thước CSS chuẩn để tăng tốc Ollama 4 lần
-            img = img.resize((w_viewport, h_viewport), Image.Resampling.LANCZOS)
-            w, h = img.size
-            scale = 1.0  # Đã chuyển đổi sang tỷ lệ CSS chuẩn
-
-            # Áp dụng bộ lọc làm sắc nét và tăng tương phản trên ảnh đã thu nhỏ
-            try:
-                img = img.filter(ImageFilter.SHARPEN)
-                enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.25)
-            except Exception as enh_err:
-                logger.debug("Image enhancement failed: %s", enh_err)
-
-            rgb_img = img.convert("RGB")
-            output_bytes = io.BytesIO()
-            rgb_img.save(output_bytes, format="JPEG", quality=80)
-            logger.info(
-                "  [Downscale Viewport] Screenshot downscaled from %dx%d to %dx%d px (High-DPI original %.1fx -> target %.1fx, quality=80%%)",
-                w_orig, h_orig, w, h, scale_orig, scale
-            )
+            scale = w_orig / w_viewport  # device scale factor (tỷ lệ điểm ảnh vật lý / CSS)
+            w, h = w_orig, h_orig
 
             # Tính toán tọa độ 4 góc của ảnh qua pixel_to_gps chính xác Web Mercator
+            # Lưu ý: pixel_to_gps cần các tham số width, height, pixel_x, pixel_y ở kích thước CSS
             center_lat = lat
             center_lng = lng
             tl_lat, tl_lng = pixel_to_gps(
                 center_lat=center_lat,
                 center_lon=center_lng,
                 zoom=SCREENSHOT_ZOOM,
-                width=w,
-                height=h,
+                width=w_viewport,
+                height=h_viewport,
                 pixel_x=0,
                 pixel_y=0
             )
@@ -824,30 +805,34 @@ class Worker:
                 center_lat=center_lat,
                 center_lon=center_lng,
                 zoom=SCREENSHOT_ZOOM,
-                width=w,
-                height=h,
-                pixel_x=w,
+                width=w_viewport,
+                height=h_viewport,
+                pixel_x=w_viewport,
                 pixel_y=0
             )
             bl_lat, bl_lng = pixel_to_gps(
                 center_lat=center_lat,
                 center_lon=center_lng,
                 zoom=SCREENSHOT_ZOOM,
-                width=w,
-                height=h,
+                width=w_viewport,
+                height=h_viewport,
                 pixel_x=0,
-                pixel_y=h
+                pixel_y=h_viewport
             )
             br_lat, br_lng = pixel_to_gps(
                 center_lat=center_lat,
                 center_lon=center_lng,
                 zoom=SCREENSHOT_ZOOM,
-                width=w,
-                height=h,
-                pixel_x=w,
-                pixel_y=h
+                width=w_viewport,
+                height=h_viewport,
+                pixel_x=w_viewport,
+                pixel_y=h_viewport
             )
 
+            logger.info(
+                "  [Capture Screenshot] Keep original resolution %dx%d px (DPI scale = %.2fx)",
+                w, h, scale
+            )
             logger.info(
                 "  [Tile Corners Reference]:\n"
                 "    Top-Left:     (%.6f, %.6f)\n"
@@ -874,18 +859,20 @@ class Worker:
                 "bottom_right_lat": br_lat,
                 "bottom_right_lng": br_lng,
             }
-            return screenshot_bytes, output_bytes.getvalue(), img_metadata
+            return screenshot_bytes, screenshot_bytes, img_metadata
         except Exception as crop_err:
-            logger.warning("Could not compress screenshot: %s", crop_err)
+            logger.warning("Could not process screenshot metadata: %s", crop_err)
 
         # Fallback: trả ảnh PNG gốc
         try:
             from PIL import Image
             import io as _io
             _img = Image.open(_io.BytesIO(screenshot_bytes))
-            w, h = _img.size
+            w_orig, h_orig = _img.size
+            scale = w_orig / w_viewport
         except Exception:
-            w, h = w_viewport * 2, h_viewport * 2
+            w_orig, h_orig = w_viewport * 2, h_viewport * 2
+            scale = 2.0
 
         center_lat = lat
         center_lng = lng
@@ -893,8 +880,8 @@ class Worker:
             center_lat=center_lat,
             center_lon=center_lng,
             zoom=SCREENSHOT_ZOOM,
-            width=w,
-            height=h,
+            width=w_viewport,
+            height=h_viewport,
             pixel_x=0,
             pixel_y=0
         )
@@ -902,36 +889,36 @@ class Worker:
             center_lat=center_lat,
             center_lon=center_lng,
             zoom=SCREENSHOT_ZOOM,
-            width=w,
-            height=h,
-            pixel_x=w,
+            width=w_viewport,
+            height=h_viewport,
+            pixel_x=w_viewport,
             pixel_y=0
         )
         bl_lat, bl_lng = pixel_to_gps(
             center_lat=center_lat,
             center_lon=center_lng,
             zoom=SCREENSHOT_ZOOM,
-            width=w,
-            height=h,
+            width=w_viewport,
+            height=h_viewport,
             pixel_x=0,
-            pixel_y=h
+            pixel_y=h_viewport
         )
         br_lat, br_lng = pixel_to_gps(
             center_lat=center_lat,
             center_lon=center_lng,
             zoom=SCREENSHOT_ZOOM,
-            width=w,
-            height=h,
-            pixel_x=w,
-            pixel_y=h
+            width=w_viewport,
+            height=h_viewport,
+            pixel_x=w_viewport,
+            pixel_y=h_viewport
         )
 
         img_metadata = {
-            "width": w,
-            "height": h,
-            "center_x": w / 2.0,
-            "center_y": h / 2.0,
-            "scale": 2.0,
+            "width": w_orig,
+            "height": h_orig,
+            "center_x": w_orig / 2.0,
+            "center_y": h_orig / 2.0,
+            "scale": scale,
             "crop_x1": 0,
             "crop_y1": 0,
             "top_left_lat": tl_lat,

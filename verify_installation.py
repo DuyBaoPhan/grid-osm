@@ -63,29 +63,29 @@ def test_grid_math():
     print(f"    Tile center: ({tx}, {ty}) matches ({clat:.6f}, {clng:.6f})")
     print(f"    Generated tiles in 1km radius: {len(tiles_1km)}")
 
-# ── 3. Kiểm thử Vision Parser ──────────────────────────────────
+# ── 3. Kiểm thử Vision OCR ──────────────────────────────────
 
-def test_vision_parser():
-    from src.vision import _parse_poi_response
+def test_vision_ocr():
+    from src.vision import _is_street_name, _is_generic_name
     
-    t1 = '{"labels": [{"text": "Chua Long Hoa", "bbox": [10, 20, 30, 40], "confidence": 0.95}, {"text": "Nha Hang Pho", "bbox": [50, 60, 70, 80]}]}'
-    res1, out1 = _parse_poi_response(t1)
-    names1 = [p["name"] for p in res1]
-    assert "Chua Long Hoa" in names1 and "Nha Hang Pho" in names1, "Standard JSON parse failed"
-    # Under standard [ymin, xmin, ymax, xmax] layout, center x = (20 + 40)/2 = 30 -> scaled to 612.0: 30 / 1000 * 612 = 18.36
-    assert abs(res1[0]["x"] - 18.36) < 0.01, "x coordinate scaling failed"
-
-    t2 = "```json\n{\"labels\": [{\"text\": \"Truong THCS\", \"bbox\": [30, 40, 50, 60]}]}\n```"
-    res2, out2 = _parse_poi_response(t2)
-    names2 = [p["name"] for p in res2]
-    assert "Truong THCS" in names2, "Code fence parse failed"
-
-    # Kiểm tra trường hợp outside_district true
-    t4 = '{"labels": [], "outside_district": true}'
-    res4, out4 = _parse_poi_response(t4)
-    assert out4 is True, "Outside district parsing failed"
-
-    print("    Vision response parser handled all formats and boundaries correctly.")
+    # Kiểm tra nhận dạng tên đường
+    assert _is_street_name("Đường Lê Lợi") is True, "Đường Lê Lợi should be street"
+    assert _is_street_name("Lê Duẩn") is True, "Lê Duẩn should be street (unaccented check)"
+    assert _is_street_name("Phố Huế") is True, "Phố Huế should be street"
+    assert _is_street_name("Bưu điện Thành phố") is False, "Bưu điện should not be street"
+    assert _is_street_name("Highlands Coffee") is False, "Highlands Coffee should not be street"
+    
+    # Kiểm tra tên loại hình chung chung
+    assert _is_generic_name("cafe") is True, "cafe is generic name"
+    assert _is_generic_name("Highlands Coffee") is False, "Highlands Coffee is not generic name"
+    
+    # Kiểm thử cuộc gọi trống
+    import asyncio
+    from src.vision import extract_pois_from_screenshot
+    res, out = asyncio.run(extract_pois_from_screenshot(b""))
+    assert res == [] and out is False, "Empty screenshot bytes should return empty list"
+    
+    print("    OCR Vision pipeline helpers and empty states validated successfully.")
 
 # ── 4. Mô phỏng Coordinator ───────────────────────────────────
 
@@ -146,10 +146,10 @@ if __name__ == "__main__":
     
     run_test_step("1. Module Import Check", test_imports)
     run_test_step("2. Grid Mathematics Calculation", test_grid_math)
-    run_test_step("3. LLM Vision Response Parser", test_vision_parser)
+    run_test_step("3. OCR Vision POI Extraction", test_vision_ocr)
     run_test_step("4. Coordinator Workflow Simulation", test_coordinator_integration)
     
     print("=" * 60)
     print(" [OK] ALL INTEGRITY CHECKS PASSED SUCCESSFULLY!")
-    print(" System is ready to run with Ollama + Playwright.")
+    print(" System is ready to run with OCR + OpenCV + Playwright.")
     print("=" * 60)
