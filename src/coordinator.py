@@ -474,15 +474,20 @@ def _sort_by_distance(
     center_lng: float,
 ) -> List[TileCoord]:
     """
-    Sắp xếp danh sách tile theo khoảng cách Euclid từ tọa độ trung tâm.
-    Tile gần nhất được xếp trước để đảm bảo quét outward từ trung tâm.
+    Sắp xếp danh sách tile theo khoảng cách hình học trong lưới custom (tx, ty)
+    để đảm bảo lan tỏa tròn đều đối xứng, ưu tiên theo thứ tự: Lên, Xuống, Trái, Phải.
     """
-    from grid import tile_center as _tile_center
-    def _dist(tile: TileCoord) -> float:
-        clat, clng = _tile_center(tile[0], tile[1], ZOOM_LEVEL)
-        return (clat - center_lat) ** 2 + (clng - center_lng) ** 2
+    def _sort_key(tile: TileCoord) -> Tuple[float, float, float, float]:
+        tx, ty = tile
+        # 1. Khoảng cách Euclid bình phương trong không gian lưới
+        grid_dist = tx ** 2 + ty ** 2
+        # 2. Ưu tiên hướng Lên (0, -1), Xuống (0, 1) trước Trái/Phải (abs(tx)=0 < abs(tx)=1)
+        abs_tx = abs(tx)
+        # 3. Hướng Lên (ty < 0) trước Xuống (ty > 0)
+        # 4. Hướng Trái (tx < 0) trước Phải (tx > 0)
+        return (grid_dist, abs_tx, ty, tx)
 
-    return sorted(tiles, key=_dist)
+    return sorted(tiles, key=_sort_key)
 
 
 def _robust_replace(src: str, dst: str, max_retries: int = 5, delay: float = 0.05) -> None:

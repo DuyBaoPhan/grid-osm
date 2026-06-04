@@ -209,6 +209,49 @@ def _is_street_name(name: str) -> bool:
     return False
 
 
+def _clean_spelling(text: str) -> str:
+    """Khắc phục các lỗi dấu và chính tả tiếng Việt phổ biến từ Tesseract OCR."""
+    replacements = {
+        r"\b[tT]ông\s+[lL]ánh\b": "Tổng Lãnh",
+        r"\b[tT]ông\s+[lL]ãnh\b": "Tổng Lãnh",
+        r"\b[tT]ổng\s+[lL]ánh\b": "Tổng Lãnh",
+        r"\b[sS]y\s+[qQ]uán\b": "sứ quán",
+        r"\b[sS]ự\s+[qQ]uán\b": "sứ quán",
+        r"\b[sS]ý\s+[qQ]uán\b": "sứ quán",
+        r"\b[hH]oa\s+[kK]y\b": "Hoa Kỳ",
+        r"\b[hH]oa\s+[kK]ỷ\b": "Hoa Kỳ",
+        r"\b[xX]ếp\s+[hH]ang\b": "xếp hàng",
+        r"\b[đĐ]ảu\b": "Đại",
+        r"\b[đĐ]ải\b": "Đại",
+        r"\b[đĐ]ức\s+[bB]a\b": "Đức Bà",
+        r"\b[đĐ]ức\s+[bB]á\b": "Đức Bà",
+        r"\b[nN]ha\s+[tT]hờ\b": "Nhà thờ",
+        r"\b[nN]hà\s+[tT]ho\b": "Nhà thờ",
+        r"\b[cC]a\s+[pP]hê\b": "cà phê",
+        r"\b[cC]à\s+[pP]he\b": "cà phê",
+        r"\b[bB]ệnh\s+[vV]iên\b": "bệnh viện",
+        r"\b[bB]enh\s+[vV]iện\b": "bệnh viện",
+        r"\b[bB]u\s+[đĐ]iện\b": "Bưu điện",
+        r"\b[bB]ưu\s+[đĐ]ien\b": "Bưu điện",
+        r"\b[bB]uu\s+[đĐ]iện\b": "Bưu điện",
+        r"\b[kK]hách\s+[sS]an\b": "khách sạn",
+        r"\b[kK]hach\s+[sS]ạn\b": "khách sạn",
+        r"\b[tT]rường\s+[tT]iêu\b": "trường tiểu",
+        r"\b[tT]rường\s+[hH]oc\b": "trường học",
+        r"\b[cC]ông\s+[tT]y\b": "Công ty",
+        r"\b[cC]ong\s+[tT]y\b": "Công ty",
+        r"\b[cC]ircle\s+[kK]\b": "Circle K",
+        r"\bsự\s+đ[uủ]ấn\b": "Lê Duẩn",
+        r"\bLê\s+đ[uủ]ấn\b": "Lê Duẩn",
+    }
+    
+    cleaned = text
+    for pattern, replacement in replacements.items():
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+    
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
+
 # ── Hàm phân tích ảnh và trích xuất POI bằng OCR & OpenCV ────────────
 
 async def extract_pois_from_screenshot(
@@ -469,10 +512,33 @@ async def extract_pois_from_screenshot(
         # Lọc danh sách nhãn hợp lệ trước
         valid_labels = []
         for label in labels:
+            label['text'] = _clean_spelling(label['text'])
             if _is_generic_name(label['text']) or not is_valid_poi_name(label['text']) or _is_street_name(label['text']):
                 logger.info("  [OCR-Filter] Bỏ nhãn không hợp lệ/generic/đường phố: '%s'", label['text'])
                 continue
             valid_labels.append(label)
+            
+        # Sắp xếp các nhãn theo thứ tự đọc (từ trên xuống dưới, cùng dòng thì từ trái sang phải)
+        if valid_labels:
+            sorted_by_top = sorted(valid_labels, key=lambda x: x['top'])
+            rows = []
+            current_row = []
+            for item in sorted_by_top:
+                if not current_row:
+                    current_row.append(item)
+                else:
+                    avg_top = sum(x['top'] for x in current_row) / len(current_row)
+                    # Độ lệch dòng tối đa 15px để coi là cùng dòng ngang
+                    if abs(item['top'] - avg_top) <= 15:
+                        current_row.append(item)
+                    else:
+                        current_row.sort(key=lambda x: x['left'])
+                        rows.extend(current_row)
+                        current_row = [item]
+            if current_row:
+                current_row.sort(key=lambda x: x['left'])
+                rows.extend(current_row)
+            valid_labels = rows
             
         # Tìm tất cả các cặp khớp tiềm năng (label, icon) thỏa mãn điều kiện hình học và màu sắc
         potential_matches = []
@@ -488,9 +554,8 @@ async def extract_pois_from_screenshot(
                 ix, iy = icon['x'], icon['y']
                 
                 is_above = (lx - 15 * scale <= ix <= lx + lw + 15 * scale) and (ly - 45 * scale <= iy <= ly + 5 * scale)
-                is_left = (lx - 45 * scale <= ix <= lx + 5 * scale) and (ly - 15 * scale <= iy <= ly + lh + 15 * scale)
                 
-                if is_above or is_left:
+                if is_above:
                     # Kiểm tra màu sắc của nhãn chữ và biểu tượng tương đồng nhau
                     if _colors_are_similar(label['color'], icon['color'], thresh_h=25, thresh_s=75, thresh_v=75):
                         dist = ((ix - label_center_x) ** 2 + (iy - label_center_y) ** 2) ** 0.5
