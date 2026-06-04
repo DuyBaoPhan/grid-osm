@@ -22,6 +22,26 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+try:
+    from config import (
+        OCR_ENGINE,
+        VIETOCR_MODEL,
+        VIETOCR_DEVICE,
+        OCR_TEXT_PAD_PX,
+        OCR_ICON_MAX_Y_GAP,
+        OCR_ICON_X_MARGIN,
+    )
+except Exception:
+    OCR_ENGINE = "tesseract"
+    VIETOCR_MODEL = "vgg_transformer"
+    VIETOCR_DEVICE = "cpu"
+    OCR_TEXT_PAD_PX = 4
+    OCR_ICON_MAX_Y_GAP = 48
+    OCR_ICON_X_MARGIN = 18
+
+_VIETOCR_PREDICTOR = None
+_VIETOCR_LOAD_FAILED = False
+
 # ── Bộ lọc tên loại hình POI chung chung (trích từ bản cũ) ──────────────
 _GENERIC_POI_NAMES = {
     "cafe", "coffee", "shop", "store", "restaurant", "hotel", "bank", "market",
@@ -252,6 +272,67 @@ def _clean_spelling(text: str) -> str:
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 
+def _get_vietocr_predictor():
+    """Lazy-load VietOCR Predictor một lần; trả None nếu dependency/model lỗi."""
+    global _VIETOCR_PREDICTOR, _VIETOCR_LOAD_FAILED
+    if _VIETOCR_PREDICTOR is not None:
+        return _VIETOCR_PREDICTOR
+    if _VIETOCR_LOAD_FAILED or OCR_ENGINE.lower() != "vietocr":
+        return None
+    try:
+        from vietocr.tool.config import Cfg
+        from vietocr.tool.predictor import Predictor
+
+        config = Cfg.load_config_from_name(VIETOCR_MODEL)
+        config["device"] = VIETOCR_DEVICE
+        config["predictor"]["beamsearch"] = True
+        _VIETOCR_PREDICTOR = Predictor(config)
+        logger.info("[VietOCR] Loaded model=%s device=%s", VIETOCR_MODEL, VIETOCR_DEVICE)
+        return _VIETOCR_PREDICTOR
+    except Exception as exc:
+        _VIETOCR_LOAD_FAILED = True
+        logger.warning("[VietOCR] Không load được VietOCR, fallback Tesseract: %s", exc)
+        return None
+
+
+def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, float, float], fallback: str = "") -> str:
+    """OCR lại crop chữ bằng VietOCR; fallback về text detector nếu cần."""
+    predictor = _get_vietocr_predictor()
+    if predictor is None or cv_img is None:
+        return fallback.strip()
+
+    h_img, w_img = cv_img.shape[:2]
+    pad = int(OCR_TEXT_PAD_PX)
+    x1, y1, x2, y2 = map(int, bbox)
+    x1 = max(0, x1 - pad)
+    y1 = max(0, y1 - pad)
+    x2 = min(w_img, x2 + pad)
+    y2 = min(h_img, y2 + pad)
+    if x2 <= x1 or y2 <= y1:
+        return fallback.strip()
+
+    crop = cv_img[y1:y2, x1:x2]
+    if crop.size == 0:
+        return fallback.strip()
+
+    try:
+        # VietOCR đọc tốt hơn khi crop chữ nhỏ được phóng nhẹ.
+        ch, cw = crop.shape[:2]
+        scale = 2 if max(ch, cw) < 220 else 1
+        if scale > 1:
+            crop = cv2.resize(crop, (cw * scale, ch * scale), interpolation=cv2.INTER_CUBIC)
+        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb)
+        text = predictor.predict(pil_img)
+        text = re.sub(r'\s+', ' ', (text or '')).strip()
+        if len(text) >= 2:
+            logger.debug("[VietOCR] '%s' -> '%s'", fallback, text)
+            return text
+    except Exception as exc:
+        logger.debug("[VietOCR] Crop OCR lỗi: %s", exc)
+    return fallback.strip()
+
+
 # ── Hàm phân tích ảnh và trích xuất POI bằng OCR & OpenCV ────────────
 
 async def extract_pois_from_screenshot(
@@ -396,6 +477,10 @@ async def extract_pois_from_screenshot(
             if text and len(text) >= 2:
                 # Trích xuất màu sắc đại diện cho dòng chữ này
                 line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
+                text = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=text)
+                text = re.sub(r'[^\w\s\d,.\-\(\)\/]', '', text).strip()
+                if not text or len(text) < 2:
+                    continue
                 line_color = _get_region_color(cv_img, line_bbox)
                 valid_lines.append({
                     'text': text,
@@ -503,8 +588,13 @@ async def extract_pois_from_screenshot(
                         candidate_icons.append({
                             'x': cx_box + cw_box / 2.0,
                             'y': cy_box + ch_box / 2.0,
+                            'left': float(cx_box),
+                            'top': float(cy_box),
+                            'right': float(cx_box + cw_box),
+                            'bottom': float(cy_box + ch_box),
                             'w': cw_box,
                             'h': ch_box,
+                            'bbox': [float(cx_box), float(cy_box), float(cx_box + cw_box), float(cy_box + ch_box)],
                             'color': icon_color
                         })
 
@@ -553,7 +643,10 @@ async def extract_pois_from_screenshot(
             for i_idx, icon in enumerate(candidate_icons):
                 ix, iy = icon['x'], icon['y']
                 
-                is_above = (lx - 15 * scale <= ix <= lx + lw + 15 * scale) and (ly - 45 * scale <= iy <= ly + 5 * scale)
+                is_above = (
+                    lx - OCR_ICON_X_MARGIN * scale <= ix <= lx + lw + OCR_ICON_X_MARGIN * scale
+                    and ly - OCR_ICON_MAX_Y_GAP * scale <= iy <= ly + 2 * scale
+                )
                 
                 if is_above:
                     # Kiểm tra màu sắc của nhãn chữ và biểu tượng tương đồng nhau
@@ -583,15 +676,23 @@ async def extract_pois_from_screenshot(
             
             if l_idx in matched_labels:
                 icon = candidate_icons[matched_labels[l_idx]]
-                poi_x = icon['x']
-                poi_y = icon['y']
+                # Pixel exact invariant: có icon -> bắt buộc dùng tâm bbox icon.
+                poi_x = (icon['left'] + icon['right']) / 2.0
+                poi_y = (icon['top'] + icon['bottom']) / 2.0
                 has_icon = True
-                logger.info("  [OCR-Match] Khớp nhãn '%s' với icon tại (%.1f, %.1f) - khoảng cách %.1f", label['text'], poi_x, poi_y, ((poi_x - label_center_x)**2 + (poi_y - label_center_y)**2)**0.5)
+                logger.info(
+                    "  [PixelExact-Icon] '%s' bbox_icon=%s center=(%.1f, %.1f)",
+                    label['text'], icon['bbox'], poi_x, poi_y
+                )
             else:
-                poi_x = label_center_x
-                poi_y = label_center_y
+                # Pixel exact invariant: không icon -> bắt buộc dùng tâm bbox label đã merge.
+                poi_x = (lx + lx + lw) / 2.0
+                poi_y = (ly + ly + lh) / 2.0
                 has_icon = False
-                logger.info("  [OCR-NoIcon] Nhãn '%s' không có icon cùng màu lân cận -> dùng tâm chữ (%.1f, %.1f)", label['text'], poi_x, poi_y)
+                logger.info(
+                    "  [PixelExact-Text] '%s' bbox_text=%s center=(%.1f, %.1f)",
+                    label['text'], [float(lx), float(ly), float(lx + lw), float(ly + lh)], poi_x, poi_y
+                )
                 
             pois.append({
                 "name": label['text'],

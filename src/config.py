@@ -52,3 +52,11 @@ STATUS_FILE     = str(BASE_DIR / "map_status.json")   # Dùng để HTML auto-re
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING
+
+# ── OCR / VietOCR ─────────────────────────────────────────────
+OCR_ENGINE = "vietocr"                 # vietocr | tesseract
+VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
+VIETOCR_DEVICE = "cpu"                 # cpu | cuda
+OCR_TEXT_PAD_PX = 4                     # padding crop chữ trước khi nhận diện
+OCR_ICON_MAX_Y_GAP = 48                 # icon phải nằm tối đa N px phía trên text
+OCR_ICON_X_MARGIN = 18                  # icon được lệch ngang ngoài bbox text tối đa N px

@@ -258,7 +258,7 @@ class Worker:
         # Lưu screenshot gốc (không có lưới, không bị giảm chất lượng) nếu cần debug
         if SAVE_SCREENSHOTS:
             await self._save_screenshot(raw_screenshot, tx, ty)
-        logger.info("  [1/2] Screenshot captured -> sending to LLM...")
+        logger.info("  [1/2] Screenshot captured -> sending to OCR...")
 
         # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
         poi_names, outside_district = await extract_pois_from_screenshot(
@@ -308,9 +308,18 @@ class Worker:
                 crop_x1 = img_metadata.get("crop_x1", 0.0)
                 crop_y1 = img_metadata.get("crop_y1", 0.0)
 
-                # 1. Vision: Lấy tọa độ x, y của icon
-                if dom_match:
-                    # Nếu khớp DOM, quy đổi từ vị trí CSS trong DOM (cx, cy) sang tọa độ pixel thực trên ảnh crop
+                # 1. Pixel exact từ vision.py là nguồn chân lý:
+                #    has_icon=True  -> tâm bbox icon.
+                #    has_icon=False -> tâm bbox text/label.
+                # DOM chỉ fallback nếu OCR không trả x/y.
+                has_ocr_xy = item.get("x") is not None and item.get("y") is not None
+                if has_ocr_xy:
+                    x_val = float(item.get("x"))
+                    y_val = float(item.get("y"))
+                    poi_lat = None
+                    poi_lng = None
+                elif dom_match:
+                    # Fallback hiếm: nếu OCR thiếu pixel, dùng DOM.
                     cx = dom_match.get("cx", center_x / scale)
                     cy = dom_match.get("cy", center_y / scale)
                     x_val = cx * scale - crop_x1
@@ -318,8 +327,10 @@ class Worker:
                     poi_lat = dom_match["lat"]
                     poi_lng = dom_match["lng"]
                 else:
-                    x_val = float(item.get("x", center_x))
-                    y_val = float(item.get("y", center_y))
+                    x_val = center_x
+                    y_val = center_y
+                    poi_lat = None
+                    poi_lng = None
 
                 # 2. Tính khoảng cách pixel vật lý (distance_pixels) từ tâm
                 distance_pixels = math.sqrt((x_val - center_x)**2 + (y_val - center_y)**2)
@@ -340,7 +351,7 @@ class Worker:
                 # c. Tính khoảng cách mét
                 distance_meters = dist_css * meters_per_css_pixel
 
-                if not dom_match:
+                if poi_lat is None or poi_lng is None:
                     # Quy đổi kích thước ảnh và vị trí pixel từ vật lý sang CSS pixels trước khi tính toán
                     width_css = img_w / scale
                     height_css = img_h / scale
@@ -360,12 +371,12 @@ class Worker:
                     )
                     
                     logger.info(
-                        "  [GeoPixel] Resolved '%s' via exact Web Mercator pixel_to_gps → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        "  [GeoPixelExact] Resolved '%s' from OCR pixel center → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
                         name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
                     )
                 else:
                     logger.info(
-                        "  [LeafletDOM] Resolved '%s' via exact DOM matching → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        "  [LeafletDOM-Fallback] Resolved '%s' via DOM fallback → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
                         name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
                     )
 
