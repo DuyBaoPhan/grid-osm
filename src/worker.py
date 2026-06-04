@@ -26,6 +26,7 @@ from config import (
     SCREENSHOT_DIR,
     SCREENSHOT_H,
     SCREENSHOT_W,
+    SCREENSHOT_OVERLAP_PX,
     SCREENSHOT_ZOOM,
     ZOOM_LEVEL,
     HEADLESS,
@@ -66,23 +67,32 @@ class Worker:
     # ── Browser lifecycle ────────────────────────────────────
 
     async def _start_browser(self) -> None:
-        """Khởi động (hoặc restart) Chromium instance."""
+        """Khởi động Chromium instance nếu chưa có."""
         assert self._playwright is not None, "Playwright is not initialized"
-        await self._close_browser()
+        if self._browser is None:
+            w_win = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
+            h_win = SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX + 50
+            self._browser = await self._playwright.chromium.launch(
+                headless=HEADLESS,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    f"--window-size={w_win},{h_win}",
+                ],
+            )
+            self._tile_count = 0
+            logger.info("[Worker %d] Browser started.", self.id)
 
-        self._browser = await self._playwright.chromium.launch(
-            headless=HEADLESS,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-extensions",
-                "--disable-background-networking",
-                "--disable-default-apps",
-                "--start-maximized",
-            ],
-        )
+    async def _start_page(self) -> None:
+        """Tạo context mới và page mới sạch sẽ cho ô quét hiện tại."""
+        await self._close_page()
+        await self._start_browser()
+        
         self._context = await self._browser.new_context(
-            no_viewport=True,
+            viewport={"width": SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX, "height": SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX},
             user_agent=(
                 "Mozilla/5.0 (compatible; OSM-Research-Bot/2.0; "
                 "+https://github.com/DuyBaoPhan/grid-osm)"
@@ -117,18 +127,25 @@ class Worker:
             document.documentElement.appendChild(style);
         """)
 
-        self._tile_count = 0
-        logger.info("[Worker %d] Browser started.", self.id)
-
-    async def _close_browser(self) -> None:
-        """Đóng browser an toàn, bỏ qua lỗi."""
-        for obj in [self._page, self._context, self._browser]:
+    async def _close_page(self) -> None:
+        """Đóng context và page hiện tại."""
+        for obj in [self._page, self._context]:
             if obj is not None:
                 try:
                     await obj.close()
                 except Exception:
                     pass
-        self._browser = self._context = self._page = None
+        self._page = self._context = None
+
+    async def _close_browser(self) -> None:
+        """Đóng toàn bộ browser và dọn dẹp tài nguyên."""
+        await self._close_page()
+        if self._browser is not None:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+        self._browser = None
 
     # ── Main loop ────────────────────────────────────────────
 
@@ -166,6 +183,7 @@ class Worker:
                         "[Worker %d] Restarting browser after %d tiles…",
                         self.id, self._tile_count,
                     )
+                    await self._close_browser()
                     await self._start_browser()
 
                 # In trang thai truoc khi xu ly tile
@@ -208,31 +226,23 @@ class Worker:
         """
         tx, ty = tile
         lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
-        bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
+        strict_bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
         url = _OSM_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
 
-        # Đảm bảo khởi động trình duyệt cho ô quét này
-        await self._start_browser()
+        # Đảm bảo khởi động trình duyệt và page mới cho ô quét này
+        await self._start_page()
 
         browser_coords = {}
         img_metadata = {}
         for attempt in range(1, MAX_RETRIES + 2):
             try:
                 raw_screenshot, compressed_screenshot, img_metadata = await self._capture_screenshot(
-                    url, bbox, self.coord._boundary
+                    url, strict_bbox, self.coord._boundary
                 )
-                # Override bbox bằng góc thực tế của ảnh (khớp đúng vùng hiển thị, không phụ thuộc SCREENSHOT_H cứng)
-                if img_metadata:
-                    bbox = (
-                        min(img_metadata["bottom_left_lat"], img_metadata["bottom_right_lat"]),
-                        min(img_metadata["top_left_lng"],    img_metadata["bottom_left_lng"]),
-                        max(img_metadata["top_left_lat"],    img_metadata["top_right_lat"]),
-                        max(img_metadata["top_right_lng"],   img_metadata["bottom_right_lng"]),
-                    )
                 # Trích xuất toàn bộ nhãn và tọa độ hiển thị trong DOM hiện tại
                 browser_coords = await self._extract_all_visible_poi_coords_from_browser()
                 # Báo cáo ngay cho coordinator rằng đã chụp ảnh xong để vẽ ô màu xanh neon blue lên bản đồ!
-                await self.coord.report_captured(tile, bbox)
+                await self.coord.report_captured(tile, strict_bbox)
                 break
             except Exception as exc:
                 if attempt <= MAX_RETRIES:
@@ -242,7 +252,8 @@ class Worker:
                     )
                     await asyncio.sleep(attempt * 2.0)
                     try:
-                        await self._start_browser()
+                        await self._close_browser()
+                        await self._start_page()
                     except Exception:
                         pass
                 else:
@@ -250,7 +261,7 @@ class Worker:
                         "[Worker %d] Tile (%d,%d) skipped after %d attempts.",
                         self.id, tx, ty, MAX_RETRIES + 1,
                     )
-                    await self._close_browser()
+                    await self._close_page()
                     # Re-queue để thử lại trong phiên sau
                     await self.coord._queue.put(tile)
                     return
@@ -262,15 +273,15 @@ class Worker:
 
         # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
         poi_names, outside_district = await extract_pois_from_screenshot(
-            raw_screenshot, bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            raw_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
         logger.info("  [2/2] OCR Vision done.")
 
-        # Đóng trình duyệt sau khi LLM đã đọc xong và xuất ra thông tin địa điểm của ô quét này!
-        await self._close_browser()
+        # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
+        await self._close_page()
 
         # Lọc và khớp tọa độ địa điểm
-        lat_min, lng_min, lat_max, lng_max = bbox
+        lat_min, lng_min, lat_max, lng_max = strict_bbox
         
         # Hàm so khớp mềm tên POI từ LLM với nhãn DOM trích xuất được
         def find_dom_match(poi_name: str, dom_coords: dict) -> Optional[dict]:
@@ -778,7 +789,8 @@ class Worker:
         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
         
         # Get actual viewport size dynamically via Javascript since page.viewport_size is None when no_viewport=True
-        w_viewport, h_viewport = SCREENSHOT_W, SCREENSHOT_H
+        w_viewport = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
+        h_viewport = SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX
         try:
             v_size = await self._page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
             if v_size and "width" in v_size and "height" in v_size:

@@ -34,6 +34,7 @@ TILE_UPSCALE   = 2               # Upscale 256×256 → 512×512 trước khi g�
 GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 19
 SCREENSHOT_W   = 1024            # Chỉ dùng cho DOM extraction (không còn crop tile)
 SCREENSHOT_H   = 713
+SCREENSHOT_OVERLAP_PX = 80       # Khoảng tràn viền xung quanh ô quét (để tránh mất chữ/icon sát mép)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
 

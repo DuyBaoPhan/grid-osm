@@ -118,8 +118,9 @@ async def main() -> None:
     logger.info("  Workers: %d", NUM_WORKERS)
     logger.info("=" * 60)
 
-    # Tự động đo kích thước maximized trước khi khởi tạo lưới tọa độ
-    await _detect_maximized_viewport()
+    # Sử dụng kích thước màn hình mặc định từ cấu hình (không tự động fullscreen nữa)
+    import config
+    logger.info("Sử dụng kích thước màn hình từ cấu hình: %dx%d px", config.SCREENSHOT_W, config.SCREENSHOT_H)
 
     # Khởi tạo coordinator
     coord = Coordinator()

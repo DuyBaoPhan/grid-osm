@@ -50,7 +50,23 @@ _GENERIC_POI_NAMES = {
     "building", "office", "station", "post office", "post_office", "landmark",
     "nhà hàng", "quán ăn", "cà phê", "ngân hàng", "khách sạn", "trường học",
     "bệnh viện", "chợ", "công viên", "nhà thờ", "siêu thị", "tòa nhà", "văn phòng",
-    "bưu điện", "trụ sở", "cửa hàng", "cửa hiệu", "hiệu thuốc", "quầy thuốc"
+    "bưu điện", "trụ sở", "cửa hàng", "cửa hiệu", "hiệu thuốc", "quầy thuốc",
+    # Mở rộng các từ loại hình tiếng Việt/Anh chung chung khác
+    "rau sạch", "trái cây", "tạp hóa", "quán nước", "trà sữa", "ăn vặt", "bánh mì",
+    "cửa hàng tiện lợi", "siêu thị mini", "atm", "rạp chiếu phim", "nhà sách",
+    "hiệu sách", "lịch", "lịch sử", "địa điểm", "bản đồ", "tòa đại sứ",
+    "lãnh sự", "lãnh sự quán", "đại sứ quán", "tổng lãnh sự quán", "ủy ban",
+    "ủy ban nhân dân", "ubnd", "trụ sở ubnd", "công an", "đồn công an",
+    "trạm y tế", "nhà khách", "nhà nghỉ", "biệt thự", "chung cư",
+    # Thêm các từ rác/chung chung khi đứng độc lập (thường do tách dòng)
+    "soon", "coming soon", "open soon", "tương", "tượng", "hoa binh", "hòa bình"
+}
+
+# ── Danh sách tên quốc gia để loại bỏ nhãn quốc gia độc lập (do rã dòng từ đại sứ quán/lãnh sự quán) ──
+_COUNTRY_NAMES = {
+    "hoa kỳ", "pháp", "anh", "đức", "nhật bản", "hàn quốc", "việt nam", "trung quốc", 
+    "nga", "singapore", "thái lan", "malaysia", "campuchia", "lào", "úc", "italy", "ý", 
+    "tây ban nha", "bồ đào nha", "thuỵ sĩ", "thuỵ điển", "bỉ", "hà lan", "ấn độ", "canada"
 }
 
 def _is_generic_name(name: str) -> bool:
@@ -232,37 +248,77 @@ def _is_street_name(name: str) -> bool:
 def _clean_spelling(text: str) -> str:
     """Khắc phục các lỗi dấu và chính tả tiếng Việt phổ biến từ Tesseract OCR."""
     replacements = {
-        r"\b[tT]ông\s+[lL]ánh\b": "Tổng Lãnh",
-        r"\b[tT]ông\s+[lL]ãnh\b": "Tổng Lãnh",
+        # Lỗi hai dấu huyền ở nguyên âm đôi (VD: trừờng -> trường)
+        r"([tT])rừ[ờơ]ng": r"\1rường",
+        r"([đĐ])u\s+ấn\b": r"\1uẩn",
+        r"([đĐ])ừ[ờơ]ng": r"\1ường",
+        r"([pP])hừ[ờơ]ng": r"\1ường",
+        
+        # Cả phê / Cà phe / Cả Phê -> Cà phê
+        r"\b[cC][ảàa]\s+[pP]h[êe]\b": "Cà phê",
+        r"\b[cC]à\s+[pP]h[ếệ]\b": "Cà phê",
+        
+        # Bánh mì
+        r"\b[bB][áa]nh\s+[mM][ìi]\b": "Bánh mì",
+        
+        # Lãnh sự quán / Đại sứ quán
+        r"\b[tT][ôo]ng\s+[lL]ãnh\b": "Tổng Lãnh",
         r"\b[tT]ổng\s+[lL]ánh\b": "Tổng Lãnh",
-        r"\b[sS]y\s+[qQ]uán\b": "sứ quán",
-        r"\b[sS]ự\s+[qQ]uán\b": "sứ quán",
-        r"\b[sS]ý\s+[qQ]uán\b": "sứ quán",
+        r"\b[lL]ãnh\s+[sS]ứ\s+[qQ]uán\b": "Lãnh sự quán",
+        r"\b[tT]ổng\s+[lL]ãnh\s+[sS]ứ\s+[qQ]uán\b": "Tổng Lãnh sự quán",
+        r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uán\b": "Đại sứ quán",
+        
+        # Hoa Kỳ
         r"\b[hH]oa\s+[kK]y\b": "Hoa Kỳ",
         r"\b[hH]oa\s+[kK]ỷ\b": "Hoa Kỳ",
-        r"\b[xX]ếp\s+[hH]ang\b": "xếp hàng",
-        r"\b[đĐ]ảu\b": "Đại",
-        r"\b[đĐ]ải\b": "Đại",
-        r"\b[đĐ]ức\s+[bB]a\b": "Đức Bà",
-        r"\b[đĐ]ức\s+[bB]á\b": "Đức Bà",
-        r"\b[nN]ha\s+[tT]hờ\b": "Nhà thờ",
-        r"\b[nN]hà\s+[tT]ho\b": "Nhà thờ",
-        r"\b[cC]a\s+[pP]hê\b": "cà phê",
-        r"\b[cC]à\s+[pP]he\b": "cà phê",
-        r"\b[bB]ệnh\s+[vV]iên\b": "bệnh viện",
-        r"\b[bB]enh\s+[vV]iện\b": "bệnh viện",
-        r"\b[bB]u\s+[đĐ]iện\b": "Bưu điện",
-        r"\b[bB]ưu\s+[đĐ]ien\b": "Bưu điện",
+        
+        # Đức Bà / Nhà thờ
+        r"\b[đĐ]ức\s+[bB][aá]\b": "Đức Bà",
+        r"\b[nN]h?[aà]\s+[tT]h[ờo]\b": "Nhà thờ",
+        
+        # Bưu điện
+        r"\b[bB]ưu\s+[đĐ]i[ệẹê]n\b": "Bưu điện",
         r"\b[bB]uu\s+[đĐ]iện\b": "Bưu điện",
-        r"\b[kK]hách\s+[sS]an\b": "khách sạn",
-        r"\b[kK]hach\s+[sS]ạn\b": "khách sạn",
+        r"\b[bB]ửu\s+[đĐ]iện\b": "Bưu điện",
+        
+        # Khách sạn
+        r"\b[kK]h[áa]ch\s+[sS][ạa]n\b": "Khách sạn",
+        
+        # Bệnh viện
+        r"\b[bB]ệnh\s+[vV]i[ệẹê]n\b": "Bệnh viện",
+        
+        # Nhà hàng
+        r"\b[nN]hà\s+[hH][àa]ng\b": "Nhà hàng",
+        
+        # Ngân hàng
+        r"\b[nN]gân\s+[hH][àa]ng\b": "Ngân hàng",
+        
+        # Siêu thị
+        r"\b[sS]i[êe]u\s+[tT]hị\b": "Siêu thị",
+        
+        # Trường học / Trường tiểu học
+        r"\b[tT]rường\s+[hH]ọc\b": "Trường học",
         r"\b[tT]rường\s+[tT]iêu\b": "trường tiểu",
-        r"\b[tT]rường\s+[hH]oc\b": "trường học",
-        r"\b[cC]ông\s+[tT]y\b": "Công ty",
-        r"\b[cC]ong\s+[tT]y\b": "Công ty",
+        
+        # Công ty
+        r"\b[cC][ôo]ng\s+[tT]y\b": "Công ty",
+        
+        # Xếp hàng
+        r"\b[xX]ếp\s+[hH]ang\b": "xếp hàng",
+        
+        # Circle K
         r"\b[cC]ircle\s+[kK]\b": "Circle K",
-        r"\bsự\s+đ[uủ]ấn\b": "Lê Duẩn",
+        
+        # Lê Duẩn
         r"\bLê\s+đ[uủ]ấn\b": "Lê Duẩn",
+        r"\bsự\s+đ[uủ]ấn\b": "Lê Duẩn",
+        
+        # Sửa lỗi chính tả Tượng/Tương và Hòa Bình
+        r"\bTương\s+Đức\s+Bà\b": "Tượng Đức Bà",
+        r"\bTương\s+đài\b": "Tượng đài",
+        r"\b[hH]oa\s+[bB]inh\b": "Hòa Bình",
+        r"\b[hH]oa\s+[bB]ình\b": "Hòa Bình",
+        r"\b[hH]òa\s+[bB]inh\b": "Hòa Bình",
     }
     
     cleaned = text
@@ -302,12 +358,14 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, f
         return fallback.strip()
 
     h_img, w_img = cv_img.shape[:2]
-    pad = int(OCR_TEXT_PAD_PX)
+    # Nới rộng padding crop: pad_x = 10 (tránh mất ký tự đầu/cuối), pad_y = 6 (tránh mất dấu tiếng Việt)
+    pad_x = 10
+    pad_y = 6
     x1, y1, x2, y2 = map(int, bbox)
-    x1 = max(0, x1 - pad)
-    y1 = max(0, y1 - pad)
-    x2 = min(w_img, x2 + pad)
-    y2 = min(h_img, y2 + pad)
+    x1 = max(0, x1 - pad_x)
+    y1 = max(0, y1 - pad_y)
+    x2 = min(w_img, x2 + pad_x)
+    y2 = min(h_img, y2 + pad_y)
     if x2 <= x1 or y2 <= y1:
         return fallback.strip()
 
@@ -372,10 +430,11 @@ async def extract_pois_from_screenshot(
         
         if upscale_factor == 2:
             gray_proc = cv2.resize(gray, (w_orig * 2, h_orig * 2), interpolation=cv2.INTER_LANCZOS4)
-            thresh = cv2.adaptiveThreshold(gray_proc, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 19, 12)
         else:
             gray_proc = gray
-            thresh = cv2.adaptiveThreshold(gray_proc, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 13, 8)
+            
+        # Sử dụng ngưỡng nhị phân cố định 180 để tách văn bản tối màu khỏi nền sáng OSM cực kỳ sắc nét
+        _, thresh = cv2.threshold(gray_proc, 180, 255, cv2.THRESH_BINARY)
             
         cv2.imwrite(temp_processed_path, thresh)
 
@@ -511,16 +570,16 @@ async def extract_pois_from_screenshot(
                 
                 # Kiểm tra xem khoảng cách dọc có nằm trong khoảng cho phép không
                 if min_v_gap <= v_gap <= max_v_gap:
-                    # Căn chỉnh tâm ngang chặt chẽ (lệch <= 12px)
+                    # Căn chỉnh tâm ngang hợp lý (cho phép lệch tối đa 35px đối với ảnh 2x)
                     c_center_x = (c_left + c_right) / 2
                     line_center_x = line['left'] + line['width'] / 2
                     x_diff = abs(c_center_x - line_center_x)
                     
-                    # Hoặc có độ đè ngang từ 40% trở lên
+                    # Hoặc có độ đè ngang từ 35% trở lên
                     h_overlap = min(c_right, line['left'] + line['width']) - max(c_left, line['left'])
                     h_overlap_ratio = h_overlap / min(cluster['width'], line['width']) if min(cluster['width'], line['width']) > 0 else 0
                     
-                    if x_diff <= 12 or h_overlap_ratio >= 0.40:
+                    if x_diff <= 35 or h_overlap_ratio >= 0.35:
                         cluster['text'] += " " + line['text']
                         new_left = min(c_left, line['left'])
                         new_top = min(cluster['top'], line['top'])
@@ -549,12 +608,34 @@ async def extract_pois_from_screenshot(
         # Helper hàm xác định nhãn POI có hợp lệ không (tránh rác chữ ngắn < 4 ký tự)
         def is_valid_poi_name(name_str: str) -> bool:
             c_name = name_str.strip()
+            if not c_name:
+                return False
+                
+            # Bỏ qua các địa chỉ/số nhà thuần số hoặc dạng số nhà (VD: "15", "15A", "12/4", "108")
+            if re.match(r'^\d+$', c_name) or re.match(r'^\d+[a-zA-Z]$', c_name) or re.match(r'^\d+(/\d+)+[a-zA-Z]?$', c_name):
+                return False
+
+            # Bỏ qua các nhãn hành chính như Phường, Quận, Đường (nếu lọt qua bộ lọc đường)
+            # Ví dụ: "Quận 1", "Q. 1", "Q.1", "Phường Bến Nghé", "P. Bến Nghé", "P.Bến Nghé", "P. 15", "Phường 15"
+            c_name_lower = c_name.lower()
+            admin_patterns = [
+                r'^quận\s+\d+$', r'^q\.\s*\d+$',
+                r'^phường\s+.*$', r'^p\.\s*.*$',
+                r'^district\s+\d+$', r'^ward\s+\d+$'
+            ]
+            for pat in admin_patterns:
+                if re.match(pat, c_name_lower):
+                    return False
+
+            # Bỏ qua các tên quốc gia đứng riêng lẻ (thường do tách dòng từ Tổng Lãnh sự quán)
+            if c_name_lower in _COUNTRY_NAMES:
+                return False
+
             # Nếu tên < 4 ký tự, có khả năng cao là rác trừ khi:
-            # 1. Viết hoa hoàn toàn (viết tắt như KFC, TCB)
-            # 2. Có chứa số (như Q1)
-            # 3. Là một số từ tiếng Việt ngắn phổ biến có nghĩa trên bản đồ
+            # 1. Viết hoa hoàn toàn chỉ chứa chữ cái từ A-Z (viết tắt như KFC, ATM)
+            # 2. Là một số từ tiếng Việt ngắn phổ biến có nghĩa trên bản đồ
             if len(c_name) < 4:
-                if c_name.isupper() or any(char.isdigit() for char in c_name):
+                if re.match(r'^[A-Z]+$', c_name):
                     return True
                 no_acc = _strip_vietnamese_accents(c_name)
                 if no_acc in {"pho", "cho", "cau", "bun", "che", "ga", "kho", "rap", "dinh", "com", "kem"}:
