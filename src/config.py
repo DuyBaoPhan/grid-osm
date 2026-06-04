@@ -59,5 +59,5 @@ OCR_ENGINE = "vietocr"                 # vietocr | tesseract
 VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
 VIETOCR_DEVICE = "cpu"                 # cpu | cuda
 OCR_TEXT_PAD_PX = 4                     # padding crop chữ trước khi nhận diện
-OCR_ICON_MAX_Y_GAP = 48                 # icon phải nằm tối đa N px phía trên text
-OCR_ICON_X_MARGIN = 18                  # icon được lệch ngang ngoài bbox text tối đa N px
+OCR_ICON_MAX_Y_GAP = 24                 # icon phải nằm tối đa N px phía trên text (tỷ lệ chặt chẽ hơn để tránh nhận nhầm icon POI lân cận)
+OCR_ICON_X_MARGIN = 12                  # icon được lệch ngang ngoài bbox text tối đa N px (tỷ lệ chặt chẽ hơn để tránh lệch cột)

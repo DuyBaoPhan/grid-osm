@@ -319,6 +319,22 @@ def _clean_spelling(text: str) -> str:
         r"\b[hH]oa\s+[bB]inh\b": "Hòa Bình",
         r"\b[hH]oa\s+[bB]ình\b": "Hòa Bình",
         r"\b[hH]òa\s+[bB]inh\b": "Hòa Bình",
+        
+        # Sửa lỗi chính tả nâng cao
+        r"\b[cC]tra\s+[hH]ang\b": "Cửa hàng",
+        r"\b[tT]h[öo]f\s+[tT]rang\b": "Thời trang",
+        r"\b[nN]h[aà]\s+[tT]h[ờo]\s+[bB]a\b": "Nhà thờ Đức Bà",
+        r"\b[nN]h[aà]\s+[tT]h[ờo]\s+[đĐ]ức\s+[bB]a\b": "Nhà thờ Đức Bà",
+        r"\b[nN]h?[aà]\s+th?[aà]\s+B[aà]\s+gai\s+Gòn\b": "Nhà thờ Đức Bà Sài Gòn",
+        r"\bNhi\s+gong\b": "Nhi đồng",
+        r"\bNhi\s+đ[ôo]ng\b": "Nhi đồng",
+        r"\b[rR]u\s*[nN]am\s*[dD]or\b": "RuNam D'Or",
+        r"\b[rR]u\s*[nN]am\s*[dD]'\s*or\b": "RuNam D'Or",
+        r"\bvinaphon[ée]\b": "Vinaphone",
+        r"\bTương\s+Đức\s+Binh\b": "Tượng Đức Bà",
+        r"\b[sS]ự\s+[qQ]uản\b": "sự quán",
+        r"\b[lL]ãnh\s+[sS]ự\s+[qQ]uản\b": "Lãnh sự quán",
+        r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uản\b": "Đại sứ quán",
     }
     
     cleaned = text
@@ -501,8 +517,8 @@ async def extract_pois_from_screenshot(
                         l_right = line['left'] + line['width']
                         gap_x = w['left'] - l_right
                         
-                        # Khoảng cách ngang nhỏ (trong khoảng 18 pixel để tránh nhập nhèm POI liền kề)
-                        if -15 <= gap_x <= 18:
+                        # Khoảng cách ngang nhỏ (trong khoảng 12 pixel để tránh nhập nhèm POI liền kề)
+                        if -12 <= gap_x <= 12:
                             line['words'].append(w)
                             new_left = min(line['left'], w['left'])
                             new_top = min(line['top'], w['top'])
