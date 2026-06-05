@@ -18,7 +18,7 @@ NUM_WORKERS            = 1              # Để 1 worker cho độ ổn định 
 DELAY_BETWEEN_REQ      = 1.5            # giây nghỉ giữa mỗi tile
 MAX_RETRIES            = 2              # số lần retry khi tile lỗi
 BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
-HEADLESS               = False          # Set False để hiển thị giao diện trình duyệt của từng worker
+HEADLESS               = True          # Set False để hiển thị giao diện trình duyệt của từng worker
 
 # ── Địa lý ───────────────────────────────────────────────────
 ZOOM_LEVEL       = 19                   # zoom chia luoi tile (anh huong so luong tile)
@@ -30,10 +30,10 @@ TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM t�
 
 # ── Screenshot / Tile (đã chuyển sang OSM Tile API) ────────────────────────────────────
 OSM_TILE_URL   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"  # Direct tile API
-TILE_UPSCALE   = 2               # Upscale 256×256 → 512×512 trước khi gửi LLM
+TILE_UPSCALE   = 4               # Upscale 256×256 → 1024×1024 để text rõ hơn cho OCR
 GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 19
-SCREENSHOT_W   = 1024            # Chỉ dùng cho DOM extraction (không còn crop tile)
-SCREENSHOT_H   = 713
+SCREENSHOT_W   = 700            # Chỉ dùng cho DOM extraction (không còn crop tile)
+SCREENSHOT_H   = 540
 SCREENSHOT_OVERLAP_PX = 80       # Khoảng tràn viền xung quanh ô quét (để tránh mất chữ/icon sát mép)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
@@ -58,6 +58,7 @@ LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING
 OCR_ENGINE = "vietocr"                 # vietocr | tesseract
 VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
 VIETOCR_DEVICE = "cpu"                 # cpu | cuda
-OCR_TEXT_PAD_PX = 4                     # padding crop chữ trước khi nhận diện
+VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
+OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
 OCR_ICON_MAX_Y_GAP = 24                 # icon phải nằm tối đa N px phía trên text (tỷ lệ chặt chẽ hơn để tránh nhận nhầm icon POI lân cận)
 OCR_ICON_X_MARGIN = 12                  # icon được lệch ngang ngoài bbox text tối đa N px (tỷ lệ chặt chẽ hơn để tránh lệch cột)
