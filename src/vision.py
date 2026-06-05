@@ -28,16 +28,16 @@ try:
         VIETOCR_MODEL,
         VIETOCR_DEVICE,
         OCR_TEXT_PAD_PX,
-        OCR_ICON_MAX_Y_GAP,
-        OCR_ICON_X_MARGIN,
+        OCR_HORIZONTAL_GAP_MAX,
+        OCR_ICON_Y_ALIGN_RATIO,
     )
 except Exception:
     OCR_ENGINE = "tesseract"
     VIETOCR_MODEL = "vgg_transformer"
     VIETOCR_DEVICE = "cpu"
     OCR_TEXT_PAD_PX = 4
-    OCR_ICON_MAX_Y_GAP = 48
-    OCR_ICON_X_MARGIN = 18
+    OCR_HORIZONTAL_GAP_MAX = 10
+    OCR_ICON_Y_ALIGN_RATIO = 0.7
 
 _VIETOCR_PREDICTOR = None
 _VIETOCR_LOAD_FAILED = False
@@ -740,12 +740,26 @@ async def extract_pois_from_screenshot(
             for i_idx, icon in enumerate(candidate_icons):
                 ix, iy = icon['x'], icon['y']
                 
-                is_above = (
-                    lx - OCR_ICON_X_MARGIN * scale <= ix <= lx + lw + OCR_ICON_X_MARGIN * scale
-                    and ly - OCR_ICON_MAX_Y_GAP * scale <= iy <= ly + 2 * scale
+                # Kiểm tra icon nằm ngang (trái hoặc phải) của text label
+                # User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI, khoảng cách ~5px, nằm ngang nhau
+                is_horizontal_adjacent = (
+                    # Y-axis alignment: Icon Y gần text center Y (trong 70% chiều cao text)
+                    # Text có thể cao hơn nếu nhiều dòng, nên dùng label_center_y
+                    abs(iy - label_center_y) <= lh * OCR_ICON_Y_ALIGN_RATIO
+                    and
+                    # Horizontal proximity: Icon gần text theo phương ngang (trái HOẶC phải)
+                    (
+                        # Case 1: Icon ở BÊN TRÁI text (icon.right gần label.left)
+                        (icon['right'] >= lx - OCR_HORIZONTAL_GAP_MAX * scale and 
+                         icon['left'] <= lx + OCR_HORIZONTAL_GAP_MAX * scale)
+                        or
+                        # Case 2: Icon ở BÊN PHẢI text (icon.left gần label.right)
+                        (icon['left'] <= lx + lw + OCR_HORIZONTAL_GAP_MAX * scale and
+                         icon['right'] >= lx + lw - OCR_HORIZONTAL_GAP_MAX * scale)
+                    )
                 )
                 
-                if is_above:
+                if is_horizontal_adjacent:
                     # Kiểm tra màu sắc của nhãn chữ và biểu tượng tương đồng nhau
                     if _colors_are_similar(label['color'], icon['color'], thresh_h=25, thresh_s=75, thresh_v=75):
                         dist = ((ix - label_center_x) ** 2 + (iy - label_center_y) ** 2) ** 0.5

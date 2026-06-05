@@ -61,5 +61,12 @@ VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
 VIETOCR_DEVICE = "cpu"                 # cpu | cuda
 VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
 OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
-OCR_ICON_MAX_Y_GAP = 24                 # icon phải nằm tối đa N px phía trên text (tỷ lệ chặt chẽ hơn để tránh nhận nhầm icon POI lân cận)
-OCR_ICON_X_MARGIN = 12                  # icon được lệch ngang ngoài bbox text tối đa N px (tỷ lệ chặt chẽ hơn để tránh lệch cột)
+
+# ── Icon-Text Matching (Google Maps horizontal layout) ────────
+# User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI của text, khoảng cách ~5px, nằm ngang nhau
+OCR_HORIZONTAL_GAP_MAX = 10            # Khoảng cách tối đa giữa icon và text theo phương ngang (pixels)
+OCR_ICON_Y_ALIGN_RATIO = 0.7           # Icon Y phải nằm trong tỷ lệ này so với chiều cao text (flexible vì text có thể cao hơn nếu nhiều dòng)
+
+# Deprecated (cho OSM vertical layout - icon phía trên text):
+# OCR_ICON_MAX_Y_GAP = 24              # icon phải nằm tối đa N px phía trên text
+# OCR_ICON_X_MARGIN = 12               # icon được lệch ngang ngoài bbox text tối đa N px
