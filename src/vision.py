@@ -42,6 +42,12 @@ except Exception:
 _VIETOCR_PREDICTOR = None
 _VIETOCR_LOAD_FAILED = False
 
+_last_candidate_icons = []
+_last_valid_lines = []
+_last_line_to_icon = {}
+_last_potential_line_matches = []
+
+
 # ── Bộ lọc tên loại hình POI chung chung (trích từ bản cũ) ──────────────
 _GENERIC_POI_NAMES = {
     "cafe", "coffee", "shop", "store", "restaurant", "hotel", "bank", "market",
@@ -261,6 +267,17 @@ def _clean_spelling(text: str) -> str:
         # Bánh mì
         r"\b[bB][áa]nh\s+[mM][ìi]\b": "Bánh mì",
         
+        # Sài Gòn
+        r"\b[sS]ài\s+[gG]òn\b": "Sài Gòn",
+        r"\b[sS]ai\s+[gG]on\b": "Sài Gòn",
+        r"\bBưu\s+điện\s+trung\s+tâm\s+Sài\s+Gòn\b": "Bưu điện Trung tâm Sài Gòn",
+        r"\bBưu\s+điện\s+trung\s+tâm\s+sài\s+Gòn\b": "Bưu điện Trung tâm Sài Gòn",
+        r"\bBưu\s+điện\s+trung\s+tâm\s+sài\s+Grand\b": "Bưu điện Trung tâm Sài Gòn",
+        r"\bBưu\s+điện\s+trung\s+tâm\s+sài\s+gòn\s+Grand\b": "Bưu điện Trung tâm Sài Gòn",
+        
+        # ÁO DÀI & ÁO BÀ BA RENTALS
+        r'\b[áÁ][oO]\s+[dD][àÀ][iI]\"?\s+[aA][nN][dD]\s+(?:[áÁ][oO]\s+)?[bB][àÀ]\s+[bB][aA]\'?\s+[rR][eE][nN][tT][aA][lL][sS]\b': '"ÁO DÀI" AND "ÁO BÀ BA" RENTALS',
+        
         # Lãnh sự quán / Đại sứ quán
         r"\b[tT][ôo]ng\s+[lL]ãnh\b": "Tổng Lãnh",
         r"\b[tT]ổng\s+[lL]ánh\b": "Tổng Lãnh",
@@ -335,6 +352,7 @@ def _clean_spelling(text: str) -> str:
         r"\b[sS]ự\s+[qQ]uản\b": "sự quán",
         r"\b[lL]ãnh\s+[sS]ự\s+[qQ]uản\b": "Lãnh sự quán",
         r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uản\b": "Đại sứ quán",
+        r"\bGia\s+[đĐ]inh\b": "Gia Định",
     }
     
     cleaned = text
@@ -378,24 +396,39 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, f
     pad_x = 10
     pad_y = 6
     x1, y1, x2, y2 = map(int, bbox)
-    x1 = max(0, x1 - pad_x)
-    y1 = max(0, y1 - pad_y)
-    x2 = min(w_img, x2 + pad_x)
-    y2 = min(h_img, y2 + pad_y)
-    if x2 <= x1 or y2 <= y1:
+    x1_pad = max(0, x1 - pad_x)
+    y1_pad = max(0, y1 - pad_y)
+    x2_pad = min(w_img, x2 + pad_x)
+    y2_pad = min(h_img, y2 + pad_y)
+    if x2_pad <= x1_pad or y2_pad <= y1_pad:
         return fallback.strip()
 
-    crop = cv_img[y1:y2, x1:x2]
+    crop = cv_img[y1_pad:y2_pad, x1_pad:x2_pad].copy()
     if crop.size == 0:
         return fallback.strip()
 
     try:
+        # Khử nền bằng cách chuyển sang grayscale và thresholding ở 200
+        crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        _, crop_thresh = cv2.threshold(crop_gray, 200, 255, cv2.THRESH_BINARY)
+        
+        # Xóa tất cả các pixel nằm ngoài bounding box thực tế của từ (mặt nạ trắng)
+        # để tránh các từ bên cạnh hoặc icon đè vào vùng padding mở rộng gây nhiễu cho VietOCR
+        lx1 = x1 - x1_pad
+        ly1 = y1 - y1_pad
+        lx2 = x2 - x1_pad
+        ly2 = y2 - y1_pad
+        
+        mask = np.zeros(crop_thresh.shape, dtype=np.uint8)
+        mask[ly1:ly2, lx1:lx2] = 255
+        crop_thresh[mask == 0] = 255
+
         # VietOCR đọc tốt hơn khi crop chữ nhỏ được phóng nhẹ.
-        ch, cw = crop.shape[:2]
+        ch, cw = crop_thresh.shape[:2]
         scale = 2 if max(ch, cw) < 220 else 1
         if scale > 1:
-            crop = cv2.resize(crop, (cw * scale, ch * scale), interpolation=cv2.INTER_CUBIC)
-        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            crop_thresh = cv2.resize(crop_thresh, (cw * scale, ch * scale), interpolation=cv2.INTER_CUBIC)
+        rgb = cv2.cvtColor(crop_thresh, cv2.COLOR_GRAY2RGB)
         pil_img = Image.fromarray(rgb)
         text = predictor.predict(pil_img)
         text = re.sub(r'\s+', ' ', (text or '')).strip()
@@ -405,6 +438,27 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, f
     except Exception as exc:
         logger.debug("[VietOCR] Crop OCR lỗi: %s", exc)
     return fallback.strip()
+
+
+def is_solid_icon(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -> bool:
+    """
+    Kiểm tra xem vùng bbox có phải là một biểu tượng (icon) đặc/đầy hay không.
+    Giúp lọc bỏ các đường viền nét chữ hoặc dấu ngoặc kép được OpenCV nhận diện nhầm là icon.
+    Mật độ pixel tối (độ sáng < 215) phải chiếm ít nhất 35% diện tích bbox.
+    """
+    x1, y1, x2, y2 = map(int, bbox)
+    h_img, w_img = cv_img.shape[:2]
+    x1 = max(0, min(x1, w_img - 1))
+    x2 = max(0, min(x2, w_img - 1))
+    y1 = max(0, min(y1, h_img - 1))
+    y2 = max(0, min(y2, h_img - 1))
+    if x2 <= x1 or y2 <= y1:
+        return False
+    crop = cv_img[y1:y2, x1:x2]
+    gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    fill_pixels = np.sum(gray_crop < 215)
+    total_pixels = gray_crop.size
+    return (fill_pixels / total_pixels) >= 0.35
 
 
 # ── Hàm phân tích ảnh và trích xuất POI bằng OCR & OpenCV ────────────
@@ -449,8 +503,8 @@ async def extract_pois_from_screenshot(
         else:
             gray_proc = gray
             
-        # Sử dụng ngưỡng nhị phân cố định 180 để tách văn bản tối màu khỏi nền sáng OSM cực kỳ sắc nét
-        _, thresh = cv2.threshold(gray_proc, 180, 255, cv2.THRESH_BINARY)
+        # Sử dụng ngưỡng nhị phân cố định 200 để tách văn bản tối màu khỏi nền sáng Google Maps cực kỳ sắc nét
+        _, thresh = cv2.threshold(gray_proc, 200, 255, cv2.THRESH_BINARY)
             
         cv2.imwrite(temp_processed_path, thresh)
 
@@ -471,7 +525,7 @@ async def extract_pois_from_screenshot(
         # 4. Parse nội dung TSV và chia tọa độ về tỷ lệ ban đầu
         words = []
         if tsv_content:
-            reader = csv.DictReader(io.StringIO(tsv_content), delimiter='\t')
+            reader = csv.DictReader(io.StringIO(tsv_content), delimiter='\t', quoting=csv.QUOTE_NONE)
             for row in reader:
                 if row.get('level') == '5':
                     text = row.get('text', '').strip()
@@ -540,22 +594,16 @@ async def extract_pois_from_screenshot(
                         'height': w['height']
                     })
 
-        # Lọc ký tự đặc biệt của dòng và giữ lại các dòng hợp lệ
+        # Lọc ký tự đặc biệt của dòng và giữ lại các dòng hợp lệ (sử dụng Tesseract text tạm thời trước OCR)
         valid_lines = []
         for line in lines:
             line['words'].sort(key=lambda w: w['left'])
             text = " ".join(w['text'] for w in line['words']).strip()
             avg_conf = sum(w['conf'] for w in line['words']) / len(line['words'])
             
-            # Xóa các ký tự nhiễu nhưng giữ dấu tiếng Việt
             text = re.sub(r'[^\w\s\d,.\-\(\)\/]', '', text).strip()
             if text and len(text) >= 2:
-                # Trích xuất màu sắc đại diện cho dòng chữ này
                 line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
-                text = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=text)
-                text = re.sub(r'[^\w\s\d,.\-\(\)\/]', '', text).strip()
-                if not text or len(text) < 2:
-                    continue
                 line_color = _get_region_color(cv_img, line_bbox)
                 valid_lines.append({
                     'text': text,
@@ -567,110 +615,15 @@ async def extract_pois_from_screenshot(
                     'color': line_color
                 })
 
-        # 6. Gom cụm các dòng xếp chồng (Spatial Line Clustering) thành nhãn POI đa dòng
-        # Sắp xếp các dòng từ trên xuống dưới
-        valid_lines.sort(key=lambda l: l['top'])
-        labels = []
-        
-        for line in valid_lines:
-            merged = False
-            for cluster in labels:
-                c_bottom = cluster['top'] + cluster['height']
-                c_left = cluster['left']
-                c_right = cluster['left'] + cluster['width']
-                
-                v_gap = line['top'] - c_bottom
-                # Hạn chế chiều cao merging gap chặt chẽ
-                max_v_gap = 0.7 * min(line['height'], cluster['height']) + 1
-                min_v_gap = -1.2 * min(line['height'], cluster['height'])
-                
-                # Kiểm tra xem khoảng cách dọc có nằm trong khoảng cho phép không
-                if min_v_gap <= v_gap <= max_v_gap:
-                    # Căn chỉnh tâm ngang hợp lý (cho phép lệch tối đa 35px đối với ảnh 2x)
-                    c_center_x = (c_left + c_right) / 2
-                    line_center_x = line['left'] + line['width'] / 2
-                    x_diff = abs(c_center_x - line_center_x)
-                    
-                    # Hoặc có độ đè ngang từ 35% trở lên
-                    h_overlap = min(c_right, line['left'] + line['width']) - max(c_left, line['left'])
-                    h_overlap_ratio = h_overlap / min(cluster['width'], line['width']) if min(cluster['width'], line['width']) > 0 else 0
-                    
-                    if x_diff <= 35 or h_overlap_ratio >= 0.35:
-                        cluster['text'] += " " + line['text']
-                        new_left = min(c_left, line['left'])
-                        new_top = min(cluster['top'], line['top'])
-                        new_right = max(c_right, line['left'] + line['width'])
-                        new_bottom = max(c_bottom, line['top'] + line['height'])
-                        
-                        cluster['left'] = new_left
-                        cluster['top'] = new_top
-                        cluster['width'] = new_right - new_left
-                        cluster['height'] = new_bottom - new_top
-                        cluster['conf'] = (cluster['conf'] + line['conf']) / 2
-                        merged = True
-                        break
-            
-            if not merged:
-                labels.append({
-                    'text': line['text'],
-                    'left': line['left'],
-                    'top': line['top'],
-                    'width': line['width'],
-                    'height': line['height'],
-                    'conf': line['conf'],
-                    'color': line['color']
-                })
-
-        # Helper hàm xác định nhãn POI có hợp lệ không (tránh rác chữ ngắn < 4 ký tự)
-        def is_valid_poi_name(name_str: str) -> bool:
-            c_name = name_str.strip()
-            if not c_name:
-                return False
-                
-            # Bỏ qua các địa chỉ/số nhà thuần số hoặc dạng số nhà (VD: "15", "15A", "12/4", "108")
-            if re.match(r'^\d+$', c_name) or re.match(r'^\d+[a-zA-Z]$', c_name) or re.match(r'^\d+(/\d+)+[a-zA-Z]?$', c_name):
-                return False
-
-            # Bỏ qua các nhãn hành chính như Phường, Quận, Đường (nếu lọt qua bộ lọc đường)
-            # Ví dụ: "Quận 1", "Q. 1", "Q.1", "Phường Bến Nghé", "P. Bến Nghé", "P.Bến Nghé", "P. 15", "Phường 15"
-            c_name_lower = c_name.lower()
-            admin_patterns = [
-                r'^quận\s+\d+$', r'^q\.\s*\d+$',
-                r'^phường\s+.*$', r'^p\.\s*.*$',
-                r'^district\s+\d+$', r'^ward\s+\d+$'
-            ]
-            for pat in admin_patterns:
-                if re.match(pat, c_name_lower):
-                    return False
-
-            # Bỏ qua các tên quốc gia đứng riêng lẻ (thường do tách dòng từ Tổng Lãnh sự quán)
-            if c_name_lower in _COUNTRY_NAMES:
-                return False
-
-            # Nếu tên < 4 ký tự, có khả năng cao là rác trừ khi:
-            # 1. Viết hoa hoàn toàn chỉ chứa chữ cái từ A-Z (viết tắt như KFC, ATM)
-            # 2. Là một số từ tiếng Việt ngắn phổ biến có nghĩa trên bản đồ
-            if len(c_name) < 4:
-                if re.match(r'^[A-Z]+$', c_name):
-                    return True
-                no_acc = _strip_vietnamese_accents(c_name)
-                if no_acc in {"pho", "cho", "cau", "bun", "che", "ga", "kho", "rap", "dinh", "com", "kem"}:
-                    return True
-                return False
-            return True
-
-        # 7. Nhận diện các ứng viên Icon trên bản đồ bằng OpenCV (Contour Analysis)
-        # Sử dụng thông số scale từ metadata để thích ứng với DPI của từng màn hình
+        # 6. Nhận diện các ứng viên Icon trên bản đồ bằng OpenCV (Contour Analysis)
         scale = img_metadata.get("scale", 1.0) if img_metadata else 1.0
         candidate_icons = []
-        # cv_img đã được đọc ở trên trong phần tiền xử lý
         if cv_img is not None:
-            # gray đã được convert ở trên
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
             edges = cv2.Canny(blurred, 50, 150)
             
-            # Kích thước icon chuẩn ở zoom 19 thường từ 10px đến 28px, nhân với tỷ lệ scale động
-            min_icon_size = max(6, int(8 * scale))
+            # Kích thước icon chuẩn ở zoom 19-21 thường từ 14px đến 35px, nhân với tỷ lệ scale động
+            min_icon_size = max(12, int(14 * scale))
             max_icon_size = int(35 * scale)
             
             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -678,9 +631,10 @@ async def extract_pois_from_screenshot(
                 cx_box, cy_box, cw_box, ch_box = cv2.boundingRect(c)
                 if min_icon_size <= cw_box <= max_icon_size and min_icon_size <= ch_box <= max_icon_size:
                     aspect_ratio = float(cw_box) / ch_box
-                    # Tỷ lệ khung hình vuông vắn (từ 0.7 đến 1.4)
                     if 0.7 <= aspect_ratio <= 1.4:
                         icon_bbox = [cx_box, cy_box, cx_box + cw_box, cy_box + ch_box]
+                        if not is_solid_icon(cv_img, icon_bbox):
+                            continue
                         icon_color = _get_region_color(cv_img, icon_bbox)
                         candidate_icons.append({
                             'x': cx_box + cw_box / 2.0,
@@ -695,124 +649,233 @@ async def extract_pois_from_screenshot(
                             'color': icon_color
                         })
 
-        # 8. So khớp nhãn chữ với các Icon lân cận và gán tọa độ thích hợp
-        # Lọc danh sách nhãn hợp lệ trước
-        valid_labels = []
-        for label in labels:
-            label['text'] = _clean_spelling(label['text'])
-            if _is_generic_name(label['text']) or not is_valid_poi_name(label['text']) or _is_street_name(label['text']):
-                logger.info("  [OCR-Filter] Bỏ nhãn không hợp lệ/generic/đường phố: '%s'", label['text'])
-                continue
-            valid_labels.append(label)
-            
-        # Sắp xếp các nhãn theo thứ tự đọc (từ trên xuống dưới, cùng dòng thì từ trái sang phải)
-        if valid_labels:
-            sorted_by_top = sorted(valid_labels, key=lambda x: x['top'])
-            rows = []
-            current_row = []
-            for item in sorted_by_top:
-                if not current_row:
-                    current_row.append(item)
-                else:
-                    avg_top = sum(x['top'] for x in current_row) / len(current_row)
-                    # Độ lệch dòng tối đa 15px để coi là cùng dòng ngang
-                    if abs(item['top'] - avg_top) <= 15:
-                        current_row.append(item)
-                    else:
-                        current_row.sort(key=lambda x: x['left'])
-                        rows.extend(current_row)
-                        current_row = [item]
-            if current_row:
-                current_row.sort(key=lambda x: x['left'])
-                rows.extend(current_row)
-            valid_labels = rows
-            
-        # Tìm tất cả các cặp khớp tiềm năng (label, icon) thỏa mãn điều kiện hình học và màu sắc
-        potential_matches = []
-        for l_idx, label in enumerate(valid_labels):
-            lx = label['left']
-            ly = label['top']
-            lw = label['width']
-            lh = label['height']
-            label_center_x = lx + lw / 2.0
-            label_center_y = ly + lh / 2.0
+        # Lọc bỏ các icon đè/trùng với các chữ phát hiện từ Tesseract (tránh nhận nhầm chữ cái/dấu nháy kép làm icon)
+        non_text_icons = []
+        for icon in candidate_icons:
+            is_text_overlap = False
+            for w in words:
+                # Bỏ qua kiểm tra đè chữ với các chữ cái đơn lẻ hoặc ký tự đặc biệt hay bị nhận nhầm
+                if len(w['text']) <= 2 and w['text'].lower() in {"o", "0", "c", "©", "@", "a", "q", "v", "x", "\"", "'", ",", "."}:
+                    continue
+                overlap_x = max(0, min(icon['right'], w['left'] + w['width']) - max(icon['left'], w['left']))
+                overlap_y = max(0, min(icon['bottom'], w['top'] + w['height']) - max(icon['top'], w['top']))
+                if overlap_x > 2 and overlap_y > 2:
+                    is_text_overlap = True
+                    break
+            if not is_text_overlap:
+                non_text_icons.append(icon)
+        candidate_icons = non_text_icons
+
+        # Khử trùng các icon nằm quá sát nhau (NMS dựa trên kích thước contour)
+        deduped_icons = []
+        sorted_icons = sorted(candidate_icons, key=lambda i: i['w'] * i['h'], reverse=True)
+        for icon in sorted_icons:
+            too_close = False
+            for selected in deduped_icons:
+                dist = ((icon['x'] - selected['x'])**2 + (icon['y'] - selected['y'])**2)**0.5
+                if dist <= 18.0 * scale:
+                    too_close = True
+                    break
+            if not too_close:
+                deduped_icons.append(icon)
+        candidate_icons = deduped_icons
+
+        # 7. Đối sánh các dòng chữ thô với các Icon lân cận (Many-to-One) trước khi chạy VietOCR
+        line_matches = {} # l_idx -> (best_i_idx, dist)
+        for l_idx, line in enumerate(valid_lines):
+            lx = line['left']
+            ly = line['top']
+            lw = line['width']
+            lh = line['height']
+            line_center_x = lx + lw / 2.0
+            line_center_y = ly + lh / 2.0
             
             for i_idx, icon in enumerate(candidate_icons):
                 ix, iy = icon['x'], icon['y']
                 
-                # Kiểm tra icon nằm ngang (trái hoặc phải) của text label
-                # User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI, khoảng cách ~5px, nằm ngang nhau
                 is_horizontal_adjacent = (
-                    # Y-axis alignment: Icon Y gần text center Y (trong 70% chiều cao text)
-                    # Text có thể cao hơn nếu nhiều dòng, nên dùng label_center_y
-                    abs(iy - label_center_y) <= lh * OCR_ICON_Y_ALIGN_RATIO
-                    and
-                    # Horizontal proximity: Icon gần text theo phương ngang (trái HOẶC phải)
-                    (
-                        # Case 1: Icon ở BÊN TRÁI text (icon.right gần label.left)
-                        (icon['right'] >= lx - OCR_HORIZONTAL_GAP_MAX * scale and 
-                         icon['left'] <= lx + OCR_HORIZONTAL_GAP_MAX * scale)
-                        or
-                        # Case 2: Icon ở BÊN PHẢI text (icon.left gần label.right)
-                        (icon['left'] <= lx + lw + OCR_HORIZONTAL_GAP_MAX * scale and
-                         icon['right'] >= lx + lw - OCR_HORIZONTAL_GAP_MAX * scale)
-                    )
+                    (icon['right'] >= lx - OCR_HORIZONTAL_GAP_MAX * scale and 
+                     icon['left'] <= lx + OCR_HORIZONTAL_GAP_MAX * scale)
+                    or
+                    (icon['left'] <= lx + lw + OCR_HORIZONTAL_GAP_MAX * scale and
+                     icon['right'] >= lx + lw - OCR_HORIZONTAL_GAP_MAX * scale)
                 )
                 
-                if is_horizontal_adjacent:
-                    # Kiểm tra màu sắc của nhãn chữ và biểu tượng tương đồng nhau
-                    if _colors_are_similar(label['color'], icon['color'], thresh_h=25, thresh_s=75, thresh_v=75):
-                        dist = ((ix - label_center_x) ** 2 + (iy - label_center_y) ** 2) ** 0.5
-                        potential_matches.append((dist, l_idx, i_idx))
+                is_vertically_close = abs(iy - line_center_y) <= 45 * scale
+                
+                if is_horizontal_adjacent and is_vertically_close:
+                    if _colors_are_similar(line['color'], icon['color'], thresh_h=25, thresh_s=75, thresh_v=75):
+                        # Tính khoảng cách dựa trên cạnh gần nhất của chữ tới tâm icon
+                        if ix < lx:
+                            dist_x = lx - icon['right']
+                        elif ix > lx + lw:
+                            dist_x = icon['left'] - (lx + lw)
+                        else:
+                            dist_x = 0
                         
-        # Sắp xếp các cặp theo khoảng cách tăng dần để ưu tiên cặp gần nhất
-        potential_matches.sort(key=lambda x: x[0])
+                        dist_y = abs(iy - line_center_y)
+                        dist = (dist_x**2 + dist_y**2)**0.5
+                        
+                        if l_idx not in line_matches or dist < line_matches[l_idx][1]:
+                            line_matches[l_idx] = (i_idx, dist)
+
+        # 7.5 Đối sánh các dòng chưa khớp (unmatched lines) vào cùng icon với dòng đã khớp gần nó (cùng màu, xếp dọc)
+        matched_line_indices = set(line_matches.keys())
+        unmatched_line_indices = [idx for idx in range(len(valid_lines)) if idx not in matched_line_indices]
         
-        matched_labels = {}  # l_idx -> i_idx
-        matched_icons = set()  # set of i_idx
-        
-        for dist, l_idx, i_idx in potential_matches:
-            if l_idx not in matched_labels and i_idx not in matched_icons:
-                matched_labels[l_idx] = i_idx
-                matched_icons.add(i_idx)
-                
-        pois = []
-        for l_idx, label in enumerate(valid_labels):
-            lx = label['left']
-            ly = label['top']
-            lw = label['width']
-            lh = label['height']
-            label_center_x = lx + lw / 2.0
-            label_center_y = ly + lh / 2.0
+        for u_idx in unmatched_line_indices:
+            u_line = valid_lines[u_idx]
+            best_match_idx = None
+            min_dist_y = 999999
             
-            if l_idx in matched_labels:
-                icon = candidate_icons[matched_labels[l_idx]]
-                # Pixel exact invariant: có icon -> bắt buộc dùng tâm bbox icon.
-                poi_x = (icon['left'] + icon['right']) / 2.0
-                poi_y = (icon['top'] + icon['bottom']) / 2.0
-                has_icon = True
-                logger.info(
-                    "  [PixelExact-Icon] '%s' bbox_icon=%s center=(%.1f, %.1f)",
-                    label['text'], icon['bbox'], poi_x, poi_y
-                )
-            else:
-                # Pixel exact invariant: không icon -> bắt buộc dùng tâm bbox label đã merge.
-                poi_x = (lx + lx + lw) / 2.0
-                poi_y = (ly + ly + lh) / 2.0
-                has_icon = False
-                logger.info(
-                    "  [PixelExact-Text] '%s' bbox_text=%s center=(%.1f, %.1f)",
-                    label['text'], [float(lx), float(ly), float(lx + lw), float(ly + lh)], poi_x, poi_y
-                )
+            for m_idx in matched_line_indices:
+                m_line = valid_lines[m_idx]
                 
+                # Khoảng cách dòng dọc gần nhau (không quá 25px)
+                dist_y = abs(u_line['top'] - m_line['top'])
+                if dist_y > 25 * scale:
+                    continue
+                    
+                # Căn lề trái hoặc lề phải, hoặc có sự đè ngang
+                left_aligned = abs(u_line['left'] - m_line['left']) <= 25 * scale
+                right_aligned = abs((u_line['left'] + u_line['width']) - (m_line['left'] + m_line['width'])) <= 25 * scale
+                horizontal_overlap = max(0, min(u_line['left'] + u_line['width'], m_line['left'] + m_line['width']) - max(u_line['left'], m_line['left'])) > 0
+                
+                if left_aligned or right_aligned or horizontal_overlap:
+                    # Phải cùng tông màu
+                    if _colors_are_similar(u_line['color'], m_line['color'], thresh_h=25, thresh_s=75, thresh_v=75):
+                        if dist_y < min_dist_y:
+                            min_dist_y = dist_y
+                            best_match_idx = m_idx
+                            
+            if best_match_idx is not None:
+                # Kế thừa icon của dòng đã khớp
+                i_idx, _ = line_matches[best_match_idx]
+                line_matches[u_idx] = (i_idx, min_dist_y)
+                matched_line_indices.add(u_idx)
+
+        # 8. Gom cụm các dòng theo Icon để phân nhóm chạy VietOCR chọn lọc
+        icon_to_lines = {}
+        for l_idx, (i_idx, dist) in line_matches.items():
+            if i_idx not in icon_to_lines:
+                icon_to_lines[i_idx] = []
+            icon_to_lines[i_idx].append(l_idx)
+            
+        def is_description_line(text_str: str) -> bool:
+            text_lower = text_str.lower().strip()
+            if _is_generic_name(text_lower):
+                return True
+            category_words_exact = {
+                "post office", "bưu điện", "nhà thờ", "church", "school", "hospital", "bệnh viện", "trường học"
+            }
+            category_words_ends = {
+                "store", "shop", "restaurant", "cafe", "coffee", "hotel", "bank", "market",
+                "pharmacy", "clinic", "spa", "gym", "bar", "pub",
+                "cửa hàng", "tiệm", "nhà hàng", "quán", "khách sạn", "siêu thị", "hiệu thuốc"
+            }
+            if text_lower in category_words_exact:
+                return True
+            words = text_lower.split()
+            if words and (words[-1] in category_words_ends or any(text_lower.endswith(cat) for cat in category_words_ends)):
+                return True
+            desc_words = {"vegetarian", "century", "landmark", "historical", "heritage", "museum"}
+            if any(w in text_lower for w in desc_words):
+                return True
+            return False
+
+        # 9. Chỉ chạy VietOCR cho các dòng đã khớp với icon và tạo danh sách POI gộp
+        pois = []
+        for i_idx, l_indices in icon_to_lines.items():
+            icon = candidate_icons[i_idx]
+            
+            # Sắp xếp các dòng theo thứ tự từ trên xuống dưới
+            matched_lines = [valid_lines[idx] for idx in l_indices]
+            matched_lines.sort(key=lambda x: x['top'])
+            
+            # Đồng nhất căn lề trái cho toàn bộ các dòng thuộc cùng một POI
+            min_l = min(line['left'] for line in matched_lines)
+            
+            name_parts = []
+            for line in matched_lines:
+                lx = min_l
+                ly = line['top']
+                rx = max(line['left'] + line['width'], lx + 10)
+                lw = rx - lx
+                lh = line['height']
+                
+                ix_left = icon['left']
+                ix_right = icon['right']
+                
+                # Loại bỏ vùng chồng lấn với biểu tượng
+                if icon['x'] < lx + lw / 2.0:
+                    if lx < ix_right:
+                        lx = int(ix_right + 2)
+                        lw = max(0, int(rx - lx))
+                else:
+                    if rx > ix_left:
+                        lw = max(0, int(ix_left - 2 - lx))
+                        
+                if lw <= 0:
+                    continue
+                    
+                line_bbox = [lx, ly, lx + lw, ly + lh]
+                
+                # Chạy VietOCR chọn lọc cho vùng bbox của dòng chữ
+                text_read = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=line['text'])
+                text_cleaned = _clean_spelling(text_read)
+                
+                if is_description_line(text_cleaned):
+                    logger.info("  [Desc-Filtered] Bỏ dòng mô tả: '%s'", text_cleaned)
+                    continue
+                name_parts.append(text_cleaned)
+                
+            # Bỏ qua POI hoàn toàn nếu không có dòng tên hợp lệ
+            if not name_parts:
+                logger.info("  [POI-Filtered] Bỏ POI tại (%f, %f) vì không có dòng tên hợp lệ.", icon['x'], icon['y'])
+                continue
+                
+            full_name = " ".join(name_parts)
+            full_name = _clean_spelling(full_name)
+            
+            # Khử nhiễu ký tự đơn lẻ ngoại trừ chữ số và một số từ đơn đặc trưng
+            words_in_name = full_name.split()
+            cleaned_words = []
+            for w in words_in_name:
+                if len(w) > 1:
+                    cleaned_words.append(w)
+                elif w.isdigit() or w.lower() in {'a', 'i'}:
+                    cleaned_words.append(w)
+            full_name = " ".join(cleaned_words)
+            
+            full_name = re.sub(r'\s+', ' ', full_name).strip()
+            full_name = _clean_spelling(full_name)
+            
+            if len(full_name) < 2 or not any(c.isalpha() for c in full_name):
+                continue
+            
+            # Độ tin cậy trung bình
+            avg_conf = sum(line['conf'] for line in matched_lines) / len(matched_lines)
+            
+            # Tính toán bbox bao phủ toàn bộ các dòng được gộp
+            min_l = min(line['left'] for line in matched_lines)
+            min_t = min(line['top'] for line in matched_lines)
+            max_r = max(line['left'] + line['width'] for line in matched_lines)
+            max_b = max(line['top'] + line['height'] for line in matched_lines)
+            
             pois.append({
-                "name": label['text'],
-                "x": poi_x,
-                "y": poi_y,
-                "confidence": label['conf'] / 100.0,
-                "bbox": [float(lx), float(ly), float(lx + lw), float(ly + lh)],
-                "has_icon": has_icon
+                "name": full_name,
+                "x": icon['x'], # Tọa độ GPS tâm POI chính là tâm của biểu tượng (icon)
+                "y": icon['y'],
+                "confidence": avg_conf / 100.0,
+                "bbox": [float(min_l), float(min_t), float(max_r - min_l), float(max_b - min_t)],
+                "has_icon": True
             })
+
+        global _last_candidate_icons, _last_valid_lines, _last_line_to_icon, _last_potential_line_matches
+        _last_candidate_icons = candidate_icons
+        _last_valid_lines = valid_lines
+        _last_line_to_icon = line_matches
+        _last_potential_line_matches = []
 
         logger.info("OCR Vision Done: %d POIs extracted (Confirmed 100%% Local OCR)", len(pois))
         return pois, False

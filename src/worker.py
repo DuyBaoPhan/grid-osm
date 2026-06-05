@@ -107,26 +107,25 @@ class Worker:
         await self._page.add_init_script("""
             const style = document.createElement('style');
             style.textContent = `
-                /* Hide Google Maps UI controls */
+                /* Ẩn Google Maps UI: search bar, buttons, controls */
                 .dismissal, .searchbox, .searchboxinput, .widget-settings-button,
                 .app-viewcard-strip, .scene-footer, .watermark, .gm-style-cc,
-                button[jsaction], .widget-expand-button, .widget-scene-canvas-holder,
+                button[jsaction], .widget-expand-button,
                 .app-vertical-scrollable-container, .omnibox-container,
-                [role="dialog"], .app-viewcard-strip-container,
+                .app-viewcard-strip-container,
                 .ml-promotion-container, .cards-module, #searchbox, #omnibox,
                 #appbar, .scene-footer-container, .widget-settings, .widget-zoom,
-                .gm-bundled-control, .gm-svpc, .gm-fullscreen-control {
+                .gm-bundled-control, .gm-svpc, .gm-fullscreen-control,
+                #searchboxinput, .fbar, [id="sb_cb"],
+                .gb_Md, .gb_od, #gb, .gbh, .gba,
+                [role="banner"], [role="dialog"], [role="alertdialog"],
+                [role="search"], [role="navigation"] {
                     display: none !important;
                     visibility: hidden !important;
-                }
-                /* Maximize map canvas */
-                #map, [role="main"], .widget-scene-canvas, canvas {
-                    left: 0 !important;
-                    top: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
+                    height: 0 !important;
+                    max-height: 0 !important;
+                    overflow: hidden !important;
+                    pointer-events: none !important;
                 }
                 body, html {
                     overflow: hidden !important;
@@ -283,7 +282,7 @@ class Worker:
 
         # Lưu screenshot gốc (không có lưới, không bị giảm chất lượng) nếu cần debug
         if SAVE_SCREENSHOTS:
-            await self._save_screenshot(raw_screenshot, tx, ty)
+            await self._save_screenshot(compressed_screenshot, tx, ty)
         logger.info("  [1/2] Screenshot captured -> sending to OCR...")
 
         # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
@@ -414,33 +413,24 @@ class Worker:
                 distance_meters = 0.0
                 bearing_deg = 0.0
 
-            # Lọc nghiêm ngặt: Chỉ giữ POI có tọa độ thực sự nằm trong khung quét (bbox) của tile hiện tại.
-            eps = 1e-6
-            in_lat = (lat_min - eps) <= poi_lat <= (lat_max + eps)
-            in_lng = (lng_min - eps) <= poi_lng <= (lng_max + eps)
-
-            if in_lat and in_lng:
-                pois.append({
-                    "name":             name,
-                    "approx_lat":       poi_lat,
-                    "approx_lng":       poi_lng,
-                    "tile_x":           tx,
-                    "tile_y":           ty,
-                    "distance_pixels":  round(distance_pixels, 1),
-                    "distance_meters":  round(distance_meters, 1),
-                    "bearing_degrees":  round(bearing_deg, 1),
-                    "image_corners": {
-                        "top_left":     {"lat": round(img_metadata.get("top_left_lat", 0.0), 6), "lng": round(img_metadata.get("top_left_lng", 0.0), 6)},
-                        "top_right":    {"lat": round(img_metadata.get("top_right_lat", 0.0), 6), "lng": round(img_metadata.get("top_right_lng", 0.0), 6)},
-                        "bottom_left":  {"lat": round(img_metadata.get("bottom_left_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_left_lng", 0.0), 6)},
-                        "bottom_right": {"lat": round(img_metadata.get("bottom_right_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_right_lng", 0.0), 6)},
-                    }
-                })
-            else:
-                logger.info(
-                    "  [Geo] Bỏ qua POI ngoài ranh giới ô quét: %s (%.6f, %.6f) — thuộc ô khác",
-                    name, poi_lat, poi_lng
-                )
+            # Giữ tất cả POI tìm thấy trong screenshot. Coordinator sẽ lo việc khử trùng (deduplication)
+            # nếu cùng một địa điểm xuất hiện ở nhiều tile cạnh nhau.
+            pois.append({
+                "name":             name,
+                "approx_lat":       poi_lat,
+                "approx_lng":       poi_lng,
+                "tile_x":           tx,
+                "tile_y":           ty,
+                "distance_pixels":  round(distance_pixels, 1),
+                "distance_meters":  round(distance_meters, 1),
+                "bearing_degrees":  round(bearing_deg, 1),
+                "image_corners": {
+                    "top_left":     {"lat": round(img_metadata.get("top_left_lat", 0.0), 6), "lng": round(img_metadata.get("top_left_lng", 0.0), 6)},
+                    "top_right":    {"lat": round(img_metadata.get("top_right_lat", 0.0), 6), "lng": round(img_metadata.get("top_right_lng", 0.0), 6)},
+                    "bottom_left":  {"lat": round(img_metadata.get("bottom_left_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_left_lng", 0.0), 6)},
+                    "bottom_right": {"lat": round(img_metadata.get("bottom_right_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_right_lng", 0.0), 6)},
+                }
+            })
 
         # 8 hàng xóm trong lưới tọa độ custom
         neighbors: List[TileCoord] = [
@@ -648,86 +638,118 @@ class Worker:
             else:
                 raise
         
-        # 2. JavaScript đơn giản: chờ Google Maps load (URL đã có center coordinates)
+        # Nhấn Escape để đóng popup/card panel
+        try:
+            await self._page.wait_for_timeout(2000)
+            await self._page.keyboard.press('Escape')
+            await self._page.wait_for_timeout(500)
+            await self._page.keyboard.press('Escape')
+            await self._page.wait_for_timeout(300)
+        except Exception:
+            pass
+
+        # 2. JavaScript: ẩn UI overlay và chờ Google Maps load
         crop_box = None
         try:
             crop_box = await self._page.evaluate(f"""async () => {{
-                // Ẩn TẤT CẢ UI của Google Maps - aggressive removal
-                const selectors = [
-                    'header', '.searchbox', '.omnibox-container', 
-                    '.app-viewcard-strip', '.scene-footer',
-                    // Sidebar và search
-                    '#omnibox-singlebox', '#searchbox-container',
-                    '[role="navigation"]', 'nav', '[aria-label="Menu"]',
-                    // Tất cả buttons và controls
-                    'button', '.gm-bundled-control', '.widget-zoom',
-                    '.gm-svpc', '.gm-fullscreen-control'
-                ];
-                selectors.forEach(sel => {{
-                    document.querySelectorAll(sel).forEach(el => {{
-                        el.style.display = 'none';
-                        el.remove();
+
+                // ── 1. Click nút đóng (X) của bất kỳ panel/card nào đang mở ──────────
+                const closeBtns = document.querySelectorAll(
+                    '[aria-label="Close"], [aria-label="Đóng"], [aria-label="close"], '
+                    + 'button[jsaction*="dismiss"], button[jsaction*="close"], '
+                    + '[data-dismiss], [jsaction*="panel.close"]'
+                );
+                closeBtns.forEach(btn => {{ try {{ btn.click(); }} catch(e) {{}} }});
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // ── 2. Hàm ẩn element theo vùng vị trí ──────────────────────────────────
+                const HEADER_H = 160;   // search bar + category tabs (Restaurants, Hotels...)
+                const PANEL_W  = 450;   // left panel card (This area, POI detail, etc.)
+                const SKIP_TAGS = new Set(['CANVAS','SCRIPT','STYLE','HTML','BODY','HEAD','IMG']);
+
+                function hideOverlayElements() {{
+                    document.querySelectorAll('body *').forEach(el => {{
+                        if (SKIP_TAGS.has(el.tagName)) return;
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) return;
+                        const inHeader    = rect.top >= 0 && rect.bottom <= HEADER_H && rect.width > 60;
+                        const inLeftPanel = rect.left >= 0 && rect.right <= PANEL_W  && rect.height > 30;
+                        if (inHeader || inLeftPanel) {{
+                            el.style.setProperty('display',        'none',   'important');
+                            el.style.setProperty('visibility',     'hidden', 'important');
+                            el.style.setProperty('pointer-events', 'none',   'important');
+                            el.style.setProperty('height',         '0',      'important');
+                            el.style.setProperty('overflow',       'hidden', 'important');
+                        }}
                     }});
+                    // Ẩn thêm bằng selector ngữ nghĩa
+                    [
+                        '[role="search"]', '[role="navigation"]', '[role="banner"]',
+                        '[role="dialog"]', '[role="alertdialog"]',
+                        'header', 'nav', '.searchbox', '#searchboxinput',
+                        '.app-viewcard-strip', '.scene-footer',
+                        '[aria-label="Search Google Maps"]', 'form'
+                    ].forEach(sel => {{
+                        document.querySelectorAll(sel).forEach(el => {{
+                            el.style.setProperty('display', 'none', 'important');
+                        }});
+                    }});
+                }}
+
+                // ── 3. Chạy ngay lập tức ─────────────────────────────────────────────────
+                hideOverlayElements();
+
+
+                // ── 4. MutationObserver: ẩn liên tục khi Google Maps tạo element mới ────
+                // (Google Maps SPA tái tạo category tabs sau mỗi lần re-render)
+                const observer = new MutationObserver(() => hideOverlayElements());
+                observer.observe(document.body, {{
+                    childList: true,
+                    subtree: true,
+                    attributes: false
                 }});
-                
-                // Ẩn sidebar trái (fixed position elements ở left edge)
-                document.querySelectorAll('div').forEach(div => {{
-                    const rect = div.getBoundingClientRect();
-                    if (rect.left === 0 && rect.width < 500 && rect.height > 200) {{
-                        div.style.display = 'none';
-                    }}
-                }});
-                
-                // Đợi 10 giây để Google Maps load và center hoàn toàn ở zoom 21
+
+                // Backup interval mỗi 500ms phòng khi MutationObserver bỏ sót
+                const hideInterval = setInterval(hideOverlayElements, 500);
+
+                // ── 5. Dispatch resize để Google Maps fill viewport ───────────────────────
+                window.dispatchEvent(new Event('resize'));
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                window.dispatchEvent(new Event('resize'));
+
+                // ── 6. Chờ 10 giây cho tile zoom 21 load đầy đủ ─────────────────────────
                 await new Promise(resolve => setTimeout(resolve, 10000));
-                
-                // VẼ CROSSHAIR Ở CHÍNH GIỮA MÀN HÌNH để verify tọa độ CENTER
-                const centerX = window.innerWidth / 2;
-                const centerY = window.innerHeight / 2;
-                
-                const crosshair = document.createElement('div');
-                crosshair.id = 'center-crosshair';
-                crosshair.style.position = 'fixed';
-                crosshair.style.left = centerX + 'px';
-                crosshair.style.top = centerY + 'px';
-                crosshair.style.width = '40px';
-                crosshair.style.height = '40px';
-                crosshair.style.marginLeft = '-20px';
-                crosshair.style.marginTop = '-20px';
-                crosshair.style.zIndex = '999999999';
-                crosshair.style.pointerEvents = 'none';
-                
-                // Draw red crosshair lines
-                crosshair.innerHTML = `
-                    <div style="position:absolute;left:20px;top:0;width:1px;height:40px;background:red;"></div>
-                    <div style="position:absolute;left:0;top:20px;width:40px;height:1px;background:red;"></div>
-                    <div style="position:absolute;left:20px;top:20px;width:8px;height:8px;margin-left:-4px;margin-top:-4px;border:2px solid red;border-radius:50%;background:rgba(255,0,0,0.3);"></div>
-                `;
-                document.body.appendChild(crosshair);
-                
-                console.log('[CENTER VERIFICATION]', {{
-                    screenCenter: {{ x: centerX, y: centerY }},
-                    targetCoords: {{ lat: {lat}, lng: {lng} }},
-                    windowSize: {{ w: window.innerWidth, h: window.innerHeight }}
-                }});
-                
-                // Vẽ khung quét để debug (optional)
+
+                // ── 7. Dừng observer + interval, chạy hide lần cuối ─────────────────────
+                clearInterval(hideInterval);
+                observer.disconnect();
+                hideOverlayElements();
+
+                console.log('[CENTER]', {{ lat: {lat}, lng: {lng} }});
+
+                // ── 8. Vẽ scan box đúng bằng vùng TILE (SCREENSHOT_W × SCREENSHOT_H, căn giữa viewport) ───
+                const tileW    = {SCREENSHOT_W};
+                const tileH    = {SCREENSHOT_H};
+                const tileLeft = Math.round((window.innerWidth  - tileW) / 2);
+                const tileTop  = Math.round((window.innerHeight - tileH) / 2);
                 let scanBox = document.getElementById('active-worker-scan-box');
                 if (!scanBox) {{
                     scanBox = document.createElement('div');
                     scanBox.id = 'active-worker-scan-box';
                     document.body.appendChild(scanBox);
                 }}
-                scanBox.style.position = 'fixed';
-                scanBox.style.left = '0px';
-                scanBox.style.top = '0px';
-                scanBox.style.width = '100vw';
-                scanBox.style.height = '100vh';
-                scanBox.style.border = '3px solid rgba(0, 210, 255, 0.6)';
-                scanBox.style.backgroundColor = 'transparent';
-                scanBox.style.pointerEvents = 'none';
-                scanBox.style.zIndex = '10000000';
-                scanBox.style.boxSizing = 'border-box';
+                scanBox.style.cssText = [
+                    `position:fixed`,
+                    `left:${{tileLeft}}px`,
+                    `top:${{tileTop}}px`,
+                    `width:${{tileW}}px`,
+                    `height:${{tileH}}px`,
+                    `border:3px solid rgba(0,210,255,0.85)`,
+                    `background:transparent`,
+                    `pointer-events:none`,
+                    `z-index:99999999`,
+                    `box-sizing:border-box`
+                ].join('!important;') + '!important';
 
                 return null;  // Full viewport, không crop
             }}""")
@@ -834,7 +856,28 @@ class Worker:
                 "bottom_right_lat": br_lat,
                 "bottom_right_lng": br_lng,
             }
-            return screenshot_bytes, screenshot_bytes, img_metadata
+
+            # Crop ảnh lưu về đúng kích thước tile (SCREENSHOT_W × SCREENSHOT_H)
+            # để ảnh chụp = đúng y chang vùng hiển thị trên trình duyệt
+            target_w = int(SCREENSHOT_W * scale)
+            target_h = int(SCREENSHOT_H * scale)
+            cx_phys  = w_orig // 2
+            cy_phys  = h_orig // 2
+            crop_l = max(0, cx_phys - target_w // 2)
+            crop_t = max(0, cy_phys - target_h // 2)
+            crop_r = min(w_orig, crop_l + target_w)
+            crop_b = min(h_orig, crop_t + target_h)
+            img_tile = img.crop((crop_l, crop_t, crop_r, crop_b))
+            buf_tile = io.BytesIO()
+            img_tile.save(buf_tile, format="PNG")
+            compressed_screenshot = buf_tile.getvalue()
+            logger.info(
+                "  [Tile Crop] Full=%dx%d → Tile=%dx%d (crop=%d,%d,%d,%d)",
+                w_orig, h_orig, crop_r - crop_l, crop_b - crop_t,
+                crop_l, crop_t, crop_r, crop_b
+            )
+
+            return screenshot_bytes, compressed_screenshot, img_metadata
         except Exception as crop_err:
             logger.warning("Could not process screenshot metadata: %s", crop_err)
 

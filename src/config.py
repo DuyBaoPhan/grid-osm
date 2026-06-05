@@ -18,7 +18,7 @@ NUM_WORKERS            = 1              # Để 1 worker cho độ ổn định 
 DELAY_BETWEEN_REQ      = 1.5            # giây nghỉ giữa mỗi tile
 MAX_RETRIES            = 2              # số lần retry khi tile lỗi
 BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
-HEADLESS               = True          # Set False để hiển thị giao diện trình duyệt của từng worker
+HEADLESS               = False          # Set False để hiển thị giao diện trình duyệt của từng worker
 
 # ── Địa lý ───────────────────────────────────────────────────
 ZOOM_LEVEL       = 21                   # zoom chia luoi tile - Google Maps max zoom = 21
@@ -65,7 +65,7 @@ OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận 
 # ── Icon-Text Matching (Google Maps horizontal layout) ────────
 # User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI của text, khoảng cách ~5px, nằm ngang nhau
 OCR_HORIZONTAL_GAP_MAX = 10            # Khoảng cách tối đa giữa icon và text theo phương ngang (pixels)
-OCR_ICON_Y_ALIGN_RATIO = 0.7           # Icon Y phải nằm trong tỷ lệ này so với chiều cao text (flexible vì text có thể cao hơn nếu nhiều dòng)
+OCR_ICON_Y_ALIGN_RATIO = 1.3           # Icon Y phải nằm trong tỷ lệ này so với chiều cao text (flexible vì text có thể cao hơn nếu nhiều dòng)
 
 # Deprecated (cho OSM vertical layout - icon phía trên text):
 # OCR_ICON_MAX_Y_GAP = 24              # icon phải nằm tối đa N px phía trên text
