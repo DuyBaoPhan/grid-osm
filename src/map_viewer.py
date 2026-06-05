@@ -122,7 +122,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OSM POI Scraper -- Tile Map</title>
+<title>Google Maps POI Scraper -- Tile Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
@@ -238,12 +238,13 @@ const map = L.map('map', {{
 }});
 
 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19
 }}).addTo(map);
 
 L.circleMarker([{center_lat},{center_lng}], {{
   radius: 8, color: '#818cf8', fillColor: '#818cf8',
-  fillOpacity: 0.9, weight: 2,
+  fillOpacity: 0.9, weight: 2
 }}).addTo(map).bindPopup('<b>Tâm quét ({target_district})</b><br>{center_lat:.6f}, {center_lng:.6f}');
 
 const boundaryGeojson = {boundary_geojson};

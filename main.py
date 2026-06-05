@@ -114,7 +114,7 @@ async def main() -> None:
     _setup_logging()
 
     logger.info("=" * 60)
-    logger.info("  OSM POI Scraper — Local AI Edition")
+    logger.info("  Google Maps POI Scraper — Local AI Edition")
     logger.info("  Workers: %d", NUM_WORKERS)
     logger.info("=" * 60)
 

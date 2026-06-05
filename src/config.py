@@ -1,5 +1,5 @@
 # =============================================================
-# OSM POI Scraper — config.py
+# Google Maps POI Scraper — config.py
 # Toàn bộ hằng số cấu hình.
 # Chỉnh sửa file này để điều chỉnh hành vi scraper.
 # =============================================================
@@ -21,19 +21,20 @@ BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
 HEADLESS               = True          # Set False để hiển thị giao diện trình duyệt của từng worker
 
 # ── Địa lý ───────────────────────────────────────────────────
-ZOOM_LEVEL       = 19                   # zoom chia luoi tile (anh huong so luong tile)
-SCREENSHOT_ZOOM  = 19                   # zoom hien thi trong URL browser (cang cao cang thay ro ten dia diem)
-CENTER_LAT       = 10.779930   # Tọa độ Bưu điện Thành phố làm trung tâm Quận 1
-CENTER_LNG       = 106.699994
+ZOOM_LEVEL       = 21                   # zoom chia luoi tile - Google Maps max zoom = 21
+SCREENSHOT_ZOOM  = 21                   # zoom hien thi trong URL browser - max 21 cho Google Maps
+CENTER_LAT       = 10.779855797443227   # Tọa độ Bưu điện Thành phố làm trung tâm Quận 1
+CENTER_LNG       = 106.69984398140998
 RADIUS_KM        = 3.0                  # Bán kính 3km để bao phủ toàn bộ Quận 1
 TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM tự động nhận diện biên giới và bỏ qua vùng ngoài quận
 
-# ── Screenshot / Tile (đã chuyển sang OSM Tile API) ────────────────────────────────────
-OSM_TILE_URL   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"  # Direct tile API
+# ── Screenshot / Tile (đã chuyển sang Google Maps) ────────────────────────────────────
+# Note: Google Maps không cung cấp public tile API như OSM
+# MAP_TILE_URL   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"  # Commented out - not used for Google Maps
 TILE_UPSCALE   = 4               # Upscale 256×256 → 1024×1024 để text rõ hơn cho OCR
-GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 19
-SCREENSHOT_W   = 700            # Chỉ dùng cho DOM extraction (không còn crop tile)
-SCREENSHOT_H   = 540
+GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 21
+SCREENSHOT_W   = 1920            # Fullscreen width (1920x1080)
+SCREENSHOT_H   = 1080            # Fullscreen height
 SCREENSHOT_OVERLAP_PX = 80       # Khoảng tràn viền xung quanh ô quét (để tránh mất chữ/icon sát mép)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!

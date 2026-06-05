@@ -3,7 +3,7 @@
 #
 # Mỗi Worker:
 #   - Duy trì 1 instance Chromium headless
-#   - Điều hướng đến từng tile trên OSM
+#   - Điều hướng đến từng tile trên Google Maps
 #   - Chụp screenshot → gửi sang vision.py
 #   - Báo kết quả cho Coordinator
 #   - Tự restart browser mỗi BROWSER_RESTART_EVERY tile
@@ -18,6 +18,8 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright
 
 from config import (
     BROWSER_RESTART_EVERY,
+    CENTER_LAT,
+    CENTER_LNG,
     DELAY_BETWEEN_REQ,
     MAX_RETRIES,
     PAGE_LOAD_TIMEOUT,
@@ -38,8 +40,8 @@ logger = logging.getLogger(__name__)
 
 TileCoord = Tuple[int, int]
 
-# URL template OSM
-_OSM_URL = "https://www.openstreetmap.org/#map={zoom}/{lat}/{lng}"
+# URL template Google Maps
+_GMAP_URL = "https://www.google.com/maps/@{lat},{lng},{zoom}z"
 
 
 class Worker:
@@ -94,29 +96,37 @@ class Worker:
         self._context = await self._browser.new_context(
             viewport={"width": SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX, "height": SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX},
             user_agent=(
-                "Mozilla/5.0 (compatible; OSM-Research-Bot/2.0; "
-                "+https://github.com/DuyBaoPhan/grid-osm)"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ),
             bypass_csp=True,
         )
         self._page = await self._context.new_page()
 
-        # Inject CSS to hide all clutter elements (welcome panel, header, banners) before they render!
+        # Inject CSS to hide Google Maps UI elements before they render
         await self._page.add_init_script("""
             const style = document.createElement('style');
             style.textContent = `
-                header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container, #top-bar, .top-bar, #navbar, .navbar {
+                /* Hide Google Maps UI controls */
+                .dismissal, .searchbox, .searchboxinput, .widget-settings-button,
+                .app-viewcard-strip, .scene-footer, .watermark, .gm-style-cc,
+                button[jsaction], .widget-expand-button, .widget-scene-canvas-holder,
+                .app-vertical-scrollable-container, .omnibox-container,
+                [role="dialog"], .app-viewcard-strip-container,
+                .ml-promotion-container, .cards-module, #searchbox, #omnibox,
+                #appbar, .scene-footer-container, .widget-settings, .widget-zoom,
+                .gm-bundled-control, .gm-svpc, .gm-fullscreen-control {
                     display: none !important;
+                    visibility: hidden !important;
                 }
-                #map {
+                /* Maximize map canvas */
+                #map, [role="main"], .widget-scene-canvas, canvas {
                     left: 0 !important;
                     top: 0 !important;
                     width: 100vw !important;
                     height: 100vh !important;
                     margin: 0 !important;
                     padding: 0 !important;
-                    position: fixed !important;
-                    z-index: 999999 !important;
                 }
                 body, html {
                     overflow: hidden !important;
@@ -217,7 +227,7 @@ class Worker:
         """
         Xử lý 1 tile:
           1. Khởi động browser
-          2. Điều hướng đến OSM URL
+          2. Điều hướng đến Google Maps URL
           3. Chụp screenshot và trích xuất TOÀN BỘ tọa độ DOM địa điểm cùng một lúc
           4. Đóng browser ngay lập tức để tiết kiệm RAM, CPU và dọn dẹp màn hình!
           5. Gọi vision → danh sách POI (chạy ngầm 30-60s không cần browser)
@@ -225,9 +235,14 @@ class Worker:
         Retry MAX_RETRIES lần nếu lỗi.
         """
         tx, ty = tile
-        lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
+        # Tile (0,0) dùng chính xác CENTER_LAT/CENTER_LNG để Bưu điện Trung tâm Sài Gòn nằm giữa màn hình
+        if tx == 0 and ty == 0:
+            lat, lng = CENTER_LAT, CENTER_LNG
+        else:
+            lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
         strict_bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
-        url = _OSM_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
+        url = _GMAP_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
+        logger.info("  [Navigate] URL: %s (zoom=%d)", url, SCREENSHOT_ZOOM)
 
         # Đảm bảo khởi động trình duyệt và page mới cho ô quét này
         await self._start_page()
@@ -633,132 +648,70 @@ class Worker:
             else:
                 raise
         
-        # 1. Inject CSS ẩn toàn bộ UI rác (welcome panel, header, banner) và cho bản đồ phóng full màn hình
-        css_hide_clutter = """
-        header, .header, .header-main, #header, .sidebar, #sidebar, .welcome, .banner, #banner, .announcement, .flash-wrap, #flash, .cookie-consent, #cookie-consent, .leaflet-control-container, #top-bar, .top-bar, #navbar, .navbar {
-            display: none !important;
-        }
-        #map {
-            left: 0 !important;
-            top: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            position: fixed !important;
-            z-index: 999999 !important;
-        }
-        body, html {
-            overflow: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        """
-        try:
-            await self._page.add_style_tag(content=css_hide_clutter)
-        except Exception as exc:
-            logger.debug("Could not hide OSM UI elements: %s", exc)
-
-        # 2. Chạy Javascript xóa hoàn toàn các phần tử rác khỏi DOM và tính toán ô cắt (crop_box)
+        # 2. JavaScript đơn giản: chờ Google Maps load (URL đã có center coordinates)
         crop_box = None
         try:
-            crop_box = await self._page.evaluate(f"""async (boundaryGeom) => {{
+            crop_box = await self._page.evaluate(f"""async () => {{
+                // Ẩn TẤT CẢ UI của Google Maps - aggressive removal
                 const selectors = [
-                    'header', '.header', '.header-main', '#header', '.sidebar', '#sidebar', '.welcome', '#banner', '.banner', 
-                    '.announcement', '.flash-wrap', '#flash', '.cookie-consent', '.leaflet-control-container'
+                    'header', '.searchbox', '.omnibox-container', 
+                    '.app-viewcard-strip', '.scene-footer',
+                    // Sidebar và search
+                    '#omnibox-singlebox', '#searchbox-container',
+                    '[role="navigation"]', 'nav', '[aria-label="Menu"]',
+                    // Tất cả buttons và controls
+                    'button', '.gm-bundled-control', '.widget-zoom',
+                    '.gm-svpc', '.gm-fullscreen-control'
                 ];
                 selectors.forEach(sel => {{
-                    document.querySelectorAll(sel).forEach(el => el.remove());
+                    document.querySelectorAll(sel).forEach(el => {{
+                        el.style.display = 'none';
+                        el.remove();
+                    }});
                 }});
                 
-                // Ép bản đồ fill toàn màn hình
-                const mapEl = document.getElementById('map');
-                if (mapEl) {{
-                    mapEl.style.setProperty('left', '0px', 'important');
-                    mapEl.style.setProperty('top', '0px', 'important');
-                    mapEl.style.setProperty('width', '100%', 'important');
-                    mapEl.style.setProperty('height', '100%', 'important');
-                    mapEl.style.setProperty('position', 'fixed', 'important');
-                    mapEl.style.setProperty('margin', '0px', 'important');
-                    mapEl.style.setProperty('padding', '0px', 'important');
-                }}
+                // Ẩn sidebar trái (fixed position elements ở left edge)
+                document.querySelectorAll('div').forEach(div => {{
+                    const rect = div.getBoundingClientRect();
+                    if (rect.left === 0 && rect.width < 500 && rect.height > 200) {{
+                        div.style.display = 'none';
+                    }}
+                }});
                 
-                // Chờ và kích hoạt cập nhật kích thước Leaflet map
-                const waitAndCenter = () => {{
-                    return new Promise((resolve) => {{
-                        let attempts = 0;
-                        const interval = setInterval(() => {{
-                            let mapInstance = null;
-                            if (typeof OSM !== 'undefined' && OSM.map) {{
-                                mapInstance = OSM.map;
-                            }} else if (window.MAP) {{
-                                mapInstance = window.MAP;
-                            }} else if (window.map) {{
-                                mapInstance = window.map;
-                            }} else {{
-                                for (let key in window) {{
-                                    try {{
-                                        if (window[key] && window[key]._layers && typeof window[key].invalidateSize === 'function') {{
-                                            mapInstance = window[key];
-                                            break;
-                                        }}
-                                    }} catch (e) {{}}
-                                }}
-                            }}
-                            if (mapInstance) {{
-                                clearInterval(interval);
-                                mapInstance.invalidateSize({{ animate: false }});
-                                mapInstance.setView([{lat}, {lng}], {SCREENSHOT_ZOOM}, {{ animate: false }});
-                                
-                                // Vẽ mặt nạ che khuất khu vực ngoài quận mục tiêu
-                                if (boundaryGeom && typeof L !== 'undefined') {{
-                                    const worldCoords = [
-                                        [-90, -180],
-                                        [-90, 180],
-                                        [90, 180],
-                                        [90, -180],
-                                        [-90, -180]
-                                    ];
-                                    let latLngRings = [];
-                                    if (boundaryGeom.type === 'Polygon') {{
-                                        const innerRing = boundaryGeom.coordinates[0].map(coord => [coord[1], coord[0]]);
-                                        latLngRings = [worldCoords, innerRing];
-                                    }} else if (boundaryGeom.type === 'MultiPolygon') {{
-                                        latLngRings = [worldCoords];
-                                        boundaryGeom.coordinates.forEach(polygonCoords => {{
-                                            if (polygonCoords && polygonCoords[0]) {{
-                                                const innerRing = polygonCoords[0].map(coord => [coord[1], coord[0]]);
-                                                latLngRings.push(innerRing);
-                                            }}
-                                        }});
-                                    }}
-                                    if (latLngRings.length > 1) {{
-                                        L.polygon(latLngRings, {{
-                                            color: '#f2efe9',
-                                            weight: 2,
-                                            opacity: 1,
-                                            fillColor: '#f2efe9',
-                                            fillOpacity: 1,
-                                            interactive: false
-                                        }}).addTo(mapInstance);
-                                    }}
-                                }}
-                                
-                                resolve(true);
-                            }} else {{
-                                attempts++;
-                                if (attempts > 100) {{ // 5 seconds timeout
-                                    clearInterval(interval);
-                                    resolve(false);
-                                }}
-                            }}
-                        }}, 50);
-                    }});
-                }};
+                // Đợi 10 giây để Google Maps load và center hoàn toàn ở zoom 21
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 
-                await waitAndCenter();
-
-                // Vẽ khung quét bao toàn viewport (đúng với những gì worker thấy)
+                // VẼ CROSSHAIR Ở CHÍNH GIỮA MÀN HÌNH để verify tọa độ CENTER
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
+                
+                const crosshair = document.createElement('div');
+                crosshair.id = 'center-crosshair';
+                crosshair.style.position = 'fixed';
+                crosshair.style.left = centerX + 'px';
+                crosshair.style.top = centerY + 'px';
+                crosshair.style.width = '40px';
+                crosshair.style.height = '40px';
+                crosshair.style.marginLeft = '-20px';
+                crosshair.style.marginTop = '-20px';
+                crosshair.style.zIndex = '999999999';
+                crosshair.style.pointerEvents = 'none';
+                
+                // Draw red crosshair lines
+                crosshair.innerHTML = `
+                    <div style="position:absolute;left:20px;top:0;width:1px;height:40px;background:red;"></div>
+                    <div style="position:absolute;left:0;top:20px;width:40px;height:1px;background:red;"></div>
+                    <div style="position:absolute;left:20px;top:20px;width:8px;height:8px;margin-left:-4px;margin-top:-4px;border:2px solid red;border-radius:50%;background:rgba(255,0,0,0.3);"></div>
+                `;
+                document.body.appendChild(crosshair);
+                
+                console.log('[CENTER VERIFICATION]', {{
+                    screenCenter: {{ x: centerX, y: centerY }},
+                    targetCoords: {{ lat: {lat}, lng: {lng} }},
+                    windowSize: {{ w: window.innerWidth, h: window.innerHeight }}
+                }});
+                
+                // Vẽ khung quét để debug (optional)
                 let scanBox = document.getElementById('active-worker-scan-box');
                 if (!scanBox) {{
                     scanBox = document.createElement('div');
@@ -770,15 +723,14 @@ class Worker:
                 scanBox.style.top = '0px';
                 scanBox.style.width = '100vw';
                 scanBox.style.height = '100vh';
-                scanBox.style.border = '2px solid rgba(0, 210, 255, 0.4)';
+                scanBox.style.border = '3px solid rgba(0, 210, 255, 0.6)';
                 scanBox.style.backgroundColor = 'transparent';
                 scanBox.style.pointerEvents = 'none';
                 scanBox.style.zIndex = '10000000';
                 scanBox.style.boxSizing = 'border-box';
 
-                // Trả về null — dùng full viewport, không crop
-                return null;
-            }}""", boundary_geometry)
+                return null;  // Full viewport, không crop
+            }}""")
         except Exception as exc:
             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
 
