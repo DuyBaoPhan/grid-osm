@@ -156,6 +156,16 @@ def _colors_are_similar(color1: Optional[np.ndarray], color2: Optional[np.ndarra
     return h_diff <= thresh_h and s_diff <= thresh_s and v_diff <= thresh_v
 
 
+def _is_low_saturation(color: Optional[np.ndarray], thresh_s: int = 40) -> bool:
+    """
+    Kiểm tra xem một màu có độ bão hòa thấp (gần với tông xám/trắng/đen) hay không.
+    """
+    if color is None:
+        return True
+    hsv = cv2.cvtColor(np.uint8([[color]]), cv2.COLOR_BGR2HSV)[0][0]
+    return hsv[1] < thresh_s
+
+
 # ── Bộ lọc tên đường giao thông (Sửa lỗi khớp không dấu) ─────────────────
 
 def _strip_vietnamese_accents(s: str) -> str:
@@ -171,11 +181,22 @@ def _strip_vietnamese_accents(s: str) -> str:
     return s
 
 
-def _is_street_name(name: str) -> bool:
+def _is_street_name(name: str, color: Optional[np.ndarray] = None) -> bool:
     """
     Nhận dạng tên đường bằng các biểu thức chính quy và quy tắc tiếng Việt.
-    Đã sửa lỗi so khớp không dấu ở phần kiểm tra họ và tiền tố nước ngoài.
+    
+    Keyword-based checks (từ khóa giao thông, số hiệu đường) chỉ trả về True 
+    nếu CÙNG LÚC:
+    1. Màu sắc có độ bão hòa thấp (low saturation - xám/trắng tone)
+    2. Độ sáng cao (brightness >= 180) - đặc trưng của chữ TRẮNG
+    
+    Điều này tránh lọc bỏ POI label có chữ TỐI như "Cổng Đường Sách".
+    Heuristic person-name checks (Nguyễn Huệ, Pasteur, v.v.) được phép.
     """
+    # Nếu có màu sắc rực rỡ (độ bão hòa cao), chắc chắn không phải tên đường thông thường
+    if color is not None and not _is_low_saturation(color, thresh_s=50):
+        return False
+
     name_clean = name.strip()
     if not name_clean:
         return False
@@ -204,16 +225,29 @@ def _is_street_name(name: str) -> bool:
         re.IGNORECASE,
     )
 
+    # Kiểm tra độ sáng của màu sắc để gate keyword-based checks
+    # Chỉ áp dụng keyword filter nếu màu sắc là trắng/sáng (brightness >= 180)
+    is_bright_color = False
+    if color is not None:
+        hsv = cv2.cvtColor(np.uint8([[color]]), cv2.COLOR_BGR2HSV)[0][0]
+        brightness = hsv[2]  # V channel
+        is_bright_color = brightness >= 180
+
     check_str = _FALSE_POSITIVE_PHRASES.sub("", name_lower).strip()
-    if _STREET_KEYWORDS.search(check_str):
+    
+    # Chỉ áp dụng keyword filter nếu độ bão hòa thấp AND độ sáng cao
+    if is_bright_color and _STREET_KEYWORDS.search(check_str):
         return True
 
     no_accent = _strip_vietnamese_accents(check_str)
-    if _NUMBERED_ROAD.match(no_accent.strip()):
+    
+    # Chỉ áp dụng numbered road filter nếu độ sáng cao
+    if is_bright_color and _NUMBERED_ROAD.match(no_accent.strip()):
         return True
 
     # ④ Heuristic nhận dạng tên đường mang tên người Việt Nam/nước ngoài:
     # 2 đến 5 từ đơn, không chứa từ chỉ loại hình kinh doanh/dịch vụ.
+    # (Heuristic này được phép dù là dark text vì dựa vào mô hình tên người)
     no_accent_words = no_accent.split()
     if 2 <= len(no_accent_words) <= 5 and re.match(r"^[a-z\s]+$", no_accent):
         _BUSINESS_WORDS = {
@@ -249,6 +283,75 @@ def _is_street_name(name: str) -> bool:
                 return True
 
     return False
+
+
+def _is_slanted_road_name(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -> bool:
+    """
+    Nhận diện đoạn text màu trắng nằm xéo so với màn hình
+    và nằm trên nền màu xám (tên đường) bằng phép phân tích mô-men đối xứng (square crop).
+    """
+    try:
+        x1, y1, x2, y2 = map(int, bbox)
+        h_img, w_img = cv_img.shape[:2]
+        
+        # Tính toán tọa độ tâm của bounding box
+        cx = (x1 + x2) // 2
+        cy = (y1 + y2) // 2
+        
+        # Tạo vùng crop hình vuông đối xứng dựa trên cạnh dài nhất của bbox để tránh thiên lệch tỷ lệ
+        max_side = max(x2 - x1, y2 - y1)
+        size = max_side + 16 # Padding thêm 8px mỗi bên
+        
+        x1_sq = max(0, cx - size // 2)
+        y1_sq = max(0, cy - size // 2)
+        x2_sq = min(w_img, cx + size // 2)
+        y2_sq = min(h_img, cy + size // 2)
+        
+        if x2_sq <= x1_sq or y2_sq <= y1_sq:
+            return False
+
+        crop = cv_img[y1_sq:y2_sq, x1_sq:x2_sq]
+        gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        # 1. Trích xuất pixel sáng (chữ trắng)
+        bright_mask = gray_crop > 215
+        pts = np.argwhere(bright_mask)
+
+        # Số lượng pixel trắng tối thiểu và tối đa
+        if len(pts) < 8 or len(pts) > 0.7 * gray_crop.size:
+            return False
+
+        # 2. Tính toán độ nghiêng thông qua moments trên crop hình vuông
+        m = cv2.moments(bright_mask.astype(np.uint8))
+        mu20 = m['mu20']
+        mu02 = m['mu02']
+        mu11 = m['mu11']
+
+        if abs(mu20 - mu02) > 1e-5 or abs(mu11) > 1e-5:
+            theta = 0.5 * np.arctan2(2 * mu11, mu20 - mu02)
+            angle_deg = np.degrees(theta) % 180
+        else:
+            angle_deg = 0.0
+
+        dist_to_horiz = min(angle_deg, 180 - angle_deg)
+        dist_to_vert = abs(angle_deg - 90)
+
+        is_slanted = (dist_to_horiz >= 10) and (dist_to_vert >= 10)
+        if not is_slanted:
+            return False
+
+        # 3. Kiểm tra nền xung quanh có phải nền bản đồ sáng (xám/xanh xám) hay không
+        bg_mask = (gray_crop >= 150) & (gray_crop <= 220)
+        if np.sum(bg_mask) > 5:
+            mean_val = np.mean(gray_crop[bg_mask])
+            is_grey_bg = (mean_val >= 160)
+        else:
+            is_grey_bg = False
+
+        return bool(is_slanted and is_grey_bg)
+    except Exception as e:
+        logger.debug("Error in _is_slanted_road_name: %s", e)
+        return False
 
 
 def _clean_spelling(text: str) -> str:
@@ -605,6 +708,17 @@ async def extract_pois_from_screenshot(
             if text and len(text) >= 2:
                 line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
                 line_color = _get_region_color(cv_img, line_bbox)
+
+                # Kiểm tra lọc tên đường xéo (chỉ lọc nếu là chữ trắng/xám)
+                if _is_slanted_road_name(cv_img, line_bbox):
+                    logger.info("  [Road-Name-Filtered] Bỏ tên đường xéo: '%s' tại bbox %s", text, line_bbox)
+                    continue
+                
+                # Kiểm tra lọc tên đường theo từ khóa + độ bão hòa thấp + độ sáng cao
+                if _is_street_name(text, line_color):
+                    logger.info("  [Street-Filtered] Bỏ tên đường theo từ khóa: '%s'", text)
+                    continue
+
                 valid_lines.append({
                     'text': text,
                     'left': line['left'],
