@@ -285,6 +285,43 @@ def _is_street_name(name: str, color: Optional[np.ndarray] = None) -> bool:
     return False
 
 
+def _is_likely_place_name(text: str) -> bool:
+    """
+    Kiểm tra xem text có phải là tên địa điểm/landmark không dựa vào từ khóa đặc trưng.
+    Trả về True nếu text chứa các từ khóa địa điểm, giúp tránh lọc nhầm tên địa điểm làm tên đường.
+    """
+    text_lower = text.lower().strip()
+    
+    # Các từ khóa đầu tiên hoặc trong tên địa điểm (landmark indicators)
+    _PLACE_KEYWORDS = {
+        # Công trình kiến trúc
+        "cổng", "tượng", "đài", "tháp", "dinh", "phủ", "lầu",
+        # Cơ sở tôn giáo
+        "nhà thờ", "chùa", "đền", "miếu", "tu viện", "thánh đường",
+        # Cơ sở văn hóa
+        "bảo tàng", "bưu điện", "thư viện", "rạp", "nhà hát",
+        # Thương mại & dịch vụ
+        "chợ", "siêu thị", "trung tâm", "plaza", "mall", "market",
+        # Y tế & giáo dục
+        "bệnh viện", "phòng khám", "trường", "đại học", "học viện",
+        # Địa điểm công cộng
+        "công viên", "vườn", "park", "garden", "quảng trường", "square",
+        # Cơ quan
+        "đại sứ quán", "lãnh sự quán", "toà án", "ủy ban",
+        # Khác
+        "bến", "cảng", "ga", "sân bay", "nhà ga", "trạm",
+        "khách sạn", "hotel", "hostel", "cafe", "coffee", "restaurant",
+        "circle k", "family mart", "vinmart", "co.op",
+    }
+    
+    # Kiểm tra xem text có chứa bất kỳ từ khóa địa điểm nào không
+    for keyword in _PLACE_KEYWORDS:
+        if keyword in text_lower:
+            return True
+    
+    return False
+
+
 def _is_slanted_road_name(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -> bool:
     """
     Nhận diện đoạn text màu trắng nằm xéo so với màn hình
@@ -709,15 +746,25 @@ async def extract_pois_from_screenshot(
                 line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
                 line_color = _get_region_color(cv_img, line_bbox)
 
-                # Kiểm tra lọc tên đường xéo (chỉ lọc nếu là chữ trắng/xám)
+                # Kiểm tra lọc tên đường: CHỈ khử khi có đủ CẢ 3 yếu tố:
+                # 1. Nằm xéo (slanted)
+                # 2. Chữ trắng (bright text)
+                # 3. Nằm trên nền màu xám (gray background)
+                # NHƯNG vẫn giữ lại nếu text chứa từ khóa tên địa điểm (landmark)
+                # để tránh khử nhầm tên địa điểm lỡ nằm trên/đè lên đường.
                 if _is_slanted_road_name(cv_img, line_bbox):
-                    logger.info("  [Road-Name-Filtered] Bỏ tên đường xéo: '%s' tại bbox %s", text, line_bbox)
-                    continue
+                    if _is_likely_place_name(text):
+                        logger.info("  [Road-Name-Kept] Giữ lại địa điểm dù nằm xéo: '%s'", text)
+                    else:
+                        logger.info("  [Road-Name-Filtered] Bỏ tên đường xéo: '%s' tại bbox %s", text, line_bbox)
+                        continue
                 
-                # Kiểm tra lọc tên đường theo từ khóa + độ bão hòa thấp + độ sáng cao
-                if _is_street_name(text, line_color):
-                    logger.info("  [Street-Filtered] Bỏ tên đường theo từ khóa: '%s'", text)
-                    continue
+                # ĐÃ TẮT: Kiểm tra từ khóa tên đường độc lập (quá tay, lọc nhầm tên địa điểm)
+                # Ví dụ: "Cổng Đường Sách" bị lọc nhầm vì có từ "Đường"
+                # Giờ chỉ dựa vào phát hiện text xéo + trắng + nền xám ở trên
+                # if _is_street_name(text, line_color):
+                #     logger.info("  [Street-Filtered] Bỏ tên đường theo từ khóa: '%s'", text)
+                #     continue
 
                 valid_lines.append({
                     'text': text,
