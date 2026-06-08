@@ -780,6 +780,20 @@ async def extract_pois_from_screenshot(
 
         def is_description_line(text_str: str) -> bool:
             text_lower = text_str.lower().strip()
+            
+            # Blacklist cụ thể cho popup "Send Product Feedback" rác trên Google Maps
+            _BLACKLIST_PHRASES = {
+                "send product feedback",
+                "tọa độ",
+                "tọ độ", # typo phổ biến
+                "tọa đo",
+                "tọ đo"
+            }
+            
+            for phrase in _BLACKLIST_PHRASES:
+                if phrase in text_lower:
+                    return True
+
             if _is_generic_name(text_lower):
                 return True
             
@@ -874,6 +888,29 @@ async def extract_pois_from_screenshot(
             max_r = max(line['left'] + line['width'] for line in matched_lines)
             max_b = max(line['top'] + line['height'] for line in matched_lines)
             
+            # [Smart-Filter] Loại bỏ rác ở góc phải dưới (Popup "Send Product Feedback" của Google Maps)
+            # Dựa trên ảnh thực tế 2080x1240, popup thường ở x > 1800 và y > 1100
+            if icon['x'] > 1800 and icon['y'] > 1100:
+                logger.info("  [Spatial-Filtered] Bỏ rác ở góc phải dưới: '%s' tại (%d, %d)", full_name, icon['x'], icon['y'])
+                continue
+
+            # [Edge-Filter] Loại bỏ các mảnh vụn chữ bị cắt ở mép ảnh (padding area)
+            # Dựa trên overlap=80px trong config, margin an toàn nhất là ~40-45px.
+            # Các mảnh chữ như "êt", "ong" thường xuất hiện trong khoảng 0-50px từ mép.
+            h_img_limit, w_img_limit = cv_img.shape[:2]
+            edge_margin = 45 
+            
+            is_near_edge = (icon['x'] < edge_margin or icon['x'] > w_img_limit - edge_margin or 
+                            icon['y'] < edge_margin or icon['y'] > h_img_limit - edge_margin)
+            
+            # Nếu ở gần biên mà tên quá ngắn (< 4 ký tự) hoặc chỉ có 1 từ ngắn, khả năng cao là mảnh vụn
+            is_fragment = is_near_edge and (len(full_name) <= 3 or (len(full_name.split()) == 1 and len(full_name) < 5))
+            
+            if is_near_edge or is_fragment:
+                reason = "mảnh chữ sát mép" if is_near_edge else "mảnh vụn OCR"
+                logger.info("  [Edge-Filtered] Bỏ %s: '%s' tại (%d, %d)", reason, full_name, icon['x'], icon['y'])
+                continue
+
             pois.append({
                 "name": full_name,
                 "x": icon['x'], # Tọa độ GPS tâm POI chính là tâm của biểu tượng (icon)
