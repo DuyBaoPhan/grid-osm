@@ -34,7 +34,7 @@ from config import (
     HEADLESS,
 )
 from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
-from vision import extract_pois_from_screenshot
+from vision import extract_pois_from_screenshot, remove_background, draw_detections
 
 logger = logging.getLogger(__name__)
 
@@ -280,9 +280,6 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        # Lưu screenshot gốc (không có lưới, không bị giảm chất lượng) nếu cần debug
-        if SAVE_SCREENSHOTS:
-            await self._save_screenshot(compressed_screenshot, tx, ty)
         logger.info("  [1/2] Screenshot captured -> sending to OCR...")
 
         # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
@@ -290,6 +287,14 @@ class Worker:
             raw_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
         logger.info("  [2/2] OCR Vision done.")
+
+        # Lưu screenshot đã khử nền và vẽ các khung nhận diện nếu cấu hình SAVE_SCREENSHOTS = True
+        if SAVE_SCREENSHOTS:
+            bg_removed_screenshot = remove_background(compressed_screenshot)
+            crop_x = img_metadata.get("crop_x1", 0)
+            crop_y = img_metadata.get("crop_y1", 0)
+            final_screenshot = draw_detections(bg_removed_screenshot, poi_names, crop_x, crop_y)
+            await self._save_screenshot(final_screenshot, tx, ty)
 
         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
         await self._close_page()
@@ -839,24 +844,6 @@ class Worker:
                 tl_lat, tl_lng, tr_lat, tr_lng, bl_lat, bl_lng, br_lat, br_lng
             )
 
-            img_metadata = {
-                "width": w,
-                "height": h,
-                "center_x": w / 2.0,
-                "center_y": h / 2.0,
-                "scale": scale,
-                "crop_x1": 0,
-                "crop_y1": 0,
-                "top_left_lat": tl_lat,
-                "top_left_lng": tl_lng,
-                "top_right_lat": tr_lat,
-                "top_right_lng": tr_lng,
-                "bottom_left_lat": bl_lat,
-                "bottom_left_lng": bl_lng,
-                "bottom_right_lat": br_lat,
-                "bottom_right_lng": br_lng,
-            }
-
             # Crop ảnh lưu về đúng kích thước tile (SCREENSHOT_W × SCREENSHOT_H)
             # để ảnh chụp = đúng y chang vùng hiển thị trên trình duyệt
             target_w = int(SCREENSHOT_W * scale)
@@ -867,6 +854,25 @@ class Worker:
             crop_t = max(0, cy_phys - target_h // 2)
             crop_r = min(w_orig, crop_l + target_w)
             crop_b = min(h_orig, crop_t + target_h)
+
+            img_metadata = {
+                "width": w,
+                "height": h,
+                "center_x": w / 2.0,
+                "center_y": h / 2.0,
+                "scale": scale,
+                "crop_x1": crop_l,
+                "crop_y1": crop_t,
+                "top_left_lat": tl_lat,
+                "top_left_lng": tl_lng,
+                "top_right_lat": tr_lat,
+                "top_right_lng": tr_lng,
+                "bottom_left_lat": bl_lat,
+                "bottom_left_lng": bl_lng,
+                "bottom_right_lat": br_lat,
+                "bottom_right_lng": br_lng,
+            }
+
             img_tile = img.crop((crop_l, crop_t, crop_r, crop_b))
             buf_tile = io.BytesIO()
             img_tile.save(buf_tile, format="PNG")

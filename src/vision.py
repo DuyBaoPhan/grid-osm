@@ -622,11 +622,11 @@ async def extract_pois_from_screenshot(
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
             edges = cv2.Canny(blurred, 50, 150)
             
-            # Kích thước icon chuẩn ở zoom 19-21 thường từ 14px đến 35px, nhân với tỷ lệ scale động
-            min_icon_size = max(12, int(14 * scale))
-            max_icon_size = int(35 * scale)
+            # Kích thước icon chuẩn ở zoom 19-21 thường từ 14px đến 35px, nhân với tỷ lệ scale động (mở rộng biên độ để tránh bỏ sót)
+            min_icon_size = max(10, int(12 * scale))
+            max_icon_size = int(40 * scale)
             
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
             for c in contours:
                 cx_box, cy_box, cw_box, ch_box = cv2.boundingRect(c)
                 if min_icon_size <= cw_box <= max_icon_size and min_icon_size <= ch_box <= max_icon_size:
@@ -704,20 +704,19 @@ async def extract_pois_from_screenshot(
                 is_vertically_close = abs(iy - line_center_y) <= 45 * scale
                 
                 if is_horizontal_adjacent and is_vertically_close:
-                    if _colors_are_similar(line['color'], icon['color'], thresh_h=25, thresh_s=75, thresh_v=75):
-                        # Tính khoảng cách dựa trên cạnh gần nhất của chữ tới tâm icon
-                        if ix < lx:
-                            dist_x = lx - icon['right']
-                        elif ix > lx + lw:
-                            dist_x = icon['left'] - (lx + lw)
-                        else:
-                            dist_x = 0
-                        
-                        dist_y = abs(iy - line_center_y)
-                        dist = (dist_x**2 + dist_y**2)**0.5
-                        
-                        if l_idx not in line_matches or dist < line_matches[l_idx][1]:
-                            line_matches[l_idx] = (i_idx, dist)
+                    # Tính khoảng cách dựa trên cạnh gần nhất của chữ tới tâm icon
+                    if ix < lx:
+                        dist_x = lx - icon['right']
+                    elif ix > lx + lw:
+                        dist_x = icon['left'] - (lx + lw)
+                    else:
+                        dist_x = 0
+                    
+                    dist_y = abs(iy - line_center_y)
+                    dist = (dist_x**2 + dist_y**2)**0.5
+                    
+                    if l_idx not in line_matches or dist < line_matches[l_idx][1]:
+                        line_matches[l_idx] = (i_idx, dist)
 
         # 7.5 Đối sánh các dòng chưa khớp (unmatched lines) vào cùng icon với dòng đã khớp gần nó (cùng màu, xếp dọc)
         matched_line_indices = set(line_matches.keys())
@@ -761,26 +760,39 @@ async def extract_pois_from_screenshot(
                 icon_to_lines[i_idx] = []
             icon_to_lines[i_idx].append(l_idx)
             
+        _GENERIC_WORDS_SET = {
+            "cafe", "coffee", "shop", "store", "restaurant", "hotel", "bank", "market",
+            "church", "school", "park", "pharmacy", "clinic", "spa", "gym", "bar",
+            "pub", "hostel", "supermarket", "mall", "center", "centre", "tower",
+            "building", "office", "station", "post office", "post_office", "landmark",
+            "nhà hàng", "quán ăn", "cà phê", "ngân hàng", "khách sạn", "trường học",
+            "bệnh viện", "chợ", "công viên", "nhà thờ", "siêu thị", "tòa nhà", "văn phòng",
+            "bưu điện", "trụ sở", "cửa hàng", "cửa hiệu", "hiệu thuốc", "quầy thuốc", "tiệm",
+            "vegetarian", "vegan", "convenience", "clothing", "apparel", "souvenir", "gift", "gifts",
+            "fashion", "beauty", "salon", "bookstore", "atm", "travel", "agency", "service",
+            "lịch", "sử", "di", "tích", "dịch", "vụ", "tạp", "hóa", "tiện", "lợi", "bán", "lẻ", "sách",
+            "giày", "dép", "quần", "áo", "thời", "trang", "mỹ", "phẩm", "nước", "hoa", "perfume", "costume",
+            "century", "historical", "heritage", "museum", "monument", "shrine", "attraction", "tourist",
+            "and", "or", "of", "in", "the", "a", "&", "to", "for", "with", "by", "-",
+            "nhật", "bản", "hàn", "quốc", "pháp", "mỹ", "việt", "nam", "trung", "quốc", "thái", "lan",
+            "vietnamese", "japanese", "korean", "french", "italian", "american", "thai", "western", "asian"
+        }
+
         def is_description_line(text_str: str) -> bool:
             text_lower = text_str.lower().strip()
             if _is_generic_name(text_lower):
                 return True
-            category_words_exact = {
-                "post office", "bưu điện", "nhà thờ", "church", "school", "hospital", "bệnh viện", "trường học"
-            }
-            category_words_ends = {
-                "store", "shop", "restaurant", "cafe", "coffee", "hotel", "bank", "market",
-                "pharmacy", "clinic", "spa", "gym", "bar", "pub",
-                "cửa hàng", "tiệm", "nhà hàng", "quán", "khách sạn", "siêu thị", "hiệu thuốc"
-            }
-            if text_lower in category_words_exact:
+            
+            # Tách thành các từ đơn
+            words = [w for w in re.split(r'\W+', text_lower) if w]
+            if not words:
                 return True
-            words = text_lower.split()
-            if words and (words[-1] in category_words_ends or any(text_lower.endswith(cat) for cat in category_words_ends)):
+                
+            # Nếu tất cả các từ trong dòng đều là từ mô tả chung chung (không chứa tên riêng)
+            # thì dòng đó là dòng mô tả loại hình/dịch vụ
+            if all(w in _GENERIC_WORDS_SET for w in words):
                 return True
-            desc_words = {"vegetarian", "century", "landmark", "historical", "heritage", "museum"}
-            if any(w in text_lower for w in desc_words):
-                return True
+                
             return False
 
         # 9. Chỉ chạy VietOCR cho các dòng đã khớp với icon và tạo danh sách POI gộp
@@ -892,3 +904,141 @@ async def extract_pois_from_screenshot(
                     os.remove(path)
                 except Exception:
                     pass
+
+
+def remove_background(image_bytes: bytes) -> bytes:
+    """
+    Khử nền cho ảnh chụp màn hình bản đồ để làm rõ các đoạn text và icon.
+    Chuyển ảnh về grayscale, tạo mask cho các pixel cực sáng (> 210) và đổi chúng sang màu trắng.
+    Đồng thời làm đậm các nét chữ/icon tối màu (<= 170) mà không làm nổi bật nền đường xám nhạt.
+    Trả về dữ liệu bytes của ảnh đã khử nền dưới dạng PNG.
+    """
+    try:
+        # Decode bytes to OpenCV image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return image_bytes
+
+        # Chuyển sang ảnh xám để tìm nền cực sáng (> 210)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        mask = gray > 210
+        enhance_mask = gray <= 170
+
+        # Chuyển sang HSV để tăng độ rực màu (S) và giảm độ sáng (V) giúp chữ đậm hơn
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+
+        # 1. Chỉ làm đậm các pixel thực sự tối (ví dụ: nét chữ, icon có gray <= 170)
+        v_fg = v[enhance_mask].astype(np.float32) * 0.65
+        v[enhance_mask] = np.clip(v_fg, 0, 255).astype(np.uint8)
+
+        # 2. Chỉ tăng độ rực màu của các pixel này
+        s_fg = s[enhance_mask].astype(np.float32) * 1.5
+        s[enhance_mask] = np.clip(s_fg, 0, 255).astype(np.uint8)
+
+        # Ghép lại thành ảnh BGR
+        enhanced_hsv = cv2.merge([h, s, v])
+        processed_img = cv2.cvtColor(enhanced_hsv, cv2.COLOR_HSV2BGR)
+
+        # Đặt các pixel thuộc nền cực sáng thành màu trắng tinh (255, 255, 255)
+        processed_img[mask] = [255, 255, 255]
+
+        # Encode lại sang PNG bytes
+        success, encoded_img = cv2.imencode('.png', processed_img)
+        if success:
+            return encoded_img.tobytes()
+    except Exception as e:
+        logger.warning("Lỗi khi khử nền và tăng nét ảnh: %s", e)
+    return image_bytes
+
+
+def draw_detections(image_bytes: bytes, pois: List[dict], crop_x: int = 0, crop_y: int = 0) -> bytes:
+    """
+    Vẽ khung chữ nhật (bbox) và nhãn văn bản (name) của từng địa điểm đã nhận diện
+    lên ảnh nền đã được khử. Hỗ trợ Unicode tiếng Việt bằng PIL.
+    - image_bytes: bytes của ảnh nền đã khử (PNG/JPEG)
+    - pois: danh sách các POI từ extract_pois_from_screenshot
+    - crop_x, crop_y: offset cắt của ảnh lưu so với ảnh chụp full
+    """
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageFont
+
+        # Decode BGR image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return image_bytes
+
+        # Vẽ các khung chữ nhật màu đỏ lên ảnh OpenCV trước
+        for poi in pois:
+            bbox = poi.get("bbox")
+            if not bbox:
+                continue
+            left, top, w, h = bbox
+            x1 = int(left - crop_x)
+            y1 = int(top - crop_y)
+            x2 = int(x1 + w)
+            y2 = int(y1 + h)
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+        # Chuyển sang ảnh PIL để vẽ Unicode tiếng Việt
+        pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(pil_img)
+
+        # Load font chữ hỗ trợ Unicode tiếng Việt
+        try:
+            font = ImageFont.truetype("arial.ttf", 15)
+        except Exception:
+            try:
+                font = ImageFont.load_default(size=15)
+            except TypeError:
+                font = ImageFont.load_default()
+
+        for poi in pois:
+            bbox = poi.get("bbox")
+            name = poi.get("name", "")
+            if not bbox or not name:
+                continue
+            
+            left, top, w, h = bbox
+            x1 = int(left - crop_x)
+            y1 = int(top - crop_y)
+
+            # Tính toán kích thước chữ để vẽ nền nhãn
+            try:
+                bbox_t = draw.textbbox((x1, y1), name, font=font)
+                label_w = bbox_t[2] - bbox_t[0]
+                label_h = bbox_t[3] - bbox_t[1]
+            except Exception:
+                label_w = len(name) * 8
+                label_h = 15
+                bbox_t = [x1, y1 - label_h - 2, x1 + label_w, y1]
+
+            # Xác định vị trí vẽ nhãn chữ theo trục Y
+            ty = y1 - label_h - 6
+            if ty < 0:
+                ty = y1 + h + 4
+
+            # Vẽ nền màu xanh nhạt (RGB: 230, 230, 255)
+            draw.rectangle(
+                [x1, ty - 2, x1 + label_w + 4, ty + label_h + 4],
+                fill=(230, 230, 255)
+            )
+            # Viết tên POI
+            draw.text((x1 + 2, ty), name, fill=(0, 0, 0), font=font)
+
+        # Chuyển ngược về ảnh OpenCV BGR
+        enhanced_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+        # Encode lại thành PNG bytes
+        success, encoded_img = cv2.imencode('.png', enhanced_img)
+        if success:
+            return encoded_img.tobytes()
+    except Exception as e:
+        logger.warning("Lỗi khi vẽ nét nhận diện Unicode: %s", e)
+    return image_bytes
+
+
