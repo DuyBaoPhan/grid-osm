@@ -30,6 +30,13 @@ try:
         OCR_TEXT_PAD_PX,
         OCR_HORIZONTAL_GAP_MAX,
         OCR_ICON_Y_ALIGN_RATIO,
+        DETECT_ENHANCE_ENABLED,
+        DETECT_COLOR_THRESH_H,
+        DETECT_COLOR_THRESH_S,
+        DETECT_COLOR_THRESH_V,
+        DETECT_HORIZONTAL_GAP_MAX,
+        DETECT_VERTICAL_BELOW_GAP_MAX,
+        DETECT_POI_BOX_PAD_PX,
     )
 except Exception:
     OCR_ENGINE = "tesseract"
@@ -38,6 +45,13 @@ except Exception:
     OCR_TEXT_PAD_PX = 4
     OCR_HORIZONTAL_GAP_MAX = 10
     OCR_ICON_Y_ALIGN_RATIO = 0.7
+    DETECT_ENHANCE_ENABLED = True
+    DETECT_COLOR_THRESH_H = 25
+    DETECT_COLOR_THRESH_S = 70
+    DETECT_COLOR_THRESH_V = 70
+    DETECT_HORIZONTAL_GAP_MAX = 18
+    DETECT_VERTICAL_BELOW_GAP_MAX = 28
+    DETECT_POI_BOX_PAD_PX = 6
 
 _VIETOCR_PREDICTOR = None
 _VIETOCR_LOAD_FAILED = False
@@ -872,34 +886,52 @@ async def extract_pois_from_screenshot(
             for i_idx, icon in enumerate(candidate_icons):
                 ix, iy = icon['x'], icon['y']
                 
-                is_horizontal_adjacent = (
-                    (icon['right'] >= lx - OCR_HORIZONTAL_GAP_MAX * scale and 
-                     icon['left'] <= lx + OCR_HORIZONTAL_GAP_MAX * scale)
+                horizontal_gap = DETECT_HORIZONTAL_GAP_MAX * scale
+                vertical_gap = DETECT_VERTICAL_BELOW_GAP_MAX * scale
+                
+                is_left_or_right = (
+                    (icon['right'] >= lx - horizontal_gap and icon['left'] <= lx + horizontal_gap)
                     or
-                    (icon['left'] <= lx + lw + OCR_HORIZONTAL_GAP_MAX * scale and
-                     icon['right'] >= lx + lw - OCR_HORIZONTAL_GAP_MAX * scale)
+                    (icon['left'] <= lx + lw + horizontal_gap and icon['right'] >= lx + lw - horizontal_gap)
+                )
+                is_same_row = abs(iy - line_center_y) <= max(18 * scale, lh * OCR_ICON_Y_ALIGN_RATIO)
+                is_horizontal_adjacent = is_left_or_right and is_same_row
+
+                text_below_icon = (
+                    line_center_y >= icon['bottom']
+                    and (line['top'] - icon['bottom']) <= vertical_gap
+                    and max(0, min(line['left'] + line['width'], icon['right']) - max(line['left'], icon['left'])) >= min(lw, icon['w']) * 0.25
                 )
                 
-                is_vertically_close = abs(iy - line_center_y) <= 45 * scale
-                
-                if is_horizontal_adjacent and is_vertically_close:
-                    # Tính khoảng cách dựa trên cạnh gần nhất của chữ tới tâm icon
-                    if ix < lx:
-                        dist_x = lx - icon['right']
-                    elif ix > lx + lw:
-                        dist_x = icon['left'] - (lx + lw)
+                if is_horizontal_adjacent or text_below_icon:
+                    # Tính khoảng cách dựa trên quan hệ bố cục gần nhất.
+                    if is_horizontal_adjacent:
+                        if ix < lx:
+                            dist_x = lx - icon['right']
+                        elif ix > lx + lw:
+                            dist_x = icon['left'] - (lx + lw)
+                        else:
+                            dist_x = 0
+                        dist_y = abs(iy - line_center_y)
+                        layout_score = 0.0
                     else:
-                        dist_x = 0
-                    
-                    dist_y = abs(iy - line_center_y)
+                        dist_x = abs(ix - line_center_x)
+                        dist_y = max(0, line['top'] - icon['bottom'])
+                        layout_score = 0.35  # text dưới icon là trường hợp hiếm, ưu tiên sau layout ngang
                     dist = (dist_x**2 + dist_y**2)**0.5
                     
-                    # Tính điểm color match: icon cùng tông màu với text được ưu tiên
+                    # Tính điểm color match: icon cùng tông màu với text được ưu tiên.
                     icon_color = icon.get('color')
-                    color_match = _colors_are_similar(line_color, icon_color, thresh_h=25, thresh_s=70, thresh_v=70)
+                    color_match = _colors_are_similar(
+                        line_color,
+                        icon_color,
+                        thresh_h=DETECT_COLOR_THRESH_H,
+                        thresh_s=DETECT_COLOR_THRESH_S,
+                        thresh_v=DETECT_COLOR_THRESH_V,
+                    )
                     color_score = 0.0 if color_match else 1.0  # 0 = match (tốt), 1 = mismatch
                     
-                    candidates_for_line.append((i_idx, dist, color_score))
+                    candidates_for_line.append((i_idx, dist, color_score + layout_score))
             
             if candidates_for_line:
                 # Sắp xếp: ưu tiên color match trước, sau đó khoảng cách gần nhất
@@ -929,21 +961,22 @@ async def extract_pois_from_screenshot(
             for m_idx in matched_line_indices:
                 m_line = valid_lines[m_idx]
                 
-                # Khoảng cách dòng dọc gần nhau (mở rộng từ 25 → 35px để bắt POI 3+ dòng)
+                # Khoảng cách dòng dọc gần nhau: nới để gom tên POI bị Tesseract tách thành nhiều dòng.
                 dist_y = abs(u_line['top'] - m_line['top'])
-                if dist_y > 35 * scale:
+                if dist_y > 52 * scale:
                     continue
                     
-                # Căn lề trái hoặc lề phải, hoặc có sự đè ngang
-                left_aligned = abs(u_line['left'] - m_line['left']) <= 25 * scale
-                right_aligned = abs((u_line['left'] + u_line['width']) - (m_line['left'] + m_line['width'])) <= 25 * scale
+                # Căn lề trái/phải hoặc đè ngang; nới ngưỡng vì Google Maps label nhỏ dễ lệch vài chục px.
+                left_aligned = abs(u_line['left'] - m_line['left']) <= 42 * scale
+                right_aligned = abs((u_line['left'] + u_line['width']) - (m_line['left'] + m_line['width'])) <= 42 * scale
                 horizontal_overlap = max(0, min(u_line['left'] + u_line['width'], m_line['left'] + m_line['width']) - max(u_line['left'], m_line['left'])) > 0
+                near_same_text_block = abs((u_line['left'] + u_line['width'] / 2.0) - (m_line['left'] + m_line['width'] / 2.0)) <= 55 * scale
                 
-                if left_aligned or right_aligned or horizontal_overlap:
-                    # Siết chặt threshold so sánh màu text (giảm từ 25/75/75 → 15/50/50)
+                if left_aligned or right_aligned or horizontal_overlap or near_same_text_block:
+                    # Nới nhẹ so sánh màu text để gom đủ các mảnh tên cùng POI sau enhance.
                     text_colors_similar = _colors_are_similar(
                         u_line['color'], m_line['color'], 
-                        thresh_h=15, thresh_s=50, thresh_v=50
+                        thresh_h=20, thresh_s=65, thresh_v=65
                     )
                     
                     if not text_colors_similar:
@@ -1146,11 +1179,12 @@ async def extract_pois_from_screenshot(
             # Độ tin cậy trung bình
             avg_conf = sum(line['conf'] for line in matched_lines) / len(matched_lines)
             
-            # Tính toán bbox bao phủ toàn bộ các dòng được gộp
-            min_l = min(line['left'] for line in matched_lines)
-            min_t = min(line['top'] for line in matched_lines)
-            max_r = max(line['left'] + line['width'] for line in matched_lines)
-            max_b = max(line['top'] + line['height'] for line in matched_lines)
+            # Tính toán bbox bao phủ icon + toàn bộ các dòng được gộp.
+            box_pad = DETECT_POI_BOX_PAD_PX * scale
+            min_l = min([icon['left']] + [line['left'] for line in matched_lines]) - box_pad
+            min_t = min([icon['top']] + [line['top'] for line in matched_lines]) - box_pad
+            max_r = max([icon['right']] + [line['left'] + line['width'] for line in matched_lines]) + box_pad
+            max_b = max([icon['bottom']] + [line['top'] + line['height'] for line in matched_lines]) + box_pad
             
             # [Smart-Filter] Loại bỏ rác ở góc phải dưới (Popup "Send Product Feedback" của Google Maps)
             # Dựa trên ảnh thực tế 2080x1240, popup thường ở x > 1800 và y > 1100
@@ -1190,6 +1224,67 @@ async def extract_pois_from_screenshot(
         _last_line_to_icon = line_matches
         _last_potential_line_matches = []
 
+        def _merge_split_poi_boxes(raw_pois: List[dict]) -> List[dict]:
+            """Gộp các POI bị tách nhưng bbox chồng lấn/cùng vùng icon-text."""
+            def rect(p: dict):
+                l, t, w, h = p.get("bbox", [0, 0, 0, 0])
+                return float(l), float(t), float(l + w), float(t + h)
+
+            def overlap_ratio(a: dict, b: dict) -> float:
+                ax1, ay1, ax2, ay2 = rect(a)
+                bx1, by1, bx2, by2 = rect(b)
+                ix = max(0.0, min(ax2, bx2) - max(ax1, bx1))
+                iy = max(0.0, min(ay2, by2) - max(ay1, by1))
+                inter = ix * iy
+                if inter <= 0:
+                    return 0.0
+                area_a = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+                area_b = max(1.0, (bx2 - bx1) * (by2 - by1))
+                return inter / min(area_a, area_b)
+
+            def should_merge(a: dict, b: dict) -> bool:
+                ax1, ay1, ax2, ay2 = rect(a)
+                bx1, by1, bx2, by2 = rect(b)
+                cx_a, cy_a = (ax1 + ax2) / 2.0, (ay1 + ay2) / 2.0
+                cx_b, cy_b = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
+                same_text_band = abs(cy_a - cy_b) <= 28 * scale
+                close_x = abs(cx_a - cx_b) <= 95 * scale
+                return overlap_ratio(a, b) >= 0.18 or (same_text_band and close_x and max(ax1, bx1) <= min(ax2, bx2) + 18 * scale)
+
+            merged: List[dict] = []
+            for poi in raw_pois:
+                target_idx = None
+                for idx, existing in enumerate(merged):
+                    if should_merge(existing, poi):
+                        target_idx = idx
+                        break
+                if target_idx is None:
+                    merged.append(poi)
+                    continue
+
+                existing = merged[target_idx]
+                ex1, ey1, ex2, ey2 = rect(existing)
+                px1, py1, px2, py2 = rect(poi)
+                nx1, ny1 = min(ex1, px1), min(ey1, py1)
+                nx2, ny2 = max(ex2, px2), max(ey2, py2)
+
+                existing_name = existing.get("name", "").strip()
+                poi_name = poi.get("name", "").strip()
+                if poi_name and poi_name.lower() not in existing_name.lower():
+                    if existing_name and existing_name.lower() not in poi_name.lower():
+                        existing["name"] = f"{existing_name} {poi_name}".strip()
+                    elif len(poi_name) > len(existing_name):
+                        existing["name"] = poi_name
+
+                existing["bbox"] = [float(nx1), float(ny1), float(nx2 - nx1), float(ny2 - ny1)]
+                existing["confidence"] = max(float(existing.get("confidence", 0.0)), float(poi.get("confidence", 0.0)))
+                existing["x"] = existing.get("x") if existing.get("x") is not None else poi.get("x")
+                existing["y"] = existing.get("y") if existing.get("y") is not None else poi.get("y")
+                logger.info("  [POI-Merged] Gộp POI bị tách: '%s' + '%s'", existing_name, poi_name)
+            return merged
+
+        pois = _merge_split_poi_boxes(pois)
+
         logger.info("OCR Vision Done: %d POIs extracted (Confirmed 100%% Local OCR)", len(pois))
         return pois, False
 
@@ -1205,6 +1300,42 @@ async def extract_pois_from_screenshot(
                     os.remove(path)
                 except Exception:
                     pass
+
+
+def enhance_for_detection(image_bytes: bytes) -> bytes:
+    """
+    Enhance nhẹ ảnh gốc để detect icon/text tốt hơn mà không khử nền.
+    Giữ màu và cấu trúc nền bản đồ; chỉ tăng tương phản cục bộ, sắc nét và độ rực vừa phải.
+    """
+    if not DETECT_ENHANCE_ENABLED:
+        return image_bytes
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return image_bytes
+
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        contrast_img = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+
+        blurred = cv2.GaussianBlur(contrast_img, (0, 0), 1.0)
+        sharpened = cv2.addWeighted(contrast_img, 1.35, blurred, -0.35, 0)
+
+        hsv = cv2.cvtColor(sharpened, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+        s = np.clip(s.astype(np.float32) * 1.12, 0, 255).astype(np.uint8)
+        v = np.clip(v.astype(np.float32) * 0.98, 0, 255).astype(np.uint8)
+        enhanced = cv2.cvtColor(cv2.merge([h, s, v]), cv2.COLOR_HSV2BGR)
+
+        success, encoded_img = cv2.imencode('.png', enhanced)
+        if success:
+            return encoded_img.tobytes()
+    except Exception as e:
+        logger.warning("Lỗi khi enhance ảnh detect: %s", e)
+    return image_bytes
 
 
 def remove_background(image_bytes: bytes) -> bytes:

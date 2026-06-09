@@ -34,7 +34,7 @@ from config import (
     HEADLESS,
 )
 from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
-from vision import extract_pois_from_screenshot, remove_background, draw_detections
+from vision import extract_pois_from_screenshot, remove_background, draw_detections, enhance_for_detection
 
 logger = logging.getLogger(__name__)
 
@@ -280,22 +280,21 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        logger.info("  [1/2] Pre-processing: Removing background and enhancing text...")
-        # Pipeline mới: Khử nền trước để làm nổi bật chữ và icon
-        processed_screenshot = remove_background(raw_screenshot)
+        logger.info("  [1/2] Pre-processing: Enhancing icon/text without background removal...")
+        # Detect-first pipeline: giữ nguyên nền bản đồ, chỉ enhance nhẹ để icon/tên nổi hơn.
+        enhanced_screenshot = enhance_for_detection(raw_screenshot)
 
-        # Nhận diện POI trên ảnh đã được làm sạch
+        # Nhận diện POI trên ảnh enhanced nhẹ, chưa khử nền trong POI bbox.
         poi_names, outside_district = await extract_pois_from_screenshot(
-            processed_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            enhanced_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
-        logger.info("  [2/2] OCR Vision done.")
+        logger.info("  [2/2] OCR Vision done (detect-first, no background removal yet).")
 
-        # Lưu screenshot đã xử lý để debug nếu cần
+        # Lưu screenshot debug: vẽ khung trên ảnh gốc/compressed để kiểm tra bbox đúng với map thực tế.
         if SAVE_SCREENSHOTS:
-            bg_removed_screenshot = remove_background(compressed_screenshot)
             crop_x = img_metadata.get("crop_x1", 0)
             crop_y = img_metadata.get("crop_y1", 0)
-            final_screenshot = draw_detections(bg_removed_screenshot, poi_names, crop_x, crop_y)
+            final_screenshot = draw_detections(compressed_screenshot, poi_names, crop_x, crop_y)
             await self._save_screenshot(final_screenshot, tx, ty)
 
         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này

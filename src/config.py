@@ -67,6 +67,15 @@ OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận 
 OCR_HORIZONTAL_GAP_MAX = 10            # Khoảng cách tối đa giữa icon và text theo phương ngang (pixels)
 OCR_ICON_Y_ALIGN_RATIO = 1.3           # Icon Y phải nằm trong tỷ lệ này so với chiều cao text (flexible vì text có thể cao hơn nếu nhiều dòng)
 
+# ── Detect-first pipeline (không khử nền toàn ảnh trước detect) ─────
+DETECT_ENHANCE_ENABLED = True          # Enhance nhẹ ảnh gốc để icon/text nổi hơn, không xóa nền
+DETECT_COLOR_THRESH_H = 25             # Ngưỡng lệch hue khi ghép icon-text cùng màu
+DETECT_COLOR_THRESH_S = 70             # Ngưỡng lệch saturation
+DETECT_COLOR_THRESH_V = 70             # Ngưỡng lệch brightness
+DETECT_HORIZONTAL_GAP_MAX = 34         # Icon và text sát ngang nhau, nới để bắt label hơi xa icon
+DETECT_VERTICAL_BELOW_GAP_MAX = 42     # Trường hợp hiếm: text nằm dưới icon
+DETECT_POI_BOX_PAD_PX = 8              # Padding bbox bao quanh icon + text
+
 # Deprecated (cho OSM vertical layout - icon phía trên text):
 # OCR_ICON_MAX_Y_GAP = 24              # icon phải nằm tối đa N px phía trên text
 # OCR_ICON_X_MARGIN = 12               # icon được lệch ngang ngoài bbox text tối đa N px
