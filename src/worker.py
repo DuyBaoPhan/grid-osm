@@ -280,15 +280,17 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        logger.info("  [1/2] Screenshot captured -> sending to OCR...")
+        logger.info("  [1/2] Pre-processing: Removing background and enhancing text...")
+        # Pipeline mới: Khử nền trước để làm nổi bật chữ và icon
+        processed_screenshot = remove_background(raw_screenshot)
 
-        # Nhận diện POI và cờ báo ranh giới quận (gửi ảnh gốc sạch sẽ bằng PNG chất lượng cao)
+        # Nhận diện POI trên ảnh đã được làm sạch
         poi_names, outside_district = await extract_pois_from_screenshot(
-            raw_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            processed_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
         )
         logger.info("  [2/2] OCR Vision done.")
 
-        # Lưu screenshot đã khử nền và vẽ các khung nhận diện nếu cấu hình SAVE_SCREENSHOTS = True
+        # Lưu screenshot đã xử lý để debug nếu cần
         if SAVE_SCREENSHOTS:
             bg_removed_screenshot = remove_background(compressed_screenshot)
             crop_x = img_metadata.get("crop_x1", 0)

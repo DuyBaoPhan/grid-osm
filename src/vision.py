@@ -54,9 +54,10 @@ _GENERIC_POI_NAMES = {
     "church", "school", "park", "pharmacy", "clinic", "spa", "gym", "bar",
     "pub", "hostel", "supermarket", "mall", "center", "centre", "tower",
     "building", "office", "station", "post office", "post_office", "landmark",
-    "nhà hàng", "quán ăn", "cà phê", "ngân hàng", "khách sạn", "trường học",
-    "bệnh viện", "chợ", "công viên", "nhà thờ", "siêu thị", "tòa nhà", "văn phòng",
-    "bưu điện", "trụ sở", "cửa hàng", "cửa hiệu", "hiệu thuốc", "quầy thuốc",
+    "nhà hàng",    "nhà thờ", "siêu thị", "tòa nhà", "văn phòng", "bưu điện", "trụ sở", "cửa hàng",
+    "cửa hiệu", "hiệu thuốc", "quầy thuốc", "nhà hát", "rạp xiếc", "bảo tàng", "di tích",
+    "lăng tẩm", "lăng", "đền", "miếu", "đình", "chùa", "tượng đài", "đài kỷ niệm",
+    "dinh", "dinh thự", "phủ", "biệt thự cổ", "nhà cổ", "di sản",
     # Mở rộng các từ loại hình tiếng Việt/Anh chung chung khác
     "rau sạch", "trái cây", "tạp hóa", "quán nước", "trà sữa", "ăn vặt", "bánh mì",
     "cửa hàng tiện lợi", "siêu thị mini", "atm", "rạp chiếu phim", "nhà sách",
@@ -65,7 +66,8 @@ _GENERIC_POI_NAMES = {
     "ủy ban nhân dân", "ubnd", "trụ sở ubnd", "công an", "đồn công an",
     "trạm y tế", "nhà khách", "nhà nghỉ", "biệt thự", "chung cư",
     # Thêm các từ rác/chung chung khi đứng độc lập (thường do tách dòng)
-    "soon", "coming soon", "open soon", "tương", "tượng", "hoa binh", "hòa bình"
+    "soon", "coming soon", "open soon", "tương", "tượng", "hoa binh", "hòa bình",
+    "phong cách", "thế kỷ", "century", "style", "architecture", "kiến trúc"
 }
 
 # ── Danh sách tên quốc gia để loại bỏ nhãn quốc gia độc lập (do rã dòng từ đại sứ quán/lãnh sự quán) ──
@@ -312,6 +314,7 @@ def _is_likely_place_name(text: str) -> bool:
         "bến", "cảng", "ga", "sân bay", "nhà ga", "trạm",
         "khách sạn", "hotel", "hostel", "cafe", "coffee", "restaurant",
         "circle k", "family mart", "vinmart", "co.op",
+        "di tích", "lăng", "tượng đài", "dinh", "phủ", "đài", "tháp",
     }
     
     # Kiểm tra xem text có chứa bất kỳ từ khóa địa điểm nào không
@@ -423,7 +426,19 @@ def _clean_spelling(text: str) -> str:
         r"\b[tT]ổng\s+[lL]ánh\b": "Tổng Lãnh",
         r"\b[lL]ãnh\s+[sS]ứ\s+[qQ]uán\b": "Lãnh sự quán",
         r"\b[tT]ổng\s+[lL]ãnh\s+[sS]ứ\s+[qQ]uán\b": "Tổng Lãnh sự quán",
-        r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uán\b": "Đại sứ quán",
+        r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uản\b": "Đại sứ quán",
+        
+        # Dinh Độc Lập
+        r"\b[dD]inh\s+[đĐ][ôo]c\s+[lL][âa]p\b": "Dinh Độc Lập",
+        r"\b[dD]inh\s+[đĐ]ộc\s+[lL]ập\b": "Dinh Độc Lập",
+        
+        # Lăng Lê Văn Duyệt / Lăng Ông
+        r"\b[lL][ăa]ng\s+[ôO]ng\b": "Lăng Ông",
+        r"\b[lL][ăa]ng\s+[lL][êe]\s+[vV][ăa]n\s+[dD]uy[ệẹê]t\b": "Lăng Lê Văn Duyệt",
+        
+        # Các di tích khác
+        r"\b[đĐ][êe]n\s+th[ờo]\b": "Đền thờ",
+        r"\b[mM]i[êe]u\b": "Miếu",
         
         # Hoa Kỳ
         r"\b[hH]oa\s+[kK]y\b": "Hoa Kỳ",
@@ -635,7 +650,7 @@ async def extract_pois_from_screenshot(
         gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
         h_orig, w_orig = gray.shape[:2]
         
-        # Phóng to 2x nếu chiều rộng ảnh < 2000px, giữ nguyên 1x nếu ảnh đã có độ phân giải cao >= 2000px
+        # Phóng to 2x nếu chiều rộng ảnh < 2000px
         upscale_factor = 2 if w_orig < 2000 else 1
         
         if upscale_factor == 2:
@@ -643,10 +658,9 @@ async def extract_pois_from_screenshot(
         else:
             gray_proc = gray
             
-        # Sử dụng ngưỡng nhị phân cố định 200 để tách văn bản tối màu khỏi nền sáng Google Maps cực kỳ sắc nét
-        _, thresh = cv2.threshold(gray_proc, 200, 255, cv2.THRESH_BINARY)
-            
-        cv2.imwrite(temp_processed_path, thresh)
+        # Vì ảnh đã được khử nền (nền trắng tinh 255), ta sử dụng trực tiếp ảnh xám 
+        # để Tesseract nhận diện tốt hơn, tránh mất nét do threshold thêm một lần.
+        cv2.imwrite(temp_processed_path, gray_proc)
 
         # 3. Gọi Tesseract OCR để lấy cấu trúc TSV với chế độ PSM 11 (Sparse text)
         cmd = ["tesseract", temp_processed_path, "stdout", "-l", "vie+eng", "--psm", "11", "tsv"]
@@ -936,7 +950,9 @@ async def extract_pois_from_screenshot(
             "century", "historical", "heritage", "museum", "monument", "shrine", "attraction", "tourist",
             "and", "or", "of", "in", "the", "a", "&", "to", "for", "with", "by", "-",
             "nhật", "bản", "hàn", "quốc", "pháp", "mỹ", "việt", "nam", "trung", "quốc", "thái", "lan",
-            "vietnamese", "japanese", "korean", "french", "italian", "american", "thai", "western", "asian"
+            "vietnamese", "japanese", "korean", "french", "italian", "american", "thai", "western", "asian",
+            "phong", "cách", "châu", "âu", "á", "thế", "kỷ", "đầu", "cuối", "từ", "xây", "dựng", "kiến", "trúc",
+            "style", "europe", "european", "asia", "asian", "built", "construction", "architecture"
         }
 
         def is_description_line(text_str: str) -> bool:
@@ -1011,14 +1027,27 @@ async def extract_pois_from_screenshot(
                 text_read = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=line['text'])
                 text_cleaned = _clean_spelling(text_read)
                 
+                # Dòng đầu tiên thường là tên chính, không nên lọc bỏ trừ khi là blacklist rác
+                is_first_line = (len(name_parts) == 0)
+                
                 if is_description_line(text_cleaned):
-                    logger.info("  [Desc-Filtered] Bỏ dòng mô tả: '%s'", text_cleaned)
-                    continue
-                name_parts.append(text_cleaned)
+                    if is_first_line:
+                        # Nếu là dòng duy nhất/đầu tiên nhưng chứa từ khóa địa điểm quan trọng (Nhà thờ, Tượng đài...)
+                        # thì vẫn giữ làm tên thay vì bỏ qua.
+                        if _is_likely_place_name(text_cleaned):
+                            name_parts.append(text_cleaned)
+                        else:
+                            logger.info("  [Desc-Filtered] Bỏ dòng đầu (không phải tên riêng): '%s'", text_cleaned)
+                            continue
+                    else:
+                        logger.info("  [Desc-Filtered] Bỏ dòng mô tả phụ: '%s'", text_cleaned)
+                        continue
+                else:
+                    name_parts.append(text_cleaned)
                 
             # Bỏ qua POI hoàn toàn nếu không có dòng tên hợp lệ
             if not name_parts:
-                logger.info("  [POI-Filtered] Bỏ POI tại (%f, %f) vì không có dòng tên hợp lệ.", icon['x'], icon['y'])
+                logger.info("  [POI-Filtered] Bỏ POI tại (%f, %f) vì không có tên hợp lệ sau khi lọc.", icon['x'], icon['y'])
                 continue
                 
             full_name = " ".join(name_parts)
