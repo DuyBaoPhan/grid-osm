@@ -611,9 +611,8 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, f
 
 def is_solid_icon(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -> bool:
     """
-    Kiểm tra xem vùng bbox có phải là một biểu tượng (icon) đặc/đầy hay không.
-    Giúp lọc bỏ các đường viền nét chữ hoặc dấu ngoặc kép được OpenCV nhận diện nhầm là icon.
-    Mật độ pixel tối (độ sáng < 215) phải chiếm ít nhất 35% diện tích bbox.
+    Kiểm tra vùng bbox có đủ tín hiệu giống icon POI không.
+    Nới hơn rule cũ để không bỏ sót icon nhỏ/mảnh/xám của Google Maps.
     """
     x1, y1, x2, y2 = map(int, bbox)
     h_img, w_img = cv_img.shape[:2]
@@ -623,11 +622,26 @@ def is_solid_icon(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -
     y2 = max(0, min(y2, h_img - 1))
     if x2 <= x1 or y2 <= y1:
         return False
+
     crop = cv_img[y1:y2, x1:x2]
+    if crop.size == 0:
+        return False
+
     gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-    fill_pixels = np.sum(gray_crop < 215)
-    total_pixels = gray_crop.size
-    return (fill_pixels / total_pixels) >= 0.35
+    hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    total_pixels = max(1, gray_crop.size)
+
+    dark_ratio = float(np.sum(gray_crop < 215)) / total_pixels
+    edge_ratio = float(np.sum(cv2.Canny(gray_crop, 40, 120) > 0)) / total_pixels
+    sat_ratio = float(np.sum((hsv_crop[:, :, 1] > 45) & (hsv_crop[:, :, 2] > 80))) / total_pixels
+    mid_gray_ratio = float(np.sum((gray_crop >= 80) & (gray_crop <= 210))) / total_pixels
+
+    # Icon POI có thể là khối màu, outline mảnh, hoặc pin xám nhỏ.
+    return (
+        dark_ratio >= 0.18
+        or sat_ratio >= 0.10
+        or (edge_ratio >= 0.08 and mid_gray_ratio >= 0.12)
+    )
 
 
 # ── Hàm phân tích ảnh và trích xuất POI bằng OCR & OpenCV ────────────
@@ -804,39 +818,63 @@ async def extract_pois_from_screenshot(
                     'color': line_color
                 })
 
-        # 6. Nhận diện các ứng viên Icon trên bản đồ bằng OpenCV (Contour Analysis)
+        # 6. Nhận diện các ứng viên Icon trên bản đồ bằng OpenCV (multi-pass)
         scale = img_metadata.get("scale", 1.0) if img_metadata else 1.0
         candidate_icons = []
         if cv_img is not None:
+            # Kích thước icon chuẩn ở zoom 19-21, nới để bắt icon rất nhỏ như UBND/landmark.
+            min_icon_size = max(6, int(7 * scale))
+            max_icon_size = int(46 * scale)
+
+            def add_icon_candidate(cx_box: int, cy_box: int, cw_box: int, ch_box: int, source: str) -> None:
+                if not (min_icon_size <= cw_box <= max_icon_size and min_icon_size <= ch_box <= max_icon_size):
+                    return
+                aspect_ratio = float(cw_box) / max(1, ch_box)
+                if not (0.45 <= aspect_ratio <= 1.75):
+                    return
+                icon_bbox = [cx_box, cy_box, cx_box + cw_box, cy_box + ch_box]
+                if not is_solid_icon(cv_img, icon_bbox):
+                    return
+                icon_color = _get_region_color(cv_img, icon_bbox)
+                candidate_icons.append({
+                    'x': cx_box + cw_box / 2.0,
+                    'y': cy_box + ch_box / 2.0,
+                    'left': float(cx_box),
+                    'top': float(cy_box),
+                    'right': float(cx_box + cw_box),
+                    'bottom': float(cy_box + ch_box),
+                    'w': cw_box,
+                    'h': ch_box,
+                    'bbox': [float(cx_box), float(cy_box), float(cx_box + cw_box), float(cy_box + ch_box)],
+                    'color': icon_color,
+                    'source': source,
+                })
+
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            edges = cv2.Canny(blurred, 50, 150)
-            
-            # Kích thước icon chuẩn ở zoom 19-21 thường từ 14px đến 35px, nhân với tỷ lệ scale động (mở rộng biên độ để tránh bỏ sót)
-            min_icon_size = max(10, int(12 * scale))
-            max_icon_size = int(40 * scale)
-            
+            edges = cv2.Canny(blurred, 45, 145)
             contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
             for c in contours:
                 cx_box, cy_box, cw_box, ch_box = cv2.boundingRect(c)
-                if min_icon_size <= cw_box <= max_icon_size and min_icon_size <= ch_box <= max_icon_size:
-                    aspect_ratio = float(cw_box) / ch_box
-                    if 0.7 <= aspect_ratio <= 1.4:
-                        icon_bbox = [cx_box, cy_box, cx_box + cw_box, cy_box + ch_box]
-                        if not is_solid_icon(cv_img, icon_bbox):
-                            continue
-                        icon_color = _get_region_color(cv_img, icon_bbox)
-                        candidate_icons.append({
-                            'x': cx_box + cw_box / 2.0,
-                            'y': cy_box + ch_box / 2.0,
-                            'left': float(cx_box),
-                            'top': float(cy_box),
-                            'right': float(cx_box + cw_box),
-                            'bottom': float(cy_box + ch_box),
-                            'w': cw_box,
-                            'h': ch_box,
-                            'bbox': [float(cx_box), float(cy_box), float(cx_box + cw_box), float(cy_box + ch_box)],
-                            'color': icon_color
-                        })
+                add_icon_candidate(cx_box, cy_box, cw_box, ch_box, "edge")
+
+            hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+            color_mask = ((hsv[:, :, 1] > 45) & (hsv[:, :, 2] > 95)).astype(np.uint8) * 255
+            color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+            contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                cx_box, cy_box, cw_box, ch_box = cv2.boundingRect(c)
+                add_icon_candidate(cx_box, cy_box, cw_box, ch_box, "color")
+
+            # Blob xám/tối nhỏ: bắt pin xám, icon landmark mảnh không đủ saturation.
+            gray_mask = (((gray >= 55) & (gray <= 205))).astype(np.uint8) * 255
+            gray_mask = cv2.morphologyEx(gray_mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+            contours, _ = cv2.findContours(gray_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area < 12 * scale:
+                    continue
+                cx_box, cy_box, cw_box, ch_box = cv2.boundingRect(c)
+                add_icon_candidate(cx_box, cy_box, cw_box, ch_box, "blob")
 
         # Lọc bỏ các icon đè/trùng với các chữ phát hiện từ Tesseract (tránh nhận nhầm chữ cái/dấu nháy kép làm icon)
         non_text_icons = []
@@ -868,6 +906,74 @@ async def extract_pois_from_screenshot(
             if not too_close:
                 deduped_icons.append(icon)
         candidate_icons = deduped_icons
+
+        # 6.5 Gộp lại các dòng OCR bị Tesseract tách ngang trong cùng một nhãn POI.
+        # Trường hợp thực tế: icon Google Maps che/ép khoảng trắng làm tên "Ăn vặt - Nước Mía..."
+        # bị tách thành "Ăn" và "vặt - Nước Mía...". Chỉ gộp khi có icon nằm sát bên trái
+        # cùng hàng để tránh gộp nhầm các nhãn địa điểm độc lập phía trên bản đồ.
+        def _merge_same_row_poi_label_fragments(lines_in: List[dict]) -> List[dict]:
+            if not lines_in or not candidate_icons:
+                return lines_in
+
+            remaining = sorted(lines_in, key=lambda line: (line['top'], line['left']))
+            merged_lines: List[dict] = []
+            used = [False] * len(remaining)
+
+            def has_left_icon_near(line_a: dict, line_b: dict) -> bool:
+                top = min(line_a['top'], line_b['top'])
+                bottom = max(line_a['top'] + line_a['height'], line_b['top'] + line_b['height'])
+                center_y = (top + bottom) / 2.0
+                left = min(line_a['left'], line_b['left'])
+                right = max(line_a['left'] + line_a['width'], line_b['left'] + line_b['width'])
+                for icon in candidate_icons:
+                    same_row = abs(icon['y'] - center_y) <= max(18 * scale, (bottom - top) * 0.9)
+                    left_adjacent = icon['right'] >= left - 55 * scale and icon['left'] <= left + 16 * scale
+                    not_far_from_label = icon['left'] <= right + 20 * scale
+                    if same_row and left_adjacent and not_far_from_label:
+                        return True
+                return False
+
+            for i, base in enumerate(remaining):
+                if used[i]:
+                    continue
+                current = dict(base)
+                current['words'] = list(base.get('words', []))
+                used[i] = True
+
+                changed = True
+                while changed:
+                    changed = False
+                    cur_right = current['left'] + current['width']
+                    cur_bottom = current['top'] + current['height']
+                    for j, other in enumerate(remaining):
+                        if used[j]:
+                            continue
+                        other_right = other['left'] + other['width']
+                        other_bottom = other['top'] + other['height']
+                        overlap_y = min(cur_bottom, other_bottom) - max(current['top'], other['top'])
+                        min_h = min(current['height'], other['height'])
+                        gap_x = other['left'] - cur_right
+                        same_band = overlap_y >= 0.35 * min_h or abs((current['top'] + cur_bottom) / 2.0 - (other['top'] + other_bottom) / 2.0) <= 12 * scale
+                        close_gap = -8 * scale <= gap_x <= 55 * scale
+                        same_color = _colors_are_similar(current.get('color'), other.get('color'), thresh_h=20, thresh_s=65, thresh_v=65)
+                        if same_band and close_gap and same_color and has_left_icon_near(current, other):
+                            current['text'] = f"{current['text']} {other['text']}".strip()
+                            current['conf'] = (float(current.get('conf', 0)) + float(other.get('conf', 0))) / 2.0
+                            current['left'] = min(current['left'], other['left'])
+                            current['top'] = min(current['top'], other['top'])
+                            new_right = max(cur_right, other_right)
+                            new_bottom = max(cur_bottom, other_bottom)
+                            current['width'] = new_right - current['left']
+                            current['height'] = new_bottom - current['top']
+                            current['color'] = current.get('color') if current.get('color') is not None else other.get('color')
+                            used[j] = True
+                            changed = True
+                            logger.info("  [Line-Merged] Gộp mảnh tên POI cùng hàng: '%s'", current['text'])
+                            break
+                merged_lines.append(current)
+            return merged_lines
+
+        valid_lines = _merge_same_row_poi_label_fragments(valid_lines)
 
         # 7. Đối sánh các dòng chữ thô với các Icon lân cận (Many-to-One) trước khi chạy VietOCR
         #    Fix 2+5: Kết hợp khoảng cách + màu sắc icon để phân biệt đúng khi nhiều icon ứng viên
@@ -1218,6 +1324,78 @@ async def extract_pois_from_screenshot(
                 "has_icon": True
             })
 
+        # 9.5 Text-led fallback: giữ địa điểm có chữ trên ảnh dù icon bị bỏ sót/không có icon rõ.
+        # Không chỉnh nội dung chữ; chỉ tạo candidate detect để tránh thiếu POI landmark/label nhỏ.
+        matched_line_indices_final = set(line_matches.keys())
+        h_img_limit, w_img_limit = cv_img.shape[:2]
+        text_led_keywords = {
+            "ubnd", "ủy ban", "uỷ ban", "phường", "quận", "vòng xoay", "công viên",
+            "nhà thờ", "chùa", "đền", "bảo tàng", "bưu điện", "trạm", "bến", "ga",
+            "trường", "bệnh viện", "khách sạn", "cafe", "coffee", "restaurant", "tea",
+            "nhà hàng", "quán", "cửa hàng", "siêu thị", "plaza", "mall", "landmark",
+        }
+
+        def _is_text_led_poi_candidate(line: dict) -> bool:
+            text_raw = line.get('text', '').strip()
+            if len(text_raw) < 3 or not any(c.isalpha() for c in text_raw):
+                return False
+            text_lower = text_raw.lower()
+            token_count = len([w for w in re.split(r'\W+', text_lower) if w])
+            if token_count < 2 and not any(k in text_lower for k in text_led_keywords):
+                return False
+            if is_description_line(text_raw) and not any(k in text_lower for k in text_led_keywords):
+                return False
+            line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
+            if _is_slanted_road_name(cv_img, line_bbox) and not _is_likely_place_name(text_raw):
+                return False
+            edge_margin = 45
+            cx = line['left'] + line['width'] / 2.0
+            cy = line['top'] + line['height'] / 2.0
+            if cx < edge_margin or cx > w_img_limit - edge_margin or cy < edge_margin or cy > h_img_limit - edge_margin:
+                return False
+
+            # Dòng POI trên Google Maps thường là nhiều từ, hoặc có keyword địa điểm.
+            has_place_keyword = _is_likely_place_name(text_raw) or any(k in text_lower for k in text_led_keywords)
+            enough_visual_text = line['width'] >= 32 * scale and line['height'] >= 6 * scale and token_count >= 2
+            return has_place_keyword or enough_visual_text
+
+        for l_idx, line in enumerate(valid_lines):
+            if l_idx in matched_line_indices_final:
+                continue
+            if not _is_text_led_poi_candidate(line):
+                continue
+
+            line_cx = line['left'] + line['width'] / 2.0
+            line_cy = line['top'] + line['height'] / 2.0
+            near_existing_icon_group = False
+            for matched_idx in matched_line_indices_final:
+                matched_line = valid_lines[matched_idx]
+                same_band = abs((matched_line['top'] + matched_line['height'] / 2.0) - line_cy) <= 24 * scale
+                horizontal_touch = max(line['left'], matched_line['left']) <= min(line['left'] + line['width'], matched_line['left'] + matched_line['width']) + 42 * scale
+                close_center = abs((matched_line['left'] + matched_line['width'] / 2.0) - line_cx) <= 95 * scale
+                if same_band and (horizontal_touch or close_center):
+                    near_existing_icon_group = True
+                    break
+            if near_existing_icon_group:
+                logger.info("  [Text-Led-Skipped] Bỏ text fallback sát POI đã match icon: '%s'", line.get('text', ''))
+                continue
+
+            box_pad = DETECT_POI_BOX_PAD_PX * scale
+            min_l = float(line['left'] - box_pad)
+            min_t = float(line['top'] - box_pad)
+            max_r = float(line['left'] + line['width'] + box_pad)
+            max_b = float(line['top'] + line['height'] + box_pad)
+            text_name = line.get('text', '').strip()
+            pois.append({
+                "name": text_name,
+                "x": float(line['left'] + line['width'] / 2.0),
+                "y": float(line['top'] + line['height'] / 2.0),
+                "confidence": max(0.35, float(line.get('conf', 45.0)) / 100.0),
+                "bbox": [min_l, min_t, float(max_r - min_l), float(max_b - min_t)],
+                "has_icon": False
+            })
+            logger.info("  [Text-Led-POI] Thêm candidate địa điểm từ text chưa match icon: '%s'", text_name)
+
         global _last_candidate_icons, _last_valid_lines, _last_line_to_icon, _last_potential_line_matches
         _last_candidate_icons = candidate_icons
         _last_valid_lines = valid_lines
@@ -1249,6 +1427,13 @@ async def extract_pois_from_screenshot(
                 cx_b, cy_b = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
                 same_text_band = abs(cy_a - cy_b) <= 28 * scale
                 close_x = abs(cx_a - cx_b) <= 95 * scale
+
+                # Hai candidate đều có icon thường là hai POI riêng. Chỉ merge nếu bbox đè mạnh
+                # hoặc gần như cùng hàng; tránh gộp nhầm label trên/dưới như shop + bệnh viện.
+                if a.get("has_icon") and b.get("has_icon"):
+                    if abs(cy_a - cy_b) > 22 * scale and overlap_ratio(a, b) < 0.35:
+                        return False
+
                 return overlap_ratio(a, b) >= 0.18 or (same_text_band and close_x and max(ax1, bx1) <= min(ax2, bx2) + 18 * scale)
 
             merged: List[dict] = []
@@ -1278,8 +1463,13 @@ async def extract_pois_from_screenshot(
 
                 existing["bbox"] = [float(nx1), float(ny1), float(nx2 - nx1), float(ny2 - ny1)]
                 existing["confidence"] = max(float(existing.get("confidence", 0.0)), float(poi.get("confidence", 0.0)))
-                existing["x"] = existing.get("x") if existing.get("x") is not None else poi.get("x")
-                existing["y"] = existing.get("y") if existing.get("y") is not None else poi.get("y")
+                if poi.get("has_icon") and not existing.get("has_icon"):
+                    existing["x"] = poi.get("x")
+                    existing["y"] = poi.get("y")
+                    existing["has_icon"] = True
+                else:
+                    existing["x"] = existing.get("x") if existing.get("x") is not None else poi.get("x")
+                    existing["y"] = existing.get("y") if existing.get("y") is not None else poi.get("y")
                 logger.info("  [POI-Merged] Gộp POI bị tách: '%s' + '%s'", existing_name, poi_name)
             return merged
 
