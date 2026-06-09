@@ -100,6 +100,81 @@ def deduplicate(raw_data: list) -> list:
     return unique
 
 
+def merge_split_pois(data: list) -> list:
+    """
+    Fix 7: Merge pass — tìm và gộp các POI bị tách nhầm.
+    Hai POI bị coi là bị tách nhầm nếu:
+      - Khoảng cách <= 5 mét
+      - Tên POI A là substring/prefix/suffix của tên POI B (hoặc ngược lại)
+    Giữ lại POI có tên dài nhất, bỏ POI có tên ngắn hơn.
+    """
+    import math
+    
+    if not data:
+        return data
+        
+    def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+        R = 6371000.0
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlam = math.radians(lng2 - lng1)
+        a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    # Sắp xếp theo tên dài nhất trước (ưu tiên giữ tên đầy đủ)
+    sorted_data = sorted(data, key=lambda p: len(p.get("name", "")), reverse=True)
+    
+    merged_indices = set()  # Các index đã bị merge (bỏ)
+    
+    for i in range(len(sorted_data)):
+        if i in merged_indices:
+            continue
+        
+        poi_i = sorted_data[i]
+        lat_i = poi_i.get("approx_lat")
+        lng_i = poi_i.get("approx_lng")
+        name_i = normalize_name(poi_i.get("name", ""))
+        
+        if lat_i is None or lng_i is None or not name_i:
+            continue
+        
+        for j in range(i + 1, len(sorted_data)):
+            if j in merged_indices:
+                continue
+            
+            poi_j = sorted_data[j]
+            lat_j = poi_j.get("approx_lat")
+            lng_j = poi_j.get("approx_lng")
+            name_j = normalize_name(poi_j.get("name", ""))
+            
+            if lat_j is None or lng_j is None or not name_j:
+                continue
+            
+            dist = haversine_m(lat_i, lng_i, lat_j, lng_j)
+            
+            if dist <= 5.0:
+                # Kiểm tra tên là substring của nhau
+                is_substring = (
+                    (len(name_j) > 2 and name_j in name_i) or 
+                    (len(name_i) > 2 and name_i in name_j)
+                )
+                
+                if is_substring:
+                    # Giữ POI có tên dài hơn (đã sắp xếp, i luôn có tên dài hơn)
+                    logger.info(
+                        "  [Merge-Split] Gộp '%s' vào '%s' (dist=%.1fm)",
+                        poi_j.get("name", ""), poi_i.get("name", ""), dist
+                    )
+                    merged_indices.add(j)
+    
+    result = [poi for idx, poi in enumerate(sorted_data) if idx not in merged_indices]
+    
+    if merged_indices:
+        logger.info("Merged %d split POI fragments into existing entries.", len(merged_indices))
+    
+    return result
+
+
 # ── Xuất kết quả ─────────────────────────────────────────────
 
 def export_json(data: list, path: str) -> None:
@@ -200,8 +275,10 @@ def clean_and_deduplicate(
 
     unique = deduplicate(raw_data)
     removed = len(raw_data) - len(unique)
-
     logger.info("After deduplication: %d unique POIs (removed %d duplicates)", len(unique), removed)
+
+    logger.info("Running merge pass for split POI fragments...")
+    unique = merge_split_pois(unique)
 
     # ── Tích hợp Geocoding thông minh giải quyết trùng lặp tên ──
     logger.info("Starting Geocoding lookup via OpenStreetMap Nominatim for exact coordinates...")
@@ -249,7 +326,7 @@ def clean_and_deduplicate(
             # Tính toán lại distance_meters và bearing_degrees từ tọa độ Geocoding Nominatim mới so với tâm tile
             try:
                 import math
-                from grid import tile_center
+                from src.grid import tile_center
                 import config
                 
                 tx = item.get("tile_x")

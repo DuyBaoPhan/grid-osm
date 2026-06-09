@@ -508,13 +508,33 @@ def _robust_replace(src: str, dst: str, max_retries: int = 5, delay: float = 0.0
 def _deduplicate_pois(pois: List[dict]) -> List[dict]:
     """
     Loại bỏ các POI trùng lặp dựa trên khoảng cách địa lý và độ tương đồng tên.
+    Fix 6: Sử dụng similarity ratio thay vì substring đơn giản để tránh gộp nhầm.
     """
     from vision import _strip_vietnamese_accents
+    import math
     
     def clean_name(name: str) -> str:
         s = _strip_vietnamese_accents(name)
         # Giữ lại các chữ cái và chữ số
         return "".join(c for c in s if c.isalnum())
+
+    def name_similarity(a: str, b: str) -> float:
+        """Tính tỷ lệ ký tự chung giữa 2 tên (0.0 → 1.0)."""
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        # Tỷ lệ trùng dựa trên longest common subsequence đơn giản
+        shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+        if shorter in longer:
+            # Substring match: chỉ coi là trùng nếu tên ngắn >= 50% tên dài
+            return len(shorter) / len(longer)
+        # Character overlap ratio
+        from collections import Counter
+        c1 = Counter(shorter)
+        c2 = Counter(longer)
+        common = sum((c1 & c2).values())
+        return common / max(len(longer), 1)
 
     # Sắp xếp các POI theo chiều dài tên giảm dần để ưu tiên giữ tên đầy đủ hơn
     sorted_pois = sorted(pois, key=lambda p: len(p.get("name", "")), reverse=True)
@@ -541,7 +561,6 @@ def _deduplicate_pois(pois: List[dict]) -> List[dict]:
                 continue
                 
             # Tính khoảng cách địa lý Haversine (mét)
-            import math
             phi1 = math.radians(lat)
             phi2 = math.radians(u_lat)
             dphi = math.radians(u_lat - lat)
@@ -552,8 +571,15 @@ def _deduplicate_pois(pois: List[dict]) -> List[dict]:
             # Ngưỡng khoảng cách trùng lặp là 12 mét
             if dist < 12.0:
                 uc_name = clean_name(u_name)
-                # Nếu tên trùng khớp hoặc là chuỗi con của nhau (dài hơn 3 ký tự)
-                if c_name == uc_name or (len(c_name) > 3 and c_name in uc_name) or (len(uc_name) > 3 and uc_name in c_name):
+                
+                # Trùng khớp hoàn toàn
+                if c_name == uc_name:
+                    is_dup = True
+                    break
+                
+                # Kiểm tra tỷ lệ tương đồng >= 60% (tránh gộp nhầm POI khác nhau cùng khu vực)
+                sim = name_similarity(c_name, uc_name)
+                if sim >= 0.6:
                     is_dup = True
                     break
                     

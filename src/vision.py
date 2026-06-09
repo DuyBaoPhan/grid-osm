@@ -229,7 +229,7 @@ def _is_street_name(name: str, color: Optional[np.ndarray] = None) -> bool:
 
     # Kiểm tra độ sáng của màu sắc để gate keyword-based checks
     # Chỉ áp dụng keyword filter nếu màu sắc là trắng/sáng (brightness >= 180)
-    is_bright_color = False
+    is_bright_color = True
     if color is not None:
         hsv = cv2.cvtColor(np.uint8([[color]]), cv2.COLOR_BGR2HSV)[0][0]
         brightness = hsv[2]  # V channel
@@ -725,8 +725,8 @@ async def extract_pois_from_screenshot(
                         l_right = line['left'] + line['width']
                         gap_x = w['left'] - l_right
                         
-                        # Khoảng cách ngang nhỏ (trong khoảng 12 pixel để tránh nhập nhèm POI liền kề)
-                        if -12 <= gap_x <= 12:
+                        # Khoảng cách ngang nhỏ (trong khoảng 18 pixel để tránh tách dòng do kerning/font Google Maps)
+                        if -12 <= gap_x <= 18:
                             line['words'].append(w)
                             new_left = min(line['left'], w['left'])
                             new_top = min(line['top'], w['top'])
@@ -856,6 +856,7 @@ async def extract_pois_from_screenshot(
         candidate_icons = deduped_icons
 
         # 7. Đối sánh các dòng chữ thô với các Icon lân cận (Many-to-One) trước khi chạy VietOCR
+        #    Fix 2+5: Kết hợp khoảng cách + màu sắc icon để phân biệt đúng khi nhiều icon ứng viên
         line_matches = {} # l_idx -> (best_i_idx, dist)
         for l_idx, line in enumerate(valid_lines):
             lx = line['left']
@@ -864,6 +865,9 @@ async def extract_pois_from_screenshot(
             lh = line['height']
             line_center_x = lx + lw / 2.0
             line_center_y = ly + lh / 2.0
+            line_color = line.get('color')
+            
+            candidates_for_line = []  # [(i_idx, dist, color_match_score)]
             
             for i_idx, icon in enumerate(candidate_icons):
                 ix, iy = icon['x'], icon['y']
@@ -890,10 +894,30 @@ async def extract_pois_from_screenshot(
                     dist_y = abs(iy - line_center_y)
                     dist = (dist_x**2 + dist_y**2)**0.5
                     
-                    if l_idx not in line_matches or dist < line_matches[l_idx][1]:
-                        line_matches[l_idx] = (i_idx, dist)
+                    # Tính điểm color match: icon cùng tông màu với text được ưu tiên
+                    icon_color = icon.get('color')
+                    color_match = _colors_are_similar(line_color, icon_color, thresh_h=25, thresh_s=70, thresh_v=70)
+                    color_score = 0.0 if color_match else 1.0  # 0 = match (tốt), 1 = mismatch
+                    
+                    candidates_for_line.append((i_idx, dist, color_score))
+            
+            if candidates_for_line:
+                # Sắp xếp: ưu tiên color match trước, sau đó khoảng cách gần nhất
+                # Nhưng chỉ ưu tiên màu khi khoảng cách chênh lệch < 30px (tránh chọn icon quá xa)
+                candidates_for_line.sort(key=lambda c: (c[2], c[1]))
+                best = candidates_for_line[0]
+                
+                # Nếu best theo color mà quá xa so với nearest, chọn nearest
+                nearest = min(candidates_for_line, key=lambda c: c[1])
+                if best[1] - nearest[1] > 30 * scale:
+                    best = nearest
+                
+                i_idx, dist, _ = best
+                if l_idx not in line_matches or dist < line_matches[l_idx][1]:
+                    line_matches[l_idx] = (i_idx, dist)
 
-        # 7.5 Đối sánh các dòng chưa khớp (unmatched lines) vào cùng icon với dòng đã khớp gần nó (cùng màu, xếp dọc)
+        # 7.5 Đối sánh các dòng chưa khớp (unmatched lines) vào cùng icon với dòng đã khớp gần nó
+        #      Fix 3: Kiểm tra cả màu ICON (không chỉ màu text) + siết threshold + mở rộng dist_y
         matched_line_indices = set(line_matches.keys())
         unmatched_line_indices = [idx for idx in range(len(valid_lines)) if idx not in matched_line_indices]
         
@@ -905,9 +929,9 @@ async def extract_pois_from_screenshot(
             for m_idx in matched_line_indices:
                 m_line = valid_lines[m_idx]
                 
-                # Khoảng cách dòng dọc gần nhau (không quá 25px)
+                # Khoảng cách dòng dọc gần nhau (mở rộng từ 25 → 35px để bắt POI 3+ dòng)
                 dist_y = abs(u_line['top'] - m_line['top'])
-                if dist_y > 25 * scale:
+                if dist_y > 35 * scale:
                     continue
                     
                 # Căn lề trái hoặc lề phải, hoặc có sự đè ngang
@@ -916,11 +940,34 @@ async def extract_pois_from_screenshot(
                 horizontal_overlap = max(0, min(u_line['left'] + u_line['width'], m_line['left'] + m_line['width']) - max(u_line['left'], m_line['left'])) > 0
                 
                 if left_aligned or right_aligned or horizontal_overlap:
-                    # Phải cùng tông màu
-                    if _colors_are_similar(u_line['color'], m_line['color'], thresh_h=25, thresh_s=75, thresh_v=75):
-                        if dist_y < min_dist_y:
-                            min_dist_y = dist_y
-                            best_match_idx = m_idx
+                    # Siết chặt threshold so sánh màu text (giảm từ 25/75/75 → 15/50/50)
+                    text_colors_similar = _colors_are_similar(
+                        u_line['color'], m_line['color'], 
+                        thresh_h=15, thresh_s=50, thresh_v=50
+                    )
+                    
+                    if not text_colors_similar:
+                        continue
+                    
+                    # Fix 3 core: Kiểm tra thêm màu ICON đã ghép với matched line
+                    # Nếu icon có màu sắc rõ ràng (không phải xám/đen), 
+                    # unmatched text phải tương thích với icon color
+                    m_icon_idx = line_matches[m_idx][0]
+                    m_icon_color = candidate_icons[m_icon_idx].get('color')
+                    
+                    # Nếu icon có màu sắc rực rỡ (saturation cao), text unmatched cũng
+                    # phải tương thích — tránh gộp text thuộc icon khác màu
+                    if m_icon_color is not None and not _is_low_saturation(m_icon_color, thresh_s=50):
+                        u_text_color = u_line.get('color')
+                        # Text đen/xám (low sat) thì ok — nó thuộc bất kỳ icon nào cũng được
+                        # Nhưng text có màu rõ ràng phải cùng tông với icon
+                        if u_text_color is not None and not _is_low_saturation(u_text_color, thresh_s=50):
+                            if not _colors_are_similar(u_text_color, m_icon_color, thresh_h=20, thresh_s=60, thresh_v=60):
+                                continue
+                    
+                    if dist_y < min_dist_y:
+                        min_dist_y = dist_y
+                        best_match_idx = m_idx
                             
             if best_match_idx is not None:
                 # Kế thừa icon của dòng đã khớp
@@ -987,13 +1034,40 @@ async def extract_pois_from_screenshot(
             return False
 
         # 9. Chỉ chạy VietOCR cho các dòng đã khớp với icon và tạo danh sách POI gộp
+        #    Fix 4: Validation màu sắc nhất quán trong cùng 1 nhóm icon
         pois = []
         for i_idx, l_indices in icon_to_lines.items():
             icon = candidate_icons[i_idx]
+            icon_color = icon.get('color')
             
             # Sắp xếp các dòng theo thứ tự từ trên xuống dưới
-            matched_lines = [valid_lines[idx] for idx in l_indices]
-            matched_lines.sort(key=lambda x: x['top'])
+            matched_lines_raw = [(idx, valid_lines[idx]) for idx in l_indices]
+            matched_lines_raw.sort(key=lambda x: x[1]['top'])
+            
+            # Fix 4: Kiểm tra consistency — nếu icon có màu rõ ràng,
+            # loại bỏ các dòng text có màu khác biệt rõ ràng so với icon
+            # (dấu hiệu bị gộp nhầm từ POI khác)
+            if icon_color is not None and not _is_low_saturation(icon_color, thresh_s=50):
+                consistent_lines = []
+                for (lidx, line) in matched_lines_raw:
+                    line_clr = line.get('color')
+                    # Text đen/xám (low saturation) → luôn chấp nhận (chữ thường)
+                    if line_clr is None or _is_low_saturation(line_clr, thresh_s=50):
+                        consistent_lines.append((lidx, line))
+                    # Text có màu rõ ràng → phải tương đồng với icon
+                    elif _colors_are_similar(line_clr, icon_color, thresh_h=20, thresh_s=60, thresh_v=60):
+                        consistent_lines.append((lidx, line))
+                    else:
+                        logger.info(
+                            "  [Color-Split] Loại bỏ dòng '%s' khỏi nhóm icon tại (%d,%d) do màu khác biệt",
+                            line.get('text', '?'), int(icon['x']), int(icon['y'])
+                        )
+                matched_lines_raw = consistent_lines
+            
+            if not matched_lines_raw:
+                continue
+                
+            matched_lines = [line for (_, line) in matched_lines_raw]
             
             # Đồng nhất căn lề trái cho toàn bộ các dòng thuộc cùng một POI
             min_l = min(line['left'] for line in matched_lines)
