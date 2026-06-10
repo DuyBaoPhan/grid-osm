@@ -1027,6 +1027,8 @@ async def extract_pois_from_screenshot(
                     dist = (dist_x**2 + dist_y**2)**0.5
                     
                     # Tính điểm color match: icon cùng tông màu với text được ưu tiên.
+                    # Google Maps cũng hay dùng icon màu nhưng tên POI màu đen/xám bên cạnh.
+                    # Trường hợp này vẫn là nhãn địa điểm hợp lệ, chỉ xếp sau match cùng màu thật.
                     icon_color = icon.get('color')
                     color_match = _colors_are_similar(
                         line_color,
@@ -1035,7 +1037,14 @@ async def extract_pois_from_screenshot(
                         thresh_s=DETECT_COLOR_THRESH_S,
                         thresh_v=DETECT_COLOR_THRESH_V,
                     )
-                    color_score = 0.0 if color_match else 1.0  # 0 = match (tốt), 1 = mismatch
+                    text_is_neutral = line_color is None or _is_low_saturation(line_color, thresh_s=50)
+                    icon_is_colored = icon_color is not None and not _is_low_saturation(icon_color, thresh_s=50)
+                    if color_match:
+                        color_score = 0.0
+                    elif text_is_neutral and icon_is_colored:
+                        color_score = 0.15  # icon màu + chữ đen/xám cạnh bên vẫn là POI hợp lệ
+                    else:
+                        color_score = 1.0  # 0 = match tốt, 1 = mismatch rõ
                     
                     candidates_for_line.append((i_idx, dist, color_score + layout_score))
             
@@ -1578,29 +1587,35 @@ def remove_background(image_bytes: bytes) -> bytes:
         if img is None:
             return image_bytes
 
-        # Chuyển sang ảnh xám để tìm nền cực sáng (> 210)
+        # Chuyển sang ảnh xám để tìm vùng foreground (chữ/icon) trước khi xử lý nền
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        mask = gray > 210
-        enhance_mask = gray <= 170
+        enhance_mask = gray <= 190
+        bg_mask = gray > 190
+        white_mask = gray > 228
 
-        # Chuyển sang HSV để tăng độ rực màu (S) và giảm độ sáng (V) giúp chữ đậm hơn
+        # Bước 1: tăng màu chữ/icon trước trên ảnh gốc
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
 
-        # 1. Chỉ làm đậm các pixel thực sự tối (ví dụ: nét chữ, icon có gray <= 170)
-        v_fg = v[enhance_mask].astype(np.float32) * 0.65
+        v_fg = v[enhance_mask].astype(np.float32) * 0.50
+        s_fg = s[enhance_mask].astype(np.float32) * 1.95
         v[enhance_mask] = np.clip(v_fg, 0, 255).astype(np.uint8)
-
-        # 2. Chỉ tăng độ rực màu của các pixel này
-        s_fg = s[enhance_mask].astype(np.float32) * 1.5
         s[enhance_mask] = np.clip(s_fg, 0, 255).astype(np.uint8)
 
-        # Ghép lại thành ảnh BGR
         enhanced_hsv = cv2.merge([h, s, v])
         processed_img = cv2.cvtColor(enhanced_hsv, cv2.COLOR_HSV2BGR)
 
-        # Đặt các pixel thuộc nền cực sáng thành màu trắng tinh (255, 255, 255)
-        processed_img[mask] = [255, 255, 255]
+        # Bước 2: khử nhẹ nền sau khi chữ/icon đã được làm đậm
+        bg_hsv = cv2.cvtColor(processed_img, cv2.COLOR_BGR2HSV)
+        bh, bs, bv = cv2.split(bg_hsv)
+        bs_bg = bs[bg_mask].astype(np.float32) * 0.70
+        bv_bg = bv[bg_mask].astype(np.float32) * 1.04 + 5
+        bs[bg_mask] = np.clip(bs_bg, 0, 255).astype(np.uint8)
+        bv[bg_mask] = np.clip(bv_bg, 0, 255).astype(np.uint8)
+        processed_img = cv2.cvtColor(cv2.merge([bh, bs, bv]), cv2.COLOR_HSV2BGR)
+
+        # Chỉ nền cực sáng mới đổi trắng tinh để giữ chi tiết bản đồ và label nhỏ
+        processed_img[white_mask] = [255, 255, 255]
 
         # Encode lại sang PNG bytes
         success, encoded_img = cv2.imencode('.png', processed_img)
