@@ -1133,7 +1133,8 @@ async def extract_pois_from_screenshot(
             "fashion", "beauty", "salon", "bookstore", "atm", "travel", "agency", "service",
             "lịch", "sử", "di", "tích", "dịch", "vụ", "tạp", "hóa", "tiện", "lợi", "bán", "lẻ", "sách",
             "giày", "dép", "quần", "áo", "thời", "trang", "mỹ", "phẩm", "nước", "hoa", "perfume", "costume",
-            "century", "historical", "heritage", "museum", "monument", "shrine", "attraction", "tourist",
+            "century", "19th", "historical", "heritage", "museum", "monument", "shrine", "attraction", "tourist",
+            "cathedral", "chapel", "basilica", "europe", "european", "style", "tyle", "gothic", "roman",
             "and", "or", "of", "in", "the", "a", "&", "to", "for", "with", "by", "-",
             "nhật", "bản", "hàn", "quốc", "pháp", "mỹ", "việt", "nam", "trung", "quốc", "thái", "lan",
             "vietnamese", "japanese", "korean", "french", "italian", "american", "thai", "western", "asian",
@@ -1190,12 +1191,27 @@ async def extract_pois_from_screenshot(
                 consistent_lines = []
                 for (lidx, line) in matched_lines_raw:
                     line_clr = line.get('color')
+                    line_text = line.get('text', '').strip()
+                    line_center_y = line['top'] + line['height'] / 2.0
+                    line_gap_x = min(abs(line['left'] - icon['right']), abs(icon['left'] - (line['left'] + line['width'])))
+                    same_row_near_icon = (
+                        abs(line_center_y - icon['y']) <= max(20 * scale, line['height'] * 1.2)
+                        and line_gap_x <= 65 * scale
+                    )
                     # Text đen/xám (low saturation) → luôn chấp nhận (chữ thường)
                     if line_clr is None or _is_low_saturation(line_clr, thresh_s=50):
                         consistent_lines.append((lidx, line))
                     # Text có màu rõ ràng → phải tương đồng với icon
                     elif _colors_are_similar(line_clr, icon_color, thresh_h=20, thresh_s=60, thresh_v=60):
                         consistent_lines.append((lidx, line))
+                    # Ngoại lệ hẹp: Google Maps đôi khi vẽ text địa điểm/park bằng màu xanh chữ
+                    # khác màu nền/icon. Nếu tên có keyword địa điểm và nằm cùng hàng sát icon thì giữ.
+                    elif _is_likely_place_name(line_text) and same_row_near_icon:
+                        consistent_lines.append((lidx, line))
+                        logger.info(
+                            "  [Color-Split-Keep] Giữ dòng địa điểm '%s' dù màu khác icon tại (%d,%d)",
+                            line_text, int(icon['x']), int(icon['y'])
+                        )
                     else:
                         logger.info(
                             "  [Color-Split] Loại bỏ dòng '%s' khỏi nhóm icon tại (%d,%d) do màu khác biệt",
@@ -1427,12 +1443,32 @@ async def extract_pois_from_screenshot(
                 cx_b, cy_b = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
                 same_text_band = abs(cy_a - cy_b) <= 28 * scale
                 close_x = abs(cx_a - cx_b) <= 95 * scale
+                horizontal_gap = max(ax1, bx1) - min(ax2, bx2)
+                same_row_adjacent = same_text_band and horizontal_gap <= 60 * scale
 
                 # Hai candidate đều có icon thường là hai POI riêng. Chỉ merge nếu bbox đè mạnh
                 # hoặc gần như cùng hàng; tránh gộp nhầm label trên/dưới như shop + bệnh viện.
                 if a.get("has_icon") and b.get("has_icon"):
                     if abs(cy_a - cy_b) > 22 * scale and overlap_ratio(a, b) < 0.35:
                         return False
+
+                # Text-led fallback có thể là phần đuôi tên bị OCR tách (vd: "Thuyền").
+                # Chỉ gộp khi cùng hàng và sát ngang; không nới luật cho 2 icon thật.
+                if a.get("has_icon") != b.get("has_icon") and same_row_adjacent:
+                    icon_poi = a if a.get("has_icon") else b
+                    fallback = b if not b.get("has_icon") else a
+                    fallback_name = fallback.get("name", "").strip()
+                    fallback_tokens = [w for w in re.split(r'\W+', fallback_name.lower()) if w]
+                    fallback_is_short_fragment = len(fallback_tokens) <= 2 and len(fallback_name) <= 24
+                    fallback_is_place_name = _is_likely_place_name(fallback_name)
+                    fallback_is_description = is_description_line(fallback_name) and not fallback_is_place_name
+                    icon_h = max(1.0, rect(icon_poi)[3] - rect(icon_poi)[1])
+                    fallback_h = max(1.0, rect(fallback)[3] - rect(fallback)[1])
+                    fallback_is_smaller_text = fallback_h <= icon_h * 0.72
+                    if fallback_is_smaller_text and not fallback_is_place_name:
+                        return False
+                    if not fallback_is_description and (fallback_is_short_fragment or fallback_is_place_name):
+                        return True
 
                 return overlap_ratio(a, b) >= 0.18 or (same_text_band and close_x and max(ax1, bx1) <= min(ax2, bx2) + 18 * scale)
 
