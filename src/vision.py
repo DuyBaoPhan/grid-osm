@@ -37,6 +37,9 @@ try:
         DETECT_HORIZONTAL_GAP_MAX,
         DETECT_VERTICAL_BELOW_GAP_MAX,
         DETECT_POI_BOX_PAD_PX,
+        DETECT_CONTEXT_EXPAND_ENABLED,
+        DETECT_CONTEXT_VERTICAL_GAP_MAX,
+        DETECT_CONTEXT_X_ALIGN_MAX,
     )
 except Exception:
     OCR_ENGINE = "tesseract"
@@ -52,6 +55,9 @@ except Exception:
     DETECT_HORIZONTAL_GAP_MAX = 18
     DETECT_VERTICAL_BELOW_GAP_MAX = 28
     DETECT_POI_BOX_PAD_PX = 6
+    DETECT_CONTEXT_EXPAND_ENABLED = True
+    DETECT_CONTEXT_VERTICAL_GAP_MAX = 58
+    DETECT_CONTEXT_X_ALIGN_MAX = 70
 
 _VIETOCR_PREDICTOR = None
 _VIETOCR_LOAD_FAILED = False
@@ -1067,9 +1073,13 @@ async def extract_pois_from_screenshot(
         #      Fix 3: Kiểm tra cả màu ICON (không chỉ màu text) + siết threshold + mở rộng dist_y
         matched_line_indices = set(line_matches.keys())
         unmatched_line_indices = [idx for idx in range(len(valid_lines)) if idx not in matched_line_indices]
-        
         for u_idx in unmatched_line_indices:
             u_line = valid_lines[u_idx]
+            u_text = u_line.get('text', '').strip()
+            u_tokens = [w for w in re.split(r'\W+', _strip_vietnamese_accents(u_text)) if w]
+            if len(u_tokens) <= 1 and not _is_likely_place_name(u_text):
+                logger.info("  [Fragment-Skipped] Bỏ mảnh OCR quá ngắn trước khi gom icon: '%s'", u_text)
+                continue
             best_match_idx = None
             min_dist_y = 999999
             
@@ -1122,6 +1132,135 @@ async def extract_pois_from_screenshot(
                 i_idx, _ = line_matches[best_match_idx]
                 line_matches[u_idx] = (i_idx, min_dist_y)
                 matched_line_indices.add(u_idx)
+
+        def _text_tokens(text: str) -> List[str]:
+            return [w for w in re.split(r'\W+', _strip_vietnamese_accents(text or "")) if w]
+
+        def _has_brand_or_primary_signal(text: str) -> bool:
+            text_clean = (text or "").strip()
+            text_lower = text_clean.lower()
+            tokens = _text_tokens(text_clean)
+            if not tokens:
+                return False
+            context_keywords = {
+                "ubnd", "uy", "uỷ", "ủy", "ban", "phuong", "phường", "quan", "quận",
+                "vong", "vòng", "xoay", "tram", "trạm", "ben", "bến", "ga",
+                "cong", "cổng", "tuong", "tượng", "dai", "đài", "nha", "nhà", "tho", "thờ",
+                "chua", "chùa", "den", "đền", "bao", "bảo", "tang", "tàng", "buu", "bưu", "dien", "điện",
+                "school", "hotel", "store", "coffee", "cafe", "tea", "mall", "plaza", "station",
+            }
+            if _is_likely_place_name(text_clean) or any(k in text_lower for k in context_keywords):
+                return True
+            uppercase_letters = sum(1 for c in text_clean if c.isalpha() and c.isupper())
+            letters = sum(1 for c in text_clean if c.isalpha())
+            has_brand_case = letters >= 4 and uppercase_letters / max(1, letters) >= 0.45
+            has_many_specific_tokens = len(tokens) >= 3 and not _is_generic_name(text_clean.lower())
+            return has_brand_case or has_many_specific_tokens
+
+        def _line_color_compatible(a: dict, b: dict, icon: dict) -> bool:
+            a_color = a.get('color')
+            b_color = b.get('color')
+            icon_color = icon.get('color')
+            if _colors_are_similar(a_color, b_color, thresh_h=22, thresh_s=75, thresh_v=75):
+                return True
+            if _is_low_saturation(a_color, thresh_s=55) and _is_low_saturation(b_color, thresh_s=55):
+                return True
+            if icon_color is not None:
+                if _is_low_saturation(a_color, thresh_s=55) or _colors_are_similar(a_color, icon_color, thresh_h=22, thresh_s=75, thresh_v=75):
+                    if _is_low_saturation(b_color, thresh_s=55) or _colors_are_similar(b_color, icon_color, thresh_h=22, thresh_s=75, thresh_v=75):
+                        return True
+            return False
+
+        def _line_near_other_icon(line: dict, current_icon_idx: int) -> bool:
+            line_cx = line['left'] + line['width'] / 2.0
+            line_cy = line['top'] + line['height'] / 2.0
+            current_icon = candidate_icons[current_icon_idx]
+            current_dist = ((line_cx - current_icon['x']) ** 2 + (line_cy - current_icon['y']) ** 2) ** 0.5
+            for other_idx, other_icon in enumerate(candidate_icons):
+                if other_idx == current_icon_idx:
+                    continue
+                other_dist = ((line_cx - other_icon['x']) ** 2 + (line_cy - other_icon['y']) ** 2) ** 0.5
+                if other_dist + 12 * scale < current_dist:
+                    return True
+            return False
+
+        def _should_expand_line_to_icon(seed_line: dict, candidate_line: dict, icon: dict, icon_idx: int) -> bool:
+            text_raw = candidate_line.get('text', '').strip()
+            text_tokens = [w for w in re.split(r'\W+', _strip_vietnamese_accents(text_raw)) if w]
+            if len(text_raw) < 3 or not any(c.isalpha() for c in text_raw):
+                return False
+            if len(text_tokens) <= 1 and not _is_likely_place_name(text_raw):
+                return False
+            cand_bbox = [candidate_line['left'], candidate_line['top'], candidate_line['left'] + candidate_line['width'], candidate_line['top'] + candidate_line['height']]
+            if _is_slanted_road_name(cv_img, cand_bbox) and not _is_likely_place_name(text_raw):
+                return False
+            if _line_near_other_icon(candidate_line, icon_idx):
+                return False
+            if not _line_color_compatible(seed_line, candidate_line, icon):
+                return False
+
+            seed_left, seed_right = seed_line['left'], seed_line['left'] + seed_line['width']
+            cand_left, cand_right = candidate_line['left'], candidate_line['left'] + candidate_line['width']
+            seed_cx = (seed_left + seed_right) / 2.0
+            cand_cx = (cand_left + cand_right) / 2.0
+            seed_cy = seed_line['top'] + seed_line['height'] / 2.0
+            cand_cy = candidate_line['top'] + candidate_line['height'] / 2.0
+            vertical_gap = max(0.0, max(seed_line['top'], candidate_line['top']) - min(seed_line['top'] + seed_line['height'], candidate_line['top'] + candidate_line['height']))
+            vertical_close = vertical_gap <= DETECT_CONTEXT_VERTICAL_GAP_MAX * scale and abs(seed_cy - cand_cy) <= (DETECT_CONTEXT_VERTICAL_GAP_MAX + 28) * scale
+            overlap_x = max(0.0, min(seed_right, cand_right) - max(seed_left, cand_left))
+            min_w = max(1.0, min(seed_line['width'], candidate_line['width']))
+            aligned = (
+                abs(seed_left - cand_left) <= DETECT_CONTEXT_X_ALIGN_MAX * scale
+                or abs(seed_right - cand_right) <= DETECT_CONTEXT_X_ALIGN_MAX * scale
+                or abs(seed_cx - cand_cx) <= (DETECT_CONTEXT_X_ALIGN_MAX + 35) * scale
+                or overlap_x >= 0.25 * min_w
+            )
+            same_row = abs(seed_cy - cand_cy) <= max(22 * scale, min(seed_line['height'], candidate_line['height']) * 1.4)
+            horizontal_gap = max(cand_left, seed_left) - min(cand_right, seed_right)
+            icon_between_or_adjacent = (
+                icon['left'] <= max(seed_right, cand_right) + 14 * scale
+                and icon['right'] >= min(seed_left, cand_left) - 14 * scale
+                and abs(icon['y'] - cand_cy) <= max(28 * scale, candidate_line['height'] * 1.6)
+            )
+            geometry_ok = (vertical_close and aligned) or (same_row and horizontal_gap <= 90 * scale and icon_between_or_adjacent)
+            if not geometry_ok:
+                return False
+
+            has_primary_signal = _has_brand_or_primary_signal(text_raw)
+            description_but_contextual = _is_generic_name(text_raw.lower()) and not has_primary_signal
+            if description_but_contextual:
+                return False
+            return True
+
+        if DETECT_CONTEXT_EXPAND_ENABLED and candidate_icons:
+            changed = True
+            while changed:
+                changed = False
+                matched_snapshot = list(line_matches.items())
+                unmatched_snapshot = [idx for idx in range(len(valid_lines)) if idx not in line_matches]
+                for u_idx in unmatched_snapshot:
+                    candidate_line = valid_lines[u_idx]
+                    best = None
+                    best_score = 999999.0
+                    for m_idx, (icon_idx, _) in matched_snapshot:
+                        seed_line = valid_lines[m_idx]
+                        icon = candidate_icons[icon_idx]
+                        if not _should_expand_line_to_icon(seed_line, candidate_line, icon, icon_idx):
+                            continue
+                        dy = abs((seed_line['top'] + seed_line['height'] / 2.0) - (candidate_line['top'] + candidate_line['height'] / 2.0))
+                        dx = abs((seed_line['left'] + seed_line['width'] / 2.0) - (candidate_line['left'] + candidate_line['width'] / 2.0))
+                        score = dy * 1.4 + dx * 0.35
+                        if score < best_score:
+                            best_score = score
+                            best = (icon_idx, m_idx)
+                    if best is not None:
+                        icon_idx, seed_idx = best
+                        line_matches[u_idx] = (icon_idx, best_score)
+                        changed = True
+                        logger.info(
+                            "  [Context-Expanded] Gộp dòng tên gần POI: '%s' vào icon của '%s'",
+                            candidate_line.get('text', ''), valid_lines[seed_idx].get('text', '')
+                        )
 
         # 8. Gom cụm các dòng theo Icon để phân nhóm chạy VietOCR chọn lọc
         icon_to_lines = {}
@@ -1270,16 +1409,19 @@ async def extract_pois_from_screenshot(
                 
                 if is_description_line(text_cleaned):
                     if is_first_line:
-                        # Nếu là dòng duy nhất/đầu tiên nhưng chứa từ khóa địa điểm quan trọng (Nhà thờ, Tượng đài...)
+                        # Nếu là dòng duy nhất/đầu tiên nhưng chứa từ khóa địa điểm quan trọng (Nhà thờ, Tượng đài, UBND, brand...)
                         # thì vẫn giữ làm tên thay vì bỏ qua.
-                        if _is_likely_place_name(text_cleaned):
+                        if _is_likely_place_name(text_cleaned) or _has_brand_or_primary_signal(text_cleaned):
                             name_parts.append(text_cleaned)
                         else:
                             logger.info("  [Desc-Filtered] Bỏ dòng đầu (không phải tên riêng): '%s'", text_cleaned)
                             continue
                     else:
-                        logger.info("  [Desc-Filtered] Bỏ dòng mô tả phụ: '%s'", text_cleaned)
-                        continue
+                        if _has_brand_or_primary_signal(text_cleaned) and text_cleaned.lower() not in " ".join(name_parts).lower():
+                            name_parts.append(text_cleaned)
+                        else:
+                            logger.info("  [Desc-Filtered] Bỏ dòng mô tả phụ: '%s'", text_cleaned)
+                            continue
                 else:
                     name_parts.append(text_cleaned)
                 

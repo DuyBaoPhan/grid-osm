@@ -75,6 +75,9 @@ DETECT_COLOR_THRESH_V = 70             # Ngưỡng lệch brightness
 DETECT_HORIZONTAL_GAP_MAX = 34         # Icon và text sát ngang nhau, nới để bắt label hơi xa icon
 DETECT_VERTICAL_BELOW_GAP_MAX = 42     # Trường hợp hiếm: text nằm dưới icon
 DETECT_POI_BOX_PAD_PX = 8              # Padding bbox bao quanh icon + text
+DETECT_CONTEXT_EXPAND_ENABLED = True   # Gom thêm các dòng tên địa điểm gần icon/text đã match
+DETECT_CONTEXT_VERTICAL_GAP_MAX = 58   # Khoảng cách dọc tối đa giữa các dòng cùng label POI
+DETECT_CONTEXT_X_ALIGN_MAX = 70        # Độ lệch căn hàng/ngang tối đa khi gom dòng cùng POI
 
 # Deprecated (cho OSM vertical layout - icon phía trên text):
 # OCR_ICON_MAX_Y_GAP = 24              # icon phải nằm tối đa N px phía trên text
