@@ -560,14 +560,14 @@ def _get_vietocr_predictor():
         return None
 
 
-def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, float, float], fallback: str = "") -> str:
+def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, float, float], fallback: str = "", icon_bbox: Optional[List[float]] = None) -> str:
     """OCR lại crop chữ bằng VietOCR; fallback về text detector nếu cần."""
     predictor = _get_vietocr_predictor()
     if predictor is None or cv_img is None:
         return fallback.strip()
 
     h_img, w_img = cv_img.shape[:2]
-    # Nới rộng padding crop: pad_x = 10 (tránh mất ký tự đầu/cuối), pad_y = 6 (tránh mất dấu tiếng Việt)
+    # Nới rộng padding crop: pad_x = 10, pad_y = 6
     pad_x = 10
     pad_y = 6
     x1, y1, x2, y2 = map(int, bbox)
@@ -583,19 +583,50 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: Tuple[float, float, f
         return fallback.strip()
 
     try:
-        # Khử nền bằng cách chuyển sang grayscale và thresholding ở 200
-        crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        _, crop_thresh = cv2.threshold(crop_gray, 200, 255, cv2.THRESH_BINARY)
+        # 1. Khử nhiễu nhưng giữ sắc nét cạnh chữ (Bilateral Filter)
+        crop_blur = cv2.bilateralFilter(crop, 5, 65, 65)
+        crop_gray = cv2.cvtColor(crop_blur, cv2.COLOR_BGR2GRAY)
         
-        # Xóa tất cả các pixel nằm ngoài bounding box thực tế của từ (mặt nạ trắng)
-        # để tránh các từ bên cạnh hoặc icon đè vào vùng padding mở rộng gây nhiễu cho VietOCR
+        # 2. Tăng cường tương phản cục bộ (CLAHE)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        crop_gray = clahe.apply(crop_gray)
+        
+        # 3. NGƯỠNG ĐỘNG (Otsu): Tự động tìm ngưỡng tối ưu giữa nền và chữ
+        # Giúp xử lý tốt cả chữ nhạt màu và chữ đậm trên nhiều loại nền bản đồ.
+        _, crop_thresh = cv2.threshold(crop_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # 4. Xóa icon (nếu dính vào vùng crop này) để tránh làm nhiễu VietOCR
+        if icon_bbox:
+            il, it, ir, ib = icon_bbox
+            # Chuyển tọa độ icon sang hệ tọa độ của crop_thresh
+            rx1 = int(il - x1_pad)
+            ry1 = int(it - y1_pad)
+            rx2 = int(ir - x1_pad)
+            ry2 = int(ib - y1_pad)
+            
+            ch, cw = crop_thresh.shape[:2]
+            rx1 = max(0, min(rx1, cw - 1))
+            ry1 = max(0, min(ry1, ch - 1))
+            rx2 = max(0, min(rx2, cw - 1))
+            ry2 = max(0, min(ry2, ch - 1))
+            
+            # Chỉ xóa nếu icon không quá to (tránh xóa nhầm cả cụm text)
+            if rx2 > rx1 and ry2 > ry1 and (rx2-rx1) < cw * 0.8:
+                crop_thresh[ry1:ry2, rx1:rx2] = 255
+
+        # 4. Tạo mặt nạ mask để chỉ lấy đúng vùng text của dòng này (có padding an toàn)
         lx1 = x1 - x1_pad
         ly1 = y1 - y1_pad
         lx2 = x2 - x1_pad
         ly2 = y2 - y1_pad
         
         mask = np.zeros(crop_thresh.shape, dtype=np.uint8)
-        mask[ly1:ly2, lx1:lx2] = 255
+        # Thêm padding 3px cho mask để không cắt phạm vào nét chữ/dấu
+        ml1 = max(0, ly1 - 3)
+        ml2 = min(ly2 + 3, crop_thresh.shape[0])
+        mc1 = max(0, lx1 - 3)
+        mc2 = min(lx2 + 3, crop_thresh.shape[1])
+        mask[ml1:ml2, mc1:mc2] = 255
         crop_thresh[mask == 0] = 255
 
         # VietOCR đọc tốt hơn khi crop chữ nhỏ được phóng nhẹ.
@@ -1401,7 +1432,8 @@ async def extract_pois_from_screenshot(
                 line_bbox = [lx, ly, lx + lw, ly + lh]
                 
                 # Chạy VietOCR chọn lọc cho vùng bbox của dòng chữ
-                text_read = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=line['text'])
+                # Truyền thêm icon_bbox để xóa icon chính xác trong vùng đọc
+                text_read = _recognize_text_crop_vietocr(cv_img, line_bbox, fallback=line['text'], icon_bbox=icon.get('bbox'))
                 text_cleaned = _clean_spelling(text_read)
                 
                 # Dòng đầu tiên thường là tên chính, không nên lọc bỏ trừ khi là blacklist rác
@@ -1488,6 +1520,7 @@ async def extract_pois_from_screenshot(
                 "y": icon['y'],
                 "confidence": avg_conf / 100.0,
                 "bbox": [float(min_l), float(min_t), float(max_r - min_l), float(max_b - min_t)],
+                "icon_bbox": [float(icon['left']), float(icon['top']), float(icon['right']), float(icon['bottom'])],
                 "has_icon": True
             })
 
@@ -1717,64 +1750,63 @@ def enhance_for_detection(image_bytes: bytes) -> bytes:
 
 def remove_background(image_bytes: bytes) -> bytes:
     """
-    Khử nền cho ảnh chụp màn hình bản đồ để làm rõ các đoạn text và icon.
-    Chuyển ảnh về grayscale, tạo mask cho các pixel cực sáng (> 210) và đổi chúng sang màu trắng.
-    Đồng thời làm đậm các nét chữ/icon tối màu (<= 170) mà không làm nổi bật nền đường xám nhạt.
-    Trả về dữ liệu bytes của ảnh đã khử nền dưới dạng PNG.
+    Hàm này hiện tại không sử dụng vì hệ thống chuyển sang khử nền động trong từng box POI.
+    Trả về ảnh gốc để đảm bảo không lỗi cú pháp.
     """
-    try:
-        # Decode bytes to OpenCV image
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return image_bytes
-
-        # Chuyển sang ảnh xám để tìm vùng foreground (chữ/icon) trước khi xử lý nền
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        enhance_mask = gray <= 190
-        bg_mask = gray > 190
-        white_mask = gray > 228
-
-        # Bước 1: tăng màu chữ/icon trước trên ảnh gốc
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h, s, v = cv2.split(hsv)
-
-        v_fg = v[enhance_mask].astype(np.float32) * 0.50
-        s_fg = s[enhance_mask].astype(np.float32) * 1.95
-        v[enhance_mask] = np.clip(v_fg, 0, 255).astype(np.uint8)
-        s[enhance_mask] = np.clip(s_fg, 0, 255).astype(np.uint8)
-
-        enhanced_hsv = cv2.merge([h, s, v])
-        processed_img = cv2.cvtColor(enhanced_hsv, cv2.COLOR_HSV2BGR)
-
-        # Bước 2: khử nhẹ nền sau khi chữ/icon đã được làm đậm
-        bg_hsv = cv2.cvtColor(processed_img, cv2.COLOR_BGR2HSV)
-        bh, bs, bv = cv2.split(bg_hsv)
-        bs_bg = bs[bg_mask].astype(np.float32) * 0.70
-        bv_bg = bv[bg_mask].astype(np.float32) * 1.04 + 5
-        bs[bg_mask] = np.clip(bs_bg, 0, 255).astype(np.uint8)
-        bv[bg_mask] = np.clip(bv_bg, 0, 255).astype(np.uint8)
-        processed_img = cv2.cvtColor(cv2.merge([bh, bs, bv]), cv2.COLOR_HSV2BGR)
-
-        # Chỉ nền cực sáng mới đổi trắng tinh để giữ chi tiết bản đồ và label nhỏ
-        processed_img[white_mask] = [255, 255, 255]
-
-        # Encode lại sang PNG bytes
-        success, encoded_img = cv2.imencode('.png', processed_img)
-        if success:
-            return encoded_img.tobytes()
-    except Exception as e:
-        logger.warning("Lỗi khi khử nền và tăng nét ảnh: %s", e)
     return image_bytes
 
 
-def draw_detections(image_bytes: bytes, pois: List[dict], crop_x: int = 0, crop_y: int = 0) -> bytes:
+def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, crop_x: int = 0, crop_y: int = 0) -> bool:
+    """
+    Cắt vùng bbox của POI từ ảnh gốc và lưu thành file PNG (không xử lý).
+    """
+    try:
+        import cv2
+        import numpy as np
+        import os
+
+        # Decode BGR image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return False
+
+        bbox = poi.get("bbox")
+        if not bbox:
+            return False
+
+        left, top, w, h = bbox
+        ix1, iy1 = int(left - crop_x), int(top - crop_y)
+        ix2, iy2 = int(ix1 + w), int(iy1 + h)
+
+        h_img, w_img = img.shape[:2]
+        ix1 = max(0, min(ix1, w_img - 1))
+        iy1 = max(0, min(iy1, h_img - 1))
+        ix2 = max(0, min(ix2, w_img - 1))
+        iy2 = max(0, min(iy2, h_img - 1))
+
+        if ix2 <= ix1 or iy2 <= iy1:
+            return False
+
+        # Cắt và lưu ảnh màu nguyên bản
+        crop = img[iy1:iy2, ix1:ix2]
+        
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        cv2.imwrite(output_path, crop)
+        return True
+    except Exception as e:
+        logger.warning("Lỗi khi lưu crop POI gốc: %s", e)
+        return False
+
+
+def draw_detections(image_bytes: bytes, pois: List[dict], crop_x: int = 0, crop_y: int = 0, draw_text: bool = True) -> bytes:
     """
     Vẽ khung chữ nhật (bbox) và nhãn văn bản (name) của từng địa điểm đã nhận diện
     lên ảnh nền đã được khử. Hỗ trợ Unicode tiếng Việt bằng PIL.
     - image_bytes: bytes của ảnh nền đã khử (PNG/JPEG)
     - pois: danh sách các POI từ extract_pois_from_screenshot
     - crop_x, crop_y: offset cắt của ảnh lưu so với ảnh chụp full
+    - draw_text: True nếu muốn vẽ cả nhãn chữ, False nếu chỉ vẽ khung đỏ
     """
     try:
         import cv2
@@ -1803,47 +1835,48 @@ def draw_detections(image_bytes: bytes, pois: List[dict], crop_x: int = 0, crop_
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
 
-        # Load font chữ hỗ trợ Unicode tiếng Việt
-        try:
-            font = ImageFont.truetype("arial.ttf", 15)
-        except Exception:
+        if draw_text:
+            # Load font chữ hỗ trợ Unicode tiếng Việt
             try:
-                font = ImageFont.load_default(size=15)
-            except TypeError:
-                font = ImageFont.load_default()
-
-        for poi in pois:
-            bbox = poi.get("bbox")
-            name = poi.get("name", "")
-            if not bbox or not name:
-                continue
-            
-            left, top, w, h = bbox
-            x1 = int(left - crop_x)
-            y1 = int(top - crop_y)
-
-            # Tính toán kích thước chữ để vẽ nền nhãn
-            try:
-                bbox_t = draw.textbbox((x1, y1), name, font=font)
-                label_w = bbox_t[2] - bbox_t[0]
-                label_h = bbox_t[3] - bbox_t[1]
+                font = ImageFont.truetype("arial.ttf", 15)
             except Exception:
-                label_w = len(name) * 8
-                label_h = 15
-                bbox_t = [x1, y1 - label_h - 2, x1 + label_w, y1]
+                try:
+                    font = ImageFont.load_default(size=15)
+                except TypeError:
+                    font = ImageFont.load_default()
 
-            # Xác định vị trí vẽ nhãn chữ theo trục Y
-            ty = y1 - label_h - 6
-            if ty < 0:
-                ty = y1 + h + 4
+            for poi in pois:
+                bbox = poi.get("bbox")
+                name = poi.get("name", "")
+                if not bbox or not name:
+                    continue
+                
+                left, top, w, h = bbox
+                x1 = int(left - crop_x)
+                y1 = int(top - crop_y)
 
-            # Vẽ nền màu xanh nhạt (RGB: 230, 230, 255)
-            draw.rectangle(
-                [x1, ty - 2, x1 + label_w + 4, ty + label_h + 4],
-                fill=(230, 230, 255)
-            )
-            # Viết tên POI
-            draw.text((x1 + 2, ty), name, fill=(0, 0, 0), font=font)
+                # Tính toán kích thước chữ để vẽ nền nhãn
+                try:
+                    bbox_t = draw.textbbox((x1, y1), name, font=font)
+                    label_w = bbox_t[2] - bbox_t[0]
+                    label_h = bbox_t[3] - bbox_t[1]
+                except Exception:
+                    label_w = len(name) * 8
+                    label_h = 15
+                    bbox_t = [x1, y1 - label_h - 2, x1 + label_w, y1]
+
+                # Xác định vị trí vẽ nhãn chữ theo trục Y
+                ty = y1 - label_h - 6
+                if ty < 0:
+                    ty = y1 + h + 4
+
+                # Vẽ nền màu xanh nhạt (RGB: 230, 230, 255)
+                draw.rectangle(
+                    [x1, ty - 2, x1 + label_w + 4, ty + label_h + 4],
+                    fill=(230, 230, 255)
+                )
+                # Viết tên POI
+                draw.text((x1 + 2, ty), name, fill=(0, 0, 0), font=font)
 
         # Chuyển ngược về ảnh OpenCV BGR
         enhanced_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
@@ -1855,5 +1888,50 @@ def draw_detections(image_bytes: bytes, pois: List[dict], crop_x: int = 0, crop_
     except Exception as e:
         logger.warning("Lỗi khi vẽ nét nhận diện Unicode: %s", e)
     return image_bytes
+
+
+def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, crop_x: int = 0, crop_y: int = 0) -> bool:
+    """
+    Cắt vùng bbox của POI từ ảnh gốc (màu) và lưu trực tiếp.
+    """
+    try:
+        import cv2
+        import numpy as np
+        import os
+
+        # Decode BGR image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return False
+
+        bbox = poi.get("bbox")
+        if not bbox:
+            return False
+
+        left, top, w, h = bbox
+        ix1, iy1 = int(left - crop_x), int(top - crop_y)
+        ix2, iy2 = int(ix1 + w), int(iy1 + h)
+
+        h_img, w_img = img.shape[:2]
+        ix1 = max(0, min(ix1, w_img - 1))
+        iy1 = max(0, min(iy1, h_img - 1))
+        ix2 = max(0, min(ix2, w_img - 1))
+        iy2 = max(0, min(iy2, h_img - 1))
+
+        if ix2 <= ix1 or iy2 <= iy1:
+            return False
+
+        # Cắt ảnh gốc màu
+        crop = img[iy1:iy2, ix1:ix2].copy()
+
+        # Đảm bảo thư mục tồn tại
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        cv2.imwrite(output_path, crop)
+        return True
+    except Exception as e:
+        logger.warning("Lỗi khi lưu crop POI: %s", e)
+        return False
 
 

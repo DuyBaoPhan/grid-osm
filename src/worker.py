@@ -32,9 +32,11 @@ from config import (
     SCREENSHOT_ZOOM,
     ZOOM_LEVEL,
     HEADLESS,
+    SAVE_POI_CROPS,
+    POI_CROPS_DIR,
 )
 from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
-from vision import extract_pois_from_screenshot, remove_background, draw_detections, enhance_for_detection
+from vision import extract_pois_from_screenshot, remove_background, draw_detections, enhance_for_detection, save_poi_crop
 
 logger = logging.getLogger(__name__)
 
@@ -280,8 +282,7 @@ class Worker:
                     await self.coord._queue.put(tile)
                     return
 
-        logger.info("  [1/2] Pre-processing: Enhancing icon/text without background removal...")
-        # Detect-first pipeline: giữ nguyên nền bản đồ, chỉ enhance nhẹ để icon/tên nổi hơn.
+        # Detect-first pipeline: giữ nguyên nền bản đồ gốc để detect chính xác nhất.
         enhanced_screenshot = enhance_for_detection(raw_screenshot)
 
         # Nhận diện POI trên ảnh enhanced nhẹ, chưa khử nền trong POI bbox.
@@ -294,8 +295,16 @@ class Worker:
         if SAVE_SCREENSHOTS:
             crop_x = img_metadata.get("crop_x1", 0)
             crop_y = img_metadata.get("crop_y1", 0)
-            final_screenshot = draw_detections(compressed_screenshot, poi_names, crop_x, crop_y)
+            final_screenshot = draw_detections(compressed_screenshot, poi_names, crop_x, crop_y, draw_text=False)
             await self._save_screenshot(final_screenshot, tx, ty)
+
+            # Lưu từng mảnh POI crop
+            if SAVE_POI_CROPS:
+                for idx, poi in enumerate(poi_names):
+                    safe_name = "".join(c for c in poi["name"] if c.isalnum() or c in (" ", "_")).strip().replace(" ", "_")
+                    crop_filename = f"{tx}_{ty}_{idx}_{safe_name}.png"
+                    crop_path = os.path.join(POI_CROPS_DIR, crop_filename)
+                    save_poi_crop(compressed_screenshot, poi, crop_path, crop_x, crop_y)
 
         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
         await self._close_page()

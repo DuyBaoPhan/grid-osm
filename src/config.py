@@ -32,12 +32,15 @@ TARGET_DISTRICT  = "Quận 1"             # Tên quận cần quét để LLM t�
 # Note: Google Maps không cung cấp public tile API như OSM
 # MAP_TILE_URL   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"  # Commented out - not used for Google Maps
 TILE_UPSCALE   = 4               # Upscale 256×256 → 1024×1024 để text rõ hơn cho OCR
+TILE_SIZE      = 256
 GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 21
 SCREENSHOT_W   = 1920            # Fullscreen width (1920x1080)
 SCREENSHOT_H   = 1080            # Fullscreen height
 SCREENSHOT_OVERLAP_PX = 80       # Khoảng tràn viền xung quanh ô quét (để tránh mất chữ/icon sát mép)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
+SAVE_POI_CROPS = True            # Lưu riêng từng mảnh ảnh POI được nhận diện
+POI_CROPS_DIR = str(BASE_DIR / "crops") # Thư mục lưu các mảnh ảnh POI
 
 # ── Map load ─────────────────────────────────────────────────
 PAGE_LOAD_TIMEOUT  = 20_000            # ms — timeout goto()
@@ -78,7 +81,3 @@ DETECT_POI_BOX_PAD_PX = 8              # Padding bbox bao quanh icon + text
 DETECT_CONTEXT_EXPAND_ENABLED = True   # Gom thêm các dòng tên địa điểm gần icon/text đã match
 DETECT_CONTEXT_VERTICAL_GAP_MAX = 58   # Khoảng cách dọc tối đa giữa các dòng cùng label POI
 DETECT_CONTEXT_X_ALIGN_MAX = 70        # Độ lệch căn hàng/ngang tối đa khi gom dòng cùng POI
-
-# Deprecated (cho OSM vertical layout - icon phía trên text):
-# OCR_ICON_MAX_Y_GAP = 24              # icon phải nằm tối đa N px phía trên text
-# OCR_ICON_X_MARGIN = 12               # icon được lệch ngang ngoài bbox text tối đa N px
