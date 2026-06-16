@@ -831,12 +831,12 @@ async def extract_pois_from_screenshot(
                 # 3. Nằm trên nền màu xám (gray background)
                 # NHƯNG vẫn giữ lại nếu text chứa từ khóa tên địa điểm (landmark)
                 # để tránh khử nhầm tên địa điểm lỡ nằm trên/đè lên đường.
-                if _is_slanted_road_name(cv_img, line_bbox):
-                    if _is_likely_place_name(text):
-                        logger.info("  [Road-Name-Kept] Giữ lại địa điểm dù nằm xéo: '%s'", text)
-                    else:
-                        logger.info("  [Road-Name-Filtered] Bỏ tên đường xéo: '%s' tại bbox %s", text, line_bbox)
-                        continue
+                # if _is_slanted_road_name(cv_img, line_bbox):
+                #     if _is_likely_place_name(text):
+                #         logger.info("  [Road-Name-Kept] Giữ lại địa điểm dù nằm xéo: '%s'", text)
+                #     else:
+                #         logger.info("  [Road-Name-Filtered] Bỏ tên đường xéo: '%s' tại bbox %s", text, line_bbox)
+                #         continue
                 
                 # ĐÃ TẮT: Kiểm tra từ khóa tên đường độc lập (quá tay, lọc nhầm tên địa điểm)
                 # Ví dụ: "Cổng Đường Sách" bị lọc nhầm vì có từ "Đường"
