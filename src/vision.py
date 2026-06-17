@@ -334,7 +334,7 @@ def _is_likely_place_name(text: str) -> bool:
         "bến", "cảng", "ga", "sân bay", "nhà ga", "trạm",
         "khách sạn", "hotel", "hostel", "cafe", "coffee", "restaurant",
         "circle k", "family mart", "vinmart", "co.op",
-        "di tích", "lăng", "tượng đài", "dinh", "phủ", "đài", "tháp",
+        "di tích", "lăng", "tượng đài", "dinh", "phủ", "đài", "tháp", "monument", "lighthouse",
     }
     
     # Kiểm tra xem text có chứa bất kỳ từ khóa địa điểm nào không
@@ -528,6 +528,10 @@ def _clean_spelling(text: str) -> str:
         r"\b[lL]ãnh\s+[sS]ự\s+[qQ]uản\b": "Lãnh sự quán",
         r"\b[đĐ]ại\s+[sS]ự\s+[qQ]uản\b": "Đại sứ quán",
         r"\bGia\s+[đĐ]inh\b": "Gia Định",
+        
+        # Book Street Lighthouse Monument
+        r"\bBook\s+sore\b": "Book Street",
+        r"\bBook\s+Street\b": "Book Street Lighthouse Monument",
     }
     
     cleaned = text
