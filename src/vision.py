@@ -684,7 +684,6 @@ def is_solid_icon(cv_img: np.ndarray, bbox: Tuple[float, float, float, float]) -
         or (edge_ratio >= 0.08 and mid_gray_ratio >= 0.12)
     )
 
-
 # ── Hàm phân tích ảnh và trích xuất POI bằng OCR & OpenCV ────────────
 
 async def extract_pois_from_screenshot(
@@ -1192,6 +1191,219 @@ async def extract_pois_from_screenshot(
             has_many_specific_tokens = len(tokens) >= 3 and not _is_generic_name(text_clean.lower())
             return has_brand_case or has_many_specific_tokens
 
+        # === THAY THẾ HÀM calculate_poi_score (thay thế toàn bộ hàm cũ) ===
+        # ── Hàm tính điểm POI candidate (đã tối ưu cho brand + shop type) ────────────
+
+        # ── Hàm tính điểm POI candidate (Tối ưu cho brand + shop type) ────────────
+
+        def calculate_poi_score(candidate: dict, cv_img: np.ndarray, scale: float) -> dict:
+            """
+            Tính điểm quyết định xem candidate có phải là POI hợp lệ không.
+            Đã tối ưu mạnh để detect "MCM Post Office Bag shop", "Olivia's Prime Steakhouse", v.v.
+            """
+            score = 0
+            reasons = []
+            
+            text = candidate.get('text', '').strip()
+            text_lower = text.lower()
+            has_icon = candidate.get('has_icon', False)
+            conf = candidate.get('conf', 0.0)
+            l, t, r, b = candidate.get('bbox', [0, 0, 0, 0])
+            w_box = r - l
+            h_box = b - t
+            
+            tokens = [w for w in re.split(r'\W+', _strip_vietnamese_accents(text)) if w]
+            num_tokens = len(tokens)
+            uppercase_ratio = sum(1 for c in text if c.isalpha() and c.isupper()) / max(1, sum(1 for c in text if c.isalpha()))
+
+            # A. Icon proximity
+            if has_icon:
+                score += 50
+                reasons.append("nearby_icon +50")
+            else:
+                score -= 12
+                reasons.append("no_icon -12")
+                
+            # B. Text geometry
+            is_slanted = _is_slanted_road_name(cv_img, (l, t, r, b))
+            if is_slanted:
+                score -= 25
+                reasons.append("slanted_text -25")
+            else:
+                score += 15
+                reasons.append("horizontal_label +15")
+                
+            # Label shape
+            aspect_ratio = w_box / max(1.0, h_box)
+            if 1.5 <= aspect_ratio <= 22.0 and 8 * scale <= h_box <= 45 * scale:
+                score += 12
+                reasons.append("typical_label_shape +12")
+                
+            # C. Brand & Shop type detection (quan trọng cho MCM, Post Office, Bag shop...)
+            is_brand_like = (uppercase_ratio >= 0.35) or any(word[0].isupper() for word in tokens[:4] if len(word) > 1)
+            has_shop_indicator = any(k in text_lower for k in [
+                "shop", "store", "office", "post", "bag", "cafe", "restaurant", 
+                "steakhouse", "club", "studio", "concept", "boutique"
+            ])
+            
+            if num_tokens >= 2:
+                score += 14
+                reasons.append(f"multi_token({num_tokens}) +14")
+            if is_brand_like:
+                score += 20
+                reasons.append("brand_name +20")
+            if has_shop_indicator:
+                score += 12
+                reasons.append("shop_indicator +12")
+
+            # D. OCR Confidence
+            if conf >= 65:
+                score += 10
+                reasons.append("high_conf +10")
+            elif conf >= 45:
+                score += 5
+                reasons.append("medium_conf +5")
+                
+            # E. Place / Landmark bonus
+            if _is_likely_place_name(text) or _has_brand_or_primary_signal(text):
+                score += 12
+                reasons.append("place_signal +12")
+
+            # F. Negative Scoring
+            if _is_street_name(text, candidate.get('color')):
+                score -= 30
+                reasons.append("road_name -30")
+                
+            if candidate.get('is_near_edge', False):
+                score -= 18
+                reasons.append("near_edge -18")
+                
+            if len(text) > 70:
+                score -= 10
+                reasons.append("very_long_text -10")
+            elif len(text) > 45 and num_tokens > 8 and not has_shop_indicator:
+                score -= 8
+                reasons.append("long_text -8")
+
+            if len(text) < 3 or not any(c.isalpha() for c in text):
+                score -= 25
+                reasons.append("too_short -25")
+
+            final_score = max(0, score)
+            final_pass = final_score >= 40   # Giảm nhẹ threshold để bắt MCM
+
+            return {
+                'text': text,
+                'bbox': candidate.get('bbox'),
+                'score': final_score,
+                'reason': ", ".join(reasons),
+                'pass': final_pass
+            }# ── Hàm tính điểm POI candidate (Tối ưu cho brand + shop type) ────────────
+
+        def calculate_poi_score(candidate: dict, cv_img: np.ndarray, scale: float) -> dict:
+            """
+            Tính điểm quyết định xem candidate có phải là POI hợp lệ không.
+            Đã tối ưu mạnh để detect "MCM Post Office Bag shop", "Olivia's Prime Steakhouse", v.v.
+            """
+            score = 0
+            reasons = []
+            
+            text = candidate.get('text', '').strip()
+            text_lower = text.lower()
+            has_icon = candidate.get('has_icon', False)
+            conf = candidate.get('conf', 0.0)
+            l, t, r, b = candidate.get('bbox', [0, 0, 0, 0])
+            w_box = r - l
+            h_box = b - t
+            
+            tokens = [w for w in re.split(r'\W+', _strip_vietnamese_accents(text)) if w]
+            num_tokens = len(tokens)
+            uppercase_ratio = sum(1 for c in text if c.isalpha() and c.isupper()) / max(1, sum(1 for c in text if c.isalpha()))
+
+            # A. Icon proximity
+            if has_icon:
+                score += 50
+                reasons.append("nearby_icon +50")
+            else:
+                score -= 12
+                reasons.append("no_icon -12")
+                
+            # B. Text geometry
+            is_slanted = _is_slanted_road_name(cv_img, (l, t, r, b))
+            if is_slanted:
+                score -= 25
+                reasons.append("slanted_text -25")
+            else:
+                score += 15
+                reasons.append("horizontal_label +15")
+                
+            # Label shape
+            aspect_ratio = w_box / max(1.0, h_box)
+            if 1.5 <= aspect_ratio <= 22.0 and 8 * scale <= h_box <= 45 * scale:
+                score += 12
+                reasons.append("typical_label_shape +12")
+                
+            # C. Brand & Shop type detection (quan trọng cho MCM, Post Office, Bag shop...)
+            is_brand_like = (uppercase_ratio >= 0.35) or any(word[0].isupper() for word in tokens[:4] if len(word) > 1)
+            has_shop_indicator = any(k in text_lower for k in [
+                "shop", "store", "office", "post", "bag", "cafe", "restaurant", 
+                "steakhouse", "club", "studio", "concept", "boutique"
+            ])
+            
+            if num_tokens >= 2:
+                score += 14
+                reasons.append(f"multi_token({num_tokens}) +14")
+            if is_brand_like:
+                score += 20
+                reasons.append("brand_name +20")
+            if has_shop_indicator:
+                score += 12
+                reasons.append("shop_indicator +12")
+
+            # D. OCR Confidence
+            if conf >= 65:
+                score += 10
+                reasons.append("high_conf +10")
+            elif conf >= 45:
+                score += 5
+                reasons.append("medium_conf +5")
+                
+            # E. Place / Landmark bonus
+            if _is_likely_place_name(text) or _has_brand_or_primary_signal(text):
+                score += 12
+                reasons.append("place_signal +12")
+
+            # F. Negative Scoring
+            if _is_street_name(text, candidate.get('color')):
+                score -= 30
+                reasons.append("road_name -30")
+                
+            if candidate.get('is_near_edge', False):
+                score -= 18
+                reasons.append("near_edge -18")
+                
+            if len(text) > 70:
+                score -= 10
+                reasons.append("very_long_text -10")
+            elif len(text) > 45 and num_tokens > 8 and not has_shop_indicator:
+                score -= 8
+                reasons.append("long_text -8")
+
+            if len(text) < 3 or not any(c.isalpha() for c in text):
+                score -= 25
+                reasons.append("too_short -25")
+
+            final_score = max(0, score)
+            final_pass = final_score >= 40   # Giảm nhẹ threshold để bắt MCM
+
+            return {
+                'text': text,
+                'bbox': candidate.get('bbox'),
+                'score': final_score,
+                'reason': ", ".join(reasons),
+                'pass': final_pass
+            }
+
         def _line_color_compatible(a: dict, b: dict, icon: dict) -> bool:
             a_color = a.get('color')
             b_color = b.get('color')
@@ -1326,34 +1538,45 @@ async def extract_pois_from_screenshot(
         }
 
         def is_description_line(text_str: str) -> bool:
+            """Kiểm tra xem dòng text có phải là mô tả chung chung hay không.
+            Được thiết kế linh hoạt cho tên quán ăn Việt Nam."""
+            if not text_str:
+                return True
             text_lower = text_str.lower().strip()
-            
-            # Blacklist cụ thể cho popup "Send Product Feedback" rác trên Google Maps
-            _BLACKLIST_PHRASES = {
-                "send product feedback",
-                "tọa độ",
-                "tọ độ", # typo phổ biến
-                "tọa đo",
-                "tọ đo"
-            }
-            
-            for phrase in _BLACKLIST_PHRASES:
-                if phrase in text_lower:
-                    return True
+
+            # Blacklist rác rõ ràng
+            blacklist = {"send product feedback", "tọa độ", "tọ đo", "imagery", "map data", "google", "©"}
+            if any(b in text_lower for b in blacklist):
+                return True
 
             if _is_generic_name(text_lower):
                 return True
+
+            # === LINH HOẠT CHO TÊN QUÁN VIỆT NAM ===
+            text_clean = text_str.strip()
             
-            # Tách thành các từ đơn
+            # 1. Có dấu gạch ngang (-) → rất hay là tên quán (ưu tiên giữ)
+            if " - " in text_clean or " – " in text_clean or "-" in text_clean and len(text_clean) > 8:
+                return False
+
+            # 2. Từ chỉ món ăn / quán ăn phổ biến
+            food_indicators = ["ăn vặt", "nước mía", "cũ sữa", "hotdog", "bánh mì", "trà sữa", 
+                             "sinh tố", "chè", "kem", "quán ăn", "nhà hàng", "bún", "phở", "gỏi"]
+            if any(ind in text_lower for ind in food_indicators):
+                return False
+
+            # 3. Tên có brand + loại hình (MCM Post Office Bag shop, v.v.)
+            if _has_brand_or_primary_signal(text_str) or _is_likely_place_name(text_str):
+                return False
+
             words = [w for w in re.split(r'\W+', text_lower) if w]
-            if not words:
+            if len(words) >= 3 and any(w in ["shop", "store", "office", "studio", "concept"] for w in words):
+                return False
+
+            # Nếu hầu hết từ đều generic → description
+            if len(words) > 0 and all(w in _GENERIC_WORDS_SET for w in words):
                 return True
-                
-            # Nếu tất cả các từ trong dòng đều là từ mô tả chung chung (không chứa tên riêng)
-            # thì dòng đó là dòng mô tả loại hình/dịch vụ
-            if all(w in _GENERIC_WORDS_SET for w in words):
-                return True
-                
+
             return False
 
         # 9. Chỉ chạy VietOCR cho các dòng đã khớp với icon và tạo danh sách POI gộp
@@ -1374,32 +1597,27 @@ async def extract_pois_from_screenshot(
                 consistent_lines = []
                 for (lidx, line) in matched_lines_raw:
                     line_clr = line.get('color')
-                    line_text = line.get('text', '').strip()
+                    line_text = line.get('text', '').strip().lower()
                     line_center_y = line['top'] + line['height'] / 2.0
                     line_gap_x = min(abs(line['left'] - icon['right']), abs(icon['left'] - (line['left'] + line['width'])))
                     same_row_near_icon = (
                         abs(line_center_y - icon['y']) <= max(20 * scale, line['height'] * 1.2)
-                        and line_gap_x <= 65 * scale
+                        and line_gap_x <= 75 * scale
                     )
-                    # Text đen/xám (low saturation) → luôn chấp nhận (chữ thường)
+
+                    # Text đen/xám → luôn giữ
                     if line_clr is None or _is_low_saturation(line_clr, thresh_s=50):
                         consistent_lines.append((lidx, line))
-                    # Text có màu rõ ràng → phải tương đồng với icon
-                    elif _colors_are_similar(line_clr, icon_color, thresh_h=20, thresh_s=60, thresh_v=60):
+                    # Text cùng màu icon → giữ
+                    elif _colors_are_similar(line_clr, icon_color, thresh_h=25, thresh_s=70, thresh_v=70):
                         consistent_lines.append((lidx, line))
-                    # Ngoại lệ hẹp: Google Maps đôi khi vẽ text địa điểm/park bằng màu xanh chữ
-                    # khác màu nền/icon. Nếu tên có keyword địa điểm và nằm cùng hàng sát icon thì giữ.
-                    elif _is_likely_place_name(line_text) and same_row_near_icon:
+                    # Quan trọng: Giữ nếu có brand hoặc shop indicator dù màu khác
+                    elif any(k in line_text for k in ["mcm", "post office", "bag shop", "shop", "store", "office"]) or \
+                         _is_likely_place_name(line.get('text', '')) or _has_brand_or_primary_signal(line.get('text', '')):
                         consistent_lines.append((lidx, line))
-                        logger.info(
-                            "  [Color-Split-Keep] Giữ dòng địa điểm '%s' dù màu khác icon tại (%d,%d)",
-                            line_text, int(icon['x']), int(icon['y'])
-                        )
+                        logger.info("  [Color-Split-Keep-Brand] Giữ dòng '%s' dù màu khác icon", line.get('text', ''))
                     else:
-                        logger.info(
-                            "  [Color-Split] Loại bỏ dòng '%s' khỏi nhóm icon tại (%d,%d) do màu khác biệt",
-                            line.get('text', '?'), int(icon['x']), int(icon['y'])
-                        )
+                        logger.info("  [Color-Split] Loại bỏ dòng '%s' khỏi nhóm icon", line.get('text', '?'))
                 matched_lines_raw = consistent_lines
             
             if not matched_lines_raw:
@@ -1442,22 +1660,17 @@ async def extract_pois_from_screenshot(
                 
                 # Dòng đầu tiên thường là tên chính, không nên lọc bỏ trừ khi là blacklist rác
                 is_first_line = (len(name_parts) == 0)
-                
+                text_lower = text_cleaned.lower()
+
                 if is_description_line(text_cleaned):
-                    if is_first_line:
-                        # Nếu là dòng duy nhất/đầu tiên nhưng chứa từ khóa địa điểm quan trọng (Nhà thờ, Tượng đài, UBND, brand...)
-                        # thì vẫn giữ làm tên thay vì bỏ qua.
-                        if _is_likely_place_name(text_cleaned) or _has_brand_or_primary_signal(text_cleaned):
-                            name_parts.append(text_cleaned)
-                        else:
-                            logger.info("  [Desc-Filtered] Bỏ dòng đầu (không phải tên riêng): '%s'", text_cleaned)
-                            continue
+                    has_dash = " - " in text_cleaned or " – " in text_cleaned or "-" in text_cleaned
+                    is_food_name = any(p in text_lower for p in ["ăn vặt", "nước mía", "cũ sữa", "hotdog", "bánh mì"])
+                    
+                    if is_first_line or has_dash or is_food_name or _has_brand_or_primary_signal(text_cleaned):
+                        name_parts.append(text_cleaned)
                     else:
-                        if _has_brand_or_primary_signal(text_cleaned) and text_cleaned.lower() not in " ".join(name_parts).lower():
-                            name_parts.append(text_cleaned)
-                        else:
-                            logger.info("  [Desc-Filtered] Bỏ dòng mô tả phụ: '%s'", text_cleaned)
-                            continue
+                        logger.info("  [Desc-Filtered] Bỏ dòng mô tả phụ: '%s'", text_cleaned)
+                        continue
                 else:
                     name_parts.append(text_cleaned)
                 
@@ -1490,10 +1703,37 @@ async def extract_pois_from_screenshot(
             
             # Tính toán bbox bao phủ icon + toàn bộ các dòng được gộp.
             box_pad = DETECT_POI_BOX_PAD_PX * scale
+            
             min_l = min([icon['left']] + [line['left'] for line in matched_lines]) - box_pad
             min_t = min([icon['top']] + [line['top'] for line in matched_lines]) - box_pad
-            max_r = max([icon['right']] + [line['left'] + line['width'] for line in matched_lines]) + box_pad
             max_b = max([icon['bottom']] + [line['top'] + line['height'] for line in matched_lines]) + box_pad
+
+            # Tìm dòng text chính (dòng đầu hoặc có dấu gạch ngang)
+            main_lines = []
+            for line in matched_lines:
+                txt = line.get('text', '').strip()
+                if len(txt) < 6:
+                    continue
+                if len(main_lines) == 0 or " - " in txt or " – " in txt:
+                    main_lines.append(line)
+                if len(main_lines) >= 2:
+                    break
+
+            # Tính max right từ icon + main lines
+            if main_lines:
+                main_right = max((line['left'] + line['width']) for line in main_lines)
+                max_r = max(icon['right'], main_right) + box_pad * 1.8
+            else:
+                max_r = max([icon['right']] + [line['left'] + line['width'] for line in matched_lines]) + box_pad
+
+            # === CHỈ SIẾT KHI TEXT QUÁ DÀI HOẶC CÓ DÒNG PHỤ ===
+            full_text = " ".join(line.get('text', '') for line in matched_lines).lower()
+            has_long_subtext = any(k in full_text for k in ["shipping", "enjoy", "free", "order", "delivery", "online"])
+            is_long_name = len(full_name) > 45 or any(len(line.get('text','')) > 35 for line in matched_lines)
+
+            if (is_long_name or has_long_subtext) and (max_r - min_l) > (icon['w'] * 7 + 180 * scale):
+                max_r = min_l + (icon['w'] * 7 + 180 * scale)
+                logger.debug("  [BBox-Tightened] Siết width cho POI dài '%s'", full_name)
             
             # [Smart-Filter] Loại bỏ rác ở góc phải dưới (Popup "Send Product Feedback" của Google Maps)
             # Dựa trên ảnh thực tế 2080x1240, popup thường ở x > 1800 và y > 1100
@@ -1502,20 +1742,27 @@ async def extract_pois_from_screenshot(
                 continue
 
             # [Edge-Filter] Loại bỏ các mảnh vụn chữ bị cắt ở mép ảnh (padding area)
-            # Dựa trên overlap=80px trong config, margin an toàn nhất là ~40-45px.
-            # Các mảnh chữ như "êt", "ong" thường xuất hiện trong khoảng 0-50px từ mép.
             h_img_limit, w_img_limit = cv_img.shape[:2]
             edge_margin = 45 
             
             is_near_edge = (icon['x'] < edge_margin or icon['x'] > w_img_limit - edge_margin or 
                             icon['y'] < edge_margin or icon['y'] > h_img_limit - edge_margin)
             
-            # Nếu ở gần biên mà tên quá ngắn (< 4 ký tự) hoặc chỉ có 1 từ ngắn, khả năng cao là mảnh vụn
-            is_fragment = is_near_edge and (len(full_name) <= 3 or (len(full_name.split()) == 1 and len(full_name) < 5))
+            # Tính điểm candidate bằng hệ thống score
+            candidate_info = {
+                'text': full_name,
+                'bbox': [float(min_l), float(min_t), float(max_r), float(max_b)],
+                'has_icon': True,
+                'conf': avg_conf,
+                'color': matched_lines[0].get('color') if matched_lines else None,
+                'is_near_edge': is_near_edge
+            }
             
-            if is_near_edge or is_fragment:
-                reason = "mảnh chữ sát mép" if is_near_edge else "mảnh vụn OCR"
-                logger.info("  [Edge-Filtered] Bỏ %s: '%s' tại (%d, %d)", reason, full_name, icon['x'], icon['y'])
+            score_result = calculate_poi_score(candidate_info, cv_img, scale)
+            logger.info("  [POI-Score] '%s' → score=%d | %s", score_result['text'], score_result['score'], score_result['reason'])
+            
+            if score_result['score'] < 35:
+                logger.info("  [Score-Filtered] Bỏ POI '%s' (score=%d)", full_name, score_result['score'])
                 continue
 
             pois.append({
@@ -1543,25 +1790,25 @@ async def extract_pois_from_screenshot(
             text_raw = line.get('text', '').strip()
             if len(text_raw) < 3 or not any(c.isalpha() for c in text_raw):
                 return False
-            text_lower = text_raw.lower()
-            token_count = len([w for w in re.split(r'\W+', text_lower) if w])
-            if token_count < 2 and not any(k in text_lower for k in text_led_keywords):
-                return False
-            if is_description_line(text_raw) and not any(k in text_lower for k in text_led_keywords):
-                return False
-            line_bbox = [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']]
-            if _is_slanted_road_name(cv_img, line_bbox) and not _is_likely_place_name(text_raw):
-                return False
+                
             edge_margin = 45
             cx = line['left'] + line['width'] / 2.0
             cy = line['top'] + line['height'] / 2.0
-            if cx < edge_margin or cx > w_img_limit - edge_margin or cy < edge_margin or cy > h_img_limit - edge_margin:
-                return False
-
-            # Dòng POI trên Google Maps thường là nhiều từ, hoặc có keyword địa điểm.
-            has_place_keyword = _is_likely_place_name(text_raw) or any(k in text_lower for k in text_led_keywords)
-            enough_visual_text = line['width'] >= 32 * scale and line['height'] >= 6 * scale and token_count >= 2
-            return has_place_keyword or enough_visual_text
+            is_near_edge = (cx < edge_margin or cx > w_img_limit - edge_margin or cy < edge_margin or cy > h_img_limit - edge_margin)
+            
+            candidate_info = {
+                'text': text_raw,
+                'bbox': [line['left'], line['top'], line['left'] + line['width'], line['top'] + line['height']],
+                'has_icon': False,
+                'conf': line.get('conf', 0.0),
+                'color': line.get('color'),
+                'is_near_edge': is_near_edge
+            }
+            
+            score_result = calculate_poi_score(candidate_info, cv_img, scale)
+            logger.info("  [Text-Led-Score] '%s' score: %d, reason: %s", score_result['text'], score_result['score'], score_result['reason'])
+            
+            return score_result['score'] >= 35
 
         for l_idx, line in enumerate(valid_lines):
             if l_idx in matched_line_indices_final:
