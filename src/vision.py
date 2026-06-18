@@ -165,12 +165,58 @@ async def extract_pois_from_screenshot(
         b = box.xyxy[0].cpu().numpy()
         conf = float(box.conf[0].cpu().numpy())
         
-        # Tâm pixel của ICON (nằm ở phía bên trái của bounding box phát hiện bởi YOLO)
+        # Xác định biểu tượng (icon) nằm ở phía bên trái hay bên phải của bounding box
         left = float(b[0])
         top = float(b[1])
+        right = float(b[2])
         bottom = float(b[3])
         height = bottom - top
-        cx = left + height / 2.0  # Icon hình vuông nên rộng = cao
+        icon_size = int(height)
+        
+        h_img, w_img = img.shape[:2]
+        y1_sq, y2_sq = max(0, int(top)), min(h_img, int(bottom))
+        x1_l, x2_l = max(0, int(left)), min(w_img, int(left + icon_size))
+        x1_r, x2_r = max(0, int(right - icon_size)), min(w_img, int(right))
+        
+        left_sq = img[y1_sq:y2_sq, x1_l:x2_l]
+        right_sq = img[y1_sq:y2_sq, x1_r:x2_r]
+        
+        def get_square_score(sq):
+            if sq is None or sq.size == 0:
+                return -999.0
+            try:
+                hsv = cv2.cvtColor(sq, cv2.COLOR_BGR2HSV)
+                s = hsv[:, :, 1]
+                v = hsv[:, :, 2]
+                
+                # Foreground mask: not (Value > 215 and Saturation < 30)
+                fg_mask = ~((v > 215) & (s < 30))
+                
+                # Center 50% region foreground density
+                h_sz, w_sz = sq.shape[:2]
+                cy_min, cy_max = int(0.25 * h_sz), int(0.75 * h_sz)
+                cx_min, cx_max = int(0.25 * w_sz), int(0.75 * w_sz)
+                center_mask = fg_mask[cy_min:cy_max, cx_min:cx_max]
+                center_fg_ratio = np.mean(center_mask) if center_mask.size > 0 else 0.0
+                
+                mean_sat = float(np.mean(s))
+                mean_val = float(np.mean(v))
+                
+                # Combined score: favors saturated colors, dark center region, penalizes background brightness
+                score = mean_sat + 60.0 * center_fg_ratio - 0.2 * mean_val
+                return score
+            except Exception:
+                return -999.0
+                
+        score_left = get_square_score(left_sq)
+        score_right = get_square_score(right_sq)
+        
+        # Nếu điểm số phần bên phải vượt trội (ngưỡng 10.0), icon nằm bên phải
+        if score_right > score_left + 10.0:
+            cx = right - height / 2.0
+        else:
+            cx = left + height / 2.0
+            
         cy = top + height / 2.0
         
         # OCR text dùng logic phóng to 6x
