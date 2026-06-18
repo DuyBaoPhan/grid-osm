@@ -88,6 +88,14 @@ for i, box in enumerate(results[0].boxes.xyxy):
     
     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 3)
     cv2.putText(img, text, (x1, max(y1 - 10, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+    
+    # Vẽ điểm tâm và tọa độ pixel màu vàng (BGR: 0, 255, 255)
+    height = y2 - y1
+    cx = int(x1 + height / 2.0)
+    cy = int(y1 + height / 2.0)
+    cv2.circle(img, (cx, cy), 6, (0, 255, 255), -1)
+    cv2.circle(img, (cx, cy), 7, (0, 0, 0), 1)
+    cv2.putText(img, f"({cx}, {cy})", (cx + 10, cy + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
 # Lưu kết quả ra file
 out_path = os.path.join(screenshot_dir, "TEST_RESULT.png")

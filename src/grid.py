@@ -402,7 +402,7 @@ def pixel_to_gps(
 
 # ── Quick self-test ──────────────────────────────────────────
 if __name__ == "__main__":
-    zoom = 18
+    zoom = 21
     lat, lng = 10.7769, 106.7009
     tx, ty = lat_lng_to_tile(lat, lng, zoom)
     clat, clng = tile_center(tx, ty, zoom)

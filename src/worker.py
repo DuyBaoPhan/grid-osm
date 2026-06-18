@@ -346,28 +346,31 @@ class Worker:
                 if has_ocr_xy:
                     x_val = float(item.get("x"))
                     y_val = float(item.get("y"))
+                    # Quy đổi từ hệ tọa độ ảnh crop về ảnh gốc full viewport
+                    x_phys = x_val + crop_x1
+                    y_phys = y_val + crop_y1
                     poi_lat = None
                     poi_lng = None
                 elif dom_match:
                     # Fallback hiếm: nếu OCR thiếu pixel, dùng DOM.
                     cx = dom_match.get("cx", center_x / scale)
                     cy = dom_match.get("cy", center_y / scale)
-                    x_val = cx * scale - crop_x1
-                    y_val = cy * scale - crop_y1
+                    x_phys = cx * scale
+                    y_phys = cy * scale
                     poi_lat = dom_match["lat"]
                     poi_lng = dom_match["lng"]
                 else:
-                    x_val = center_x
-                    y_val = center_y
+                    x_phys = center_x
+                    y_phys = center_y
                     poi_lat = None
                     poi_lng = None
 
                 # 2. Tính khoảng cách pixel vật lý (distance_pixels) từ tâm
-                distance_pixels = math.sqrt((x_val - center_x)**2 + (y_val - center_y)**2)
+                distance_pixels = math.sqrt((x_phys - center_x)**2 + (y_phys - center_y)**2)
 
                 # 3. Tính bearing từ tâm theo pixel
-                dx = x_val - center_x
-                dy = center_y - y_val  # Trục Oy hướng lên (Bắc) là dương, pixel y đi xuống
+                dx = x_phys - center_x
+                dy = center_y - y_phys  # Trục Oy hướng lên (Bắc) là dương, pixel y đi xuống
                 bearing_rad = math.atan2(dx, dy)
                 bearing_deg = (math.degrees(bearing_rad) + 360.0) % 360.0
 
@@ -385,8 +388,8 @@ class Worker:
                     # Quy đổi kích thước ảnh và vị trí pixel từ vật lý sang CSS pixels trước khi tính toán
                     width_css = img_w / scale
                     height_css = img_h / scale
-                    pixel_x_css = x_val / scale
-                    pixel_y_css = y_val / scale
+                    pixel_x_css = x_phys / scale
+                    pixel_y_css = y_phys / scale
 
                     # Áp dụng công thức pixel_to_gps chính xác tiêu chuẩn Web Mercator
                     poi_lat, poi_lng = pixel_to_gps(
@@ -401,8 +404,8 @@ class Worker:
                     )
                     
                     logger.info(
-                        "  [GeoPixelExact] Resolved '%s' from OCR pixel center → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
-                        name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
+                        "  [GeoPixelExact] Resolved '%s' from OCR pixel center → x=%d y=%d (phys_x=%d phys_y=%d) dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
+                        name, int(item.get("x", 0)), int(item.get("y", 0)), int(x_phys), int(y_phys), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
                     )
                 else:
                     logger.info(

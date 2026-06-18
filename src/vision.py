@@ -165,9 +165,13 @@ async def extract_pois_from_screenshot(
         b = box.xyxy[0].cpu().numpy()
         conf = float(box.conf[0].cpu().numpy())
         
-        # Tâm pixel để tính GPS
-        cx = float((b[0] + b[2]) / 2.0)
-        cy = float((b[1] + b[3]) / 2.0)
+        # Tâm pixel của ICON (nằm ở phía bên trái của bounding box phát hiện bởi YOLO)
+        left = float(b[0])
+        top = float(b[1])
+        bottom = float(b[3])
+        height = bottom - top
+        cx = left + height / 2.0  # Icon hình vuông nên rộng = cao
+        cy = top + height / 2.0
         
         # OCR text dùng logic phóng to 6x
         text = _recognize_text_crop_vietocr(img, b.tolist())
@@ -198,7 +202,7 @@ async def extract_pois_from_screenshot(
     return pois, False
 
 def draw_detections(image_bytes: bytes, pois: List[dict]) -> bytes:
-    """Vẽ box đỏ và text lên ảnh (theo logic debug của USER)."""
+    """Vẽ box đỏ, text và tọa độ pixel (x, y) lên ảnh (theo logic debug của USER)."""
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:
@@ -214,6 +218,16 @@ def draw_detections(image_bytes: bytes, pois: List[dict]) -> bytes:
         cv2.rectangle(img, (l, t), (l + w, t + h), (0, 0, 255), 3)
         # Vẽ tên XANH (BGR: 255, 0, 0)
         cv2.putText(img, name, (l, max(t - 10, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+        
+        # Vẽ điểm tâm và tọa độ pixel màu vàng (BGR: 0, 255, 255)
+        cx = p.get("x")
+        cy = p.get("y")
+        if cx is not None and cy is not None:
+            cx_i, cy_i = int(cx), int(cy)
+            cv2.circle(img, (cx_i, cy_i), 6, (0, 255, 255), -1)  # Circle
+            cv2.circle(img, (cx_i, cy_i), 7, (0, 0, 0), 1)       # Outline for contrast
+            coord_str = f"({cx_i}, {cy_i})"
+            cv2.putText(img, coord_str, (cx_i + 10, cy_i + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
         
     _, buf = cv2.imencode(".png", img)
     return buf.tobytes()
