@@ -36,7 +36,7 @@ from config import (
     POI_CROPS_DIR,
 )
 from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
-from vision import extract_pois_from_screenshot, remove_background, draw_detections, enhance_for_detection, save_poi_crop
+from src.vision import extract_pois_from_screenshot, draw_detections, enhance_for_detection
 
 logger = logging.getLogger(__name__)
 
@@ -285,26 +285,16 @@ class Worker:
         # Detect-first pipeline: giữ nguyên nền bản đồ gốc để detect chính xác nhất.
         enhanced_screenshot = enhance_for_detection(raw_screenshot)
 
-        # Nhận diện POI trên ảnh enhanced nhẹ, chưa khử nền trong POI bbox.
+        # Nhận diện POI bằng YOLOv8 + VietOCR (Dùng ảnh đã CROP để tọa độ khớp với ảnh lưu)
         poi_names, outside_district = await extract_pois_from_screenshot(
-            enhanced_screenshot, strict_bbox, tx=tx, ty=ty, zoom=SCREENSHOT_ZOOM, img_metadata=img_metadata
+            compressed_screenshot, tx=tx, ty=ty, img_metadata=img_metadata
         )
-        logger.info("  [2/2] OCR Vision done (detect-first, no background removal yet).")
+        logger.info("  [2/2] YOLOv8 + VietOCR Detection Done.")
 
-        # Lưu screenshot debug: vẽ khung trên ảnh gốc/compressed để kiểm tra bbox đúng với map thực tế.
+        # Lưu screenshot: vẽ khung đỏ trực tiếp lên ảnh để giám sát
         if SAVE_SCREENSHOTS:
-            crop_x = img_metadata.get("crop_x1", 0)
-            crop_y = img_metadata.get("crop_y1", 0)
-            final_screenshot = draw_detections(compressed_screenshot, poi_names, crop_x, crop_y, draw_text=False)
-            await self._save_screenshot(final_screenshot, tx, ty)
-
-            # Lưu từng mảnh POI crop
-            if SAVE_POI_CROPS:
-                for idx, poi in enumerate(poi_names):
-                    safe_name = "".join(c for c in poi["name"] if c.isalnum() or c in (" ", "_")).strip().replace(" ", "_")
-                    crop_filename = f"{tx}_{ty}_{idx}_{safe_name}.png"
-                    crop_path = os.path.join(POI_CROPS_DIR, crop_filename)
-                    save_poi_crop(compressed_screenshot, poi, crop_path, crop_x, crop_y)
+            final_img = draw_detections(compressed_screenshot, poi_names)
+            await self._save_screenshot(final_img, tx, ty)
 
         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
         await self._close_page()
@@ -732,8 +722,8 @@ class Worker:
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 window.dispatchEvent(new Event('resize'));
 
-                // ── 6. Chờ 10 giây cho tile zoom 21 load đầy đủ ─────────────────────────
-                await new Promise(resolve => setTimeout(resolve, 10000));
+                // ── 6. Chờ lâu hơn cho map load (tăng từ 10s lên 20s vì ảnh đang trắng) ─────────
+                await new Promise(resolve => setTimeout(resolve, 20000));
 
                 // ── 7. Dừng observer + interval, chạy hide lần cuối ─────────────────────
                 clearInterval(hideInterval);

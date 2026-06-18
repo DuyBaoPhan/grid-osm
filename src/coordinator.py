@@ -510,7 +510,7 @@ def _deduplicate_pois(pois: List[dict]) -> List[dict]:
     Loại bỏ các POI trùng lặp dựa trên khoảng cách địa lý và độ tương đồng tên.
     Fix 6: Sử dụng similarity ratio thay vì substring đơn giản để tránh gộp nhầm.
     """
-    from vision import _strip_vietnamese_accents
+    from src.vision import _strip_vietnamese_accents
     import math
     
     def clean_name(name: str) -> str:

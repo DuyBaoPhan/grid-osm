@@ -14,7 +14,7 @@ OLLAMA_API_BASE   = "http://localhost:11434/v1"
 OLLAMA_MODEL      = "qwen2.5vl:3b"           
 
 # ── Worker ───────────────────────────────────────────────────
-NUM_WORKERS            = 1              # Để 1 worker cho độ ổn định tối đa (tránh quá tải GPU/VRAM khi gọi Ollama song song)
+NUM_WORKERS            = 1              # Tăng lên 4 worker để chụp nhanh hơn theo yêu cầu người dùng
 DELAY_BETWEEN_REQ      = 1.5            # giây nghỉ giữa mỗi tile
 MAX_RETRIES            = 2              # số lần retry khi tile lỗi
 BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
@@ -62,6 +62,11 @@ LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING
 OCR_ENGINE = "vietocr"                 # vietocr | tesseract
 VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
 VIETOCR_DEVICE = "cpu"                 # cpu | cuda
+VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
+OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
+
+# ── YOLOv8 POI Detection ──────────────────────────────────────
+YOLO_MODEL_PATH = str(BASE_DIR / "model" / "best.pt")
 VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
 OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
 
