@@ -311,22 +311,66 @@ const poiLayerGroup = L.layerGroup().addTo(map);
 
 function renderPois(poisList) {{
   poiLayerGroup.clearLayers();
+  if (!poisList) return;
+
+  // Dịch chuyển nhẹ các marker quá gần nhau để hiển thị toàn bộ
+  const offsetScale = 0.000035; // ~4m
+  const coordinatesRegistry = {{}};
+  
   poisList.forEach(poi => {{
-    L.circleMarker([poi.lat, poi.lng], {{
+    let lat = poi.lat;
+    let lng = poi.lng;
+    const key = `${{lat.toFixed(5)}}_${{lng.toFixed(5)}}`;
+    if (!coordinatesRegistry[key]) {{
+      coordinatesRegistry[key] = [];
+    }}
+    coordinatesRegistry[key].push(poi);
+  }});
+  
+  Object.keys(coordinatesRegistry).forEach(key => {{
+    const list = coordinatesRegistry[key];
+    const n = list.length;
+    
+    if (n === 1) {{
+      const poi = list[0];
+      drawMarker(poi.lat, poi.lng, poi, 1);
+    }} else {{
+      list.forEach((poi, index) => {{
+        const angle = (index * 2 * Math.PI) / n;
+        const distance = offsetScale * (1 + Math.floor(index / 8) * 0.5);
+        const newLat = poi.lat + Math.sin(angle) * distance;
+        const newLng = poi.lng + Math.cos(angle) * distance;
+        drawMarker(newLat, newLng, poi, n);
+      }});
+    }}
+  }});
+  
+  function drawMarker(lat, lng, poi, clusterSize) {{
+    const marker = L.circleMarker([lat, lng], {{
       radius: 6,
       color: '#0f172a',
       weight: 1.5,
       opacity: 1.0,
-      fillColor: '#f43f5e',
+      fillColor: clusterSize > 1 ? '#ff3355' : '#f43f5e',
       fillOpacity: 0.95
-    }}).addTo(poiLayerGroup).bindPopup(`
+    }}).addTo(poiLayerGroup);
+    
+    let popupContent = `
       <div style="font-family: 'Segoe UI', sans-serif; color: #0f172a; padding: 2px 0; min-width: 150px;">
         <span style="font-size: 10px; font-weight: 700; color: #f43f5e; text-transform: uppercase; letter-spacing: 0.05em;">${{poi.type || 'Địa điểm'}}</span>
-        <h4 style="margin: 4px 0 2px 0; font-size: 13px; font-weight: 700; line-height: 1.3;">${{poi.name}}</h4>
-        <span style="font-size: 10px; color: #64748b;">Tọa độ: ${{poi.lat.toFixed(6)}}, ${{poi.lng.toFixed(6)}}</span>
-      </div>
-    `);
-  }});
+        <h4 style="margin: 4px 0 2px 0; font-size: 13px; font-weight: 600; line-height: 1.3; color: #0f172a;">${{poi.name}}</h4>
+    `;
+    if (poi.sub_info) {{
+      popupContent += `<h4 style="margin: 2px 0 0 0; font-size: 13px; font-weight: 600; line-height: 1.3; color: #0f172a;">${{poi.sub_info}}</h4>`;
+    }}
+    popupContent += `<span style="font-size: 10px; color: #64748b; display: block; margin-top: 6px;">Tọa độ: ${{poi.lat.toFixed(6)}}, ${{poi.lng.toFixed(6)}}</span>`;
+    if (clusterSize > 1) {{
+      popupContent += `<br/><span style="font-size: 9px; font-weight: 600; color: #ff3355; background: #fee2e2; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 4px;">⚠️ Trùng/gần tọa độ (Đã tách xoắn ốc)</span>`;
+    }}
+    popupContent += `</div>`;
+    
+    marker.bindPopup(popupContent);
+  }}
 }}
 
 renderPois(poisData);
@@ -369,6 +413,15 @@ map.on('zoomend', () => {{
     }}
   }}
 
+  function updateMapData(data) {{
+    if (data.ts !== lastTs) {{
+      lastTs = data.ts;
+      renderGeoJson(data.geojson);
+      renderPois(data.pois_list);
+      updateUI(data);
+    }}
+  }}
+
   async function checkStatus() {{
     if (window.location.protocol === 'file:') {{
       // Dùng thẻ script động để bypass CORS bảo mật của file://
@@ -382,10 +435,7 @@ map.on('zoomend', () => {{
       script.onload = function() {{
         if (window.MAP_DATA) {{
           setLive(true);
-          const data = window.MAP_DATA;
-          if (data.ts !== lastTs) {{
-            window.location.reload();
-          }}
+          updateMapData(window.MAP_DATA);
         }} else {{
           setLive(false);
         }}
@@ -401,9 +451,7 @@ map.on('zoomend', () => {{
         if (!resp.ok) {{ setLive(false); return; }}
         const data = await resp.json();
         setLive(true);
-        if (data.ts !== lastTs) {{
-          window.location.reload();
-        }}
+        updateMapData(data);
       }} catch (e) {{
         setLive(false);
       }}
@@ -476,8 +524,14 @@ def build_and_save(
         lng = p.get("approx_lng")
         name = p.get("name", "Không rõ tên")
         if lat is not None and lng is not None:
+            # Tách dòng đầu tiên làm tên chính, các dòng sau làm chú thích phụ
+            parts = [part.strip() for part in name.split(" / ") if part.strip()]
+            main_name = parts[0] if parts else "Không rõ tên"
+            sub_info = ", ".join(parts[1:]) if len(parts) > 1 else ""
+            
             formatted_pois.append({
-                "name": name,
+                "name": main_name,
+                "sub_info": sub_info,
                 "lat": lat,
                 "lng": lng,
                 "type": p.get("type", "Địa điểm")
@@ -498,7 +552,8 @@ def build_and_save(
             "pending": pending,
             "pois": poi_count,
             "pct": pct,
-            "geojson": geojson_obj
+            "geojson": geojson_obj,
+            "pois_list": formatted_pois
         }
         tmp = map_data_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
