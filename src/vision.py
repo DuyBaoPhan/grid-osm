@@ -294,28 +294,36 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         return ""
 
     h_img, w_img = cv_img.shape[:2]
-    x1, y1, x2, y2 = map(int, bbox)
+    x1_orig, y1_orig, x2_orig, y2_orig = map(int, bbox)
     
-    # 1. Enlarge bbox (Padding 10px theo code USER)
+    # 1. Dò tìm ranh giới icon trên crop gốc chưa pad để chính xác tuyệt đối
+    original_box_crop = cv_img[max(0, y1_orig):min(h_img, y2_orig), max(0, x1_orig):min(w_img, x2_orig)]
+    offset = _find_icon_boundary(original_box_crop, icon_side)
+    
+    # 2. Enlarge bbox (Padding 10px theo code USER)
     pad = 10
-    x1 = max(0, x1 - pad)
-    y1 = max(0, y1 - pad)
-    x2 = min(w_img, x2 + pad)
-    y2 = min(h_img, y2 + pad)
+    x1 = max(0, x1_orig - pad)
+    y1 = max(0, y1_orig - pad)
+    x2 = min(w_img, x2_orig + pad)
+    y2 = min(h_img, y2_orig + pad)
 
     crop = cv_img[y1:y2, x1:x2]
     if crop.size == 0:
         return ""
 
-    # Loại bỏ phần biểu tượng (icon) khỏi crop trước khi chạy VietOCR để tránh bị nhận diện nhầm thành các ký tự rác
+    # 3. Loại bỏ phần biểu tượng (icon) khỏi crop đã pad sử dụng offset đã dịch chuyển
     try:
-        offset = _find_icon_boundary(crop, icon_side)
+        # Tính toán offset trong hệ tọa độ của crop đã pad
+        # Cạnh trái dịch chuyển sang trái x1_orig - x1 pixel (chính là pad, trừ phi chạm biên ảnh)
+        shift_x = x1_orig - x1
+        shift_y = y1_orig - y1
+        
         if icon_side == "left":
-            crop = crop[:, max(0, offset - 2):]
+            crop = crop[:, max(0, offset + shift_x - 2):]
         elif icon_side == "right":
-            crop = crop[:, :max(1, crop.shape[1] - offset + 2)]
+            crop = crop[:, :max(1, (x2_orig - x1) - offset + 2)]
         elif icon_side == "top":
-            crop = crop[max(0, offset - 2):, :]
+            crop = crop[max(0, offset + shift_y - 2):, :]
     except Exception as e:
         logger.debug("Lỗi loại bỏ icon trước OCR: %s", e)
 
@@ -328,23 +336,18 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             if line_crop.size == 0:
                 continue
                 
-            # 2. Convert to grayscale
-            gray = cv2.cvtColor(line_crop, cv2.COLOR_BGR2GRAY)
-            
-            # 3. Resize 6x (Theo code USER)
-            gray = cv2.resize(
-                gray,
+            # Tiền xử lý mới: Đổi từ BGR sang RGB, phóng to 2x (thay vì 6x), và không dùng GaussianBlur
+            rgb_line = cv2.cvtColor(line_crop, cv2.COLOR_BGR2RGB)
+            rgb_2x = cv2.resize(
+                rgb_line,
                 None,
-                fx=6,
-                fy=6,
+                fx=2,
+                fy=2,
                 interpolation=cv2.INTER_CUBIC
             )
             
-            # 4. Denoise nhẹ bằng GaussianBlur
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            
-            # 5. Predict
-            pil_img = Image.fromarray(gray)
+            # Predict trực tiếp trên ảnh màu sắc nét
+            pil_img = Image.fromarray(rgb_2x)
             text = predictor.predict(pil_img)
             text_str = (text or "").strip()
             if text_str:
@@ -536,9 +539,9 @@ def _find_icon_boundary(crop_img: np.ndarray, icon_side: str) -> int:
     - Kết quả luôn được clamp vào [MIN_PX, MAX_PX] để không bao giờ cắt quá mức
     - Nếu không phát hiện icon rõ ràng, fallback về DEFAULT_PX (20px) - bảo thủ, an toàn
     """
-    DEFAULT_PX = 20   # fallback: cắt 20px luôn an toàn (icon nhỏ nhất ~18px)
-    MIN_PX     = 16   # icon không thể nhỏ hơn 16px trên zoom 21
-    MAX_PX     = 36   # icon không thể rộng hơn 36px trên zoom 21
+    DEFAULT_PX = 22   # fallback: cắt 22px (icon ~20px, kết hợp gap ~4px)
+    MIN_PX     = 20   # giữ lại tối thiểu 20px để sạch icon
+    MAX_PX     = 24   # cắt tối đa 24px để không phạm vào chữ (kể cả chữ có màu như UBND)
 
     if crop_img is None or crop_img.size == 0:
         return DEFAULT_PX
@@ -548,8 +551,8 @@ def _find_icon_boundary(crop_img: np.ndarray, icon_side: str) -> int:
         v = hsv[:, :, 2]
         h_sz, w_sz = crop_img.shape[:2]
 
-        # Ngưỡng rất chặt: chỉ pixel có màu rực rỡ thực sự mới được tính là icon
-        SAT_THRESH   = 100  # icon sat > 120-200; chữ màu xanh sat ~40-70 → bị loại
+        # Ngưỡng thấp hơn (35) để nhận diện được các icon màu nhạt/desaturated (như UBND, xám, xanh nhạt)
+        SAT_THRESH   = 35  # icon sat > 120-200; chữ màu xanh sat ~40-70 → bị loại
         VAL_MIN      = 60   # loại shadow
         VAL_MAX      = 230  # loại nền trắng
         FG_RATIO     = 0.25 # ≥25% pixel trong cột phải là icon-colored
