@@ -66,7 +66,7 @@ VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhi�
 OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
 
 # ── YOLOv8 POI Detection ──────────────────────────────────────
-YOLO_MODEL_PATH = str(BASE_DIR / "model" / "best.pt")
+YOLO_MODEL_PATH = str(BASE_DIR / "model" / "bestv3.pt")
 VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
 OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
 
