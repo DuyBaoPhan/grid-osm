@@ -76,6 +76,8 @@ def _get_vietocr_predictor():
         logger.warning("Không load được VietOCR: %s", exc)
         return None
 
+
+
 def _strip_vietnamese_accents(s: str) -> str:
     """Loại bỏ hoàn toàn dấu tiếng Việt và đưa về chữ thường (Dùng cho deduplicate)."""
     s = s.lower()
@@ -343,12 +345,11 @@ def _clean_junk_words(s: str) -> str:
 
 def detect_text_area(
     crop_img: np.ndarray,
-    scale: float = 1.0,
-    cy_local: Optional[float] = None,
-    icon_side: str = "left"
+    scale: float = 1.0
 ) -> Tuple[int, int, int, int]:
     """
-    Sử dụng OpenCV contours để định vị vùng chữ trong ảnh crop POI.
+    Sử dụng OpenCV contours được nới lỏng để định vị vùng chữ trong ảnh crop POI.
+    Tự động lọc bỏ biểu tượng ở biên (trái/phải) bằng giải thuật hình học.
     Trả về tọa độ chữ cục bộ trong crop_img: (x1, y1, x2, y2)
     """
     h_crop, w_crop = crop_img.shape[:2]
@@ -366,18 +367,16 @@ def detect_text_area(
     
     char_boxes = []
     h_min = max(3, int(4 * scale))
-    h_max = int(18 * scale)
     w_min = max(1, int(1 * scale))
-    w_max = int(24 * scale)
     area_min = max(2, int(4 * scale * scale))
-    area_max = int(250 * scale * scale)
     
     for ctr in contours:
         x, y, w, h = cv2.boundingRect(ctr)
         area = cv2.contourArea(ctr)
         aspect_ratio = w / float(h) if h > 0 else 0
-        if (h_min <= h <= h_max) and (w_min <= w <= w_max):
-            if (area_min <= area <= area_max) and (0.05 <= aspect_ratio <= 4.0):
+        # Relaxed filters: no h_max, w_max, area_max, aspect_ratio <= 4.0 limits
+        if (h >= h_min) and (w >= w_min):
+            if (area >= area_min) and (aspect_ratio >= 0.05):
                 char_boxes.append((x, y, w, h))
                 
     if not char_boxes:
@@ -401,10 +400,8 @@ def detect_text_area(
 
     for i in range(n):
         x1, y1, w1, h1 = char_boxes[i]
-        cy1 = y1 + h1 / 2.0
         for j in range(i + 1, n):
             x2, y2, w2, h2 = char_boxes[j]
-            cy2 = y2 + h2 / 2.0
             
             if x1 <= x2:
                 dist_x = x2 - (x1 + w1)
@@ -427,14 +424,35 @@ def detect_text_area(
         
     valid_components = []
     for root, idxs in components.items():
-        c_xmin = min(b[0] for b in idxs)
-        c_xmax = max(b[0] + b[2] for b in idxs)
-        c_ymin = min(b[1] for b in idxs)
-        c_ymax = max(b[1] + b[3] for b in idxs)
-        c_w = c_xmax - c_xmin
-        c_h = c_ymax - c_ymin
-        c_count = len(idxs)
-        if c_count >= 3 and c_w >= int(25 * scale):
+        # Sắp xếp các contour theo chiều ngang từ trái qua phải
+        sorted_boxes = sorted(idxs, key=lambda b: b[0])
+        
+        # 1. Kiểm tra và loại bỏ icon ở bên trái (nếu có)
+        if len(sorted_boxes) >= 3:
+            b_first = sorted_boxes[0]
+            b_second = sorted_boxes[1]
+            gap_left = b_second[0] - (b_first[0] + b_first[2])
+            # Nếu contour đầu tiên to/rộng cả chiều ngang lẫn dọc (>= 13px) và có khoảng trống với chữ
+            if b_first[2] >= int(13 * scale) and b_first[3] >= int(13 * scale) and gap_left >= int(3 * scale):
+                sorted_boxes.pop(0)
+        
+        # 2. Kiểm tra và loại bỏ icon ở bên phải (nếu có)
+        if len(sorted_boxes) >= 3:
+            b_last = sorted_boxes[-1]
+            b_prev = sorted_boxes[-2]
+            gap_right = b_last[0] - (b_prev[0] + b_prev[2])
+            if b_last[2] >= int(13 * scale) and b_last[3] >= int(13 * scale) and gap_right >= int(3 * scale):
+                sorted_boxes.pop()
+        
+        # Nếu sau khi loại bỏ icon vẫn còn ít nhất 1 hộp hợp lệ (đáp ứng từ ngắn hoặc dính nét)
+        if len(sorted_boxes) >= 1:
+            c_xmin = min(b[0] for b in sorted_boxes)
+            c_xmax = max(b[0] + b[2] for b in sorted_boxes)
+            c_ymin = min(b[1] for b in sorted_boxes)
+            c_ymax = max(b[1] + b[3] for b in sorted_boxes)
+            c_w = c_xmax - c_xmin
+            c_h = c_ymax - c_ymin
+            
             valid_components.append({
                 "xmin": c_xmin,
                 "xmax": c_xmax,
@@ -443,34 +461,8 @@ def detect_text_area(
                 "w": c_w,
                 "h": c_h,
                 "cy": (c_ymin + c_ymax) / 2.0,
-                "boxes": idxs
+                "boxes": sorted_boxes
             })
-
-    # Lọc bỏ các component (dòng chữ) thuộc về địa điểm khác dựa vào cy_local (tọa độ y của icon trong crop)
-    if cy_local is not None and valid_components:
-        filtered_components = []
-        if icon_side in ("left", "right"):
-            # Đối với icon nằm ngang hàng với dòng 1:
-            # Dòng 1 nằm ở tầm cy_local. Dòng 2, 3 nằm dưới đó.
-            # Dòng của địa điểm khác thường cách xa cy_local (đỉnh dòng dưới ymin > cy_local + 42*scale)
-            # Dòng phía trên nếu bị quét nhầm có ymax < cy_local - 15*scale
-            min_y = cy_local - 15 * scale
-            max_y = cy_local + 42 * scale
-        else:
-            # icon_side == "top": icon ở trên cùng, text ở dưới icon.
-            # Dòng của địa điểm khác ở dưới có ymin > cy_local + 58*scale
-            # Dòng phía trên nếu bị quét nhầm có ymax < cy_local - 8*scale
-            min_y = cy_local - 8 * scale
-            max_y = cy_local + 58 * scale
-            
-        for c in valid_components:
-            # c["ymin"] là đỉnh của dòng, c["ymax"] là đáy của dòng
-            if c["ymax"] >= min_y and c["ymin"] <= max_y:
-                filtered_components.append(c)
-        
-        # Chỉ áp dụng nếu sau khi lọc vẫn còn ít nhất 1 dòng, tránh bị rỗng hoàn toàn
-        if filtered_components:
-            valid_components = filtered_components
             
     if not valid_components:
         x_min = min(b[0] for b in char_boxes)
@@ -481,13 +473,13 @@ def detect_text_area(
         # Sắp xếp các dòng theo chiều dọc y từ trên xuống
         valid_components.sort(key=lambda c: c["cy"])
         
-        # Tìm anchor component gần vị trí icon dọc nhất (hoặc tâm dọc của crop nếu không có cy_local)
-        ref_y = cy_local if cy_local is not None else (h_crop / 2.0)
+        # Tìm anchor component gần tâm dọc nhất của crop (nhãn chính)
+        ref_y = h_crop / 2.0
         anchor_idx = min(range(len(valid_components)), key=lambda idx: abs(valid_components[idx]["cy"] - ref_y))
         
         # Lan truyền lên trên và xuống dưới để nhận các dòng chữ liên tục có khoảng cách nhỏ
         kept_components = [valid_components[anchor_idx]]
-        max_gap = int(12 * scale)  # Khoảng cách dòng tối đa cho phép trong cùng 1 POI
+        max_gap = int(12 * scale)
         
         # Đi lên trên từ anchor
         curr_idx = anchor_idx
@@ -544,11 +536,31 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     if raw_crop.size == 0:
         return ""
 
-    cy_local = None
-    if cy is not None:
+    # Tiền xử lý làm sạch nền:
+    # 1. Tính màu nền chủ đạo bằng median BGR của raw_crop
+    bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
+
+    # 2. Tạo bản sao sạch và tô đè màu nền lên vùng padding 10px ngoài
+    crop_clean = raw_crop.copy()
+    h_rc, w_rc = crop_clean.shape[:2]
+    border_w = int(10 * scale)
+    if border_w > 0:
+        if border_w < h_rc:
+            crop_clean[0:border_w, :] = bg_color
+            crop_clean[h_rc - border_w:, :] = bg_color
+        if border_w < w_rc:
+            crop_clean[:, 0:border_w] = bg_color
+            crop_clean[:, w_rc - border_w:] = bg_color
+
+    # 3. Vẽ đè vòng tròn màu nền lên vùng icon nếu có tọa độ cx, cy
+    if cx is not None and cy is not None:
+        cx_local = cx - x1
         cy_local = cy - y1
-    tx1, ty1, tx2, ty2 = detect_text_area(raw_crop, scale, cy_local=cy_local, icon_side=icon_side)
-    crop = raw_crop[ty1:ty2, tx1:tx2]
+        r = int(16 * scale)
+        cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
+
+    tx1, ty1, tx2, ty2 = detect_text_area(crop_clean, scale)
+    crop = crop_clean[ty1:ty2, tx1:tx2]
     if crop.size == 0:
         return ""
 
@@ -561,8 +573,19 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             if line_crop.size == 0:
                 continue
                 
+            # Thêm viền sạch (padding) xung quanh ảnh với màu nền này để tránh lỗi biên của OCR
+            bg_color = line_crop[0, 0].tolist()
+            pad_h = max(4, int(6 * scale))
+            pad_w = max(8, int(12 * scale))
+            padded_line = cv2.copyMakeBorder(
+                line_crop,
+                pad_h, pad_h, pad_w, pad_w,
+                cv2.BORDER_CONSTANT,
+                value=bg_color
+            )
+            
             # Tiền xử lý mới: Đổi từ BGR sang RGB, phóng to 2x (thay vì 6x), và không dùng GaussianBlur
-            rgb_line = cv2.cvtColor(line_crop, cv2.COLOR_BGR2RGB)
+            rgb_line = cv2.cvtColor(padded_line, cv2.COLOR_BGR2RGB)
             rgb_2x = cv2.resize(
                 rgb_line,
                 None,
@@ -781,6 +804,7 @@ async def extract_pois_from_screenshot(
             filename = f"tile_{tx}_{ty}_poi_{i}_{safe_name}.png"
             output_path = os.path.join(POI_CROPS_DIR, filename)
             save_poi_crop(screenshot_bytes, poi_item, output_path, scale)
+            
     return pois, False
 
 def draw_detections(image_bytes: bytes, pois: List[dict]) -> bytes:
@@ -927,14 +951,33 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
         if raw_crop.size == 0:
             return
 
-        cy_local = None
-        cy_global = poi.get("y")
-        if cy_global is not None:
-            cy_local = cy_global - y1
-        icon_side = poi.get("icon_side", "left")
+        # Tiền xử lý làm sạch nền:
+        # 1. Tính màu nền chủ đạo bằng median BGR của raw_crop
+        bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
 
-        tx1, ty1, tx2, ty2 = detect_text_area(raw_crop, scale, cy_local=cy_local, icon_side=icon_side)
-        crop = raw_crop[ty1:ty2, tx1:tx2]
+        # 2. Tạo bản sao sạch và tô đè màu nền lên vùng padding 10px ngoài
+        crop_clean = raw_crop.copy()
+        h_rc, w_rc = crop_clean.shape[:2]
+        border_w = int(10 * scale)
+        if border_w > 0:
+            if border_w < h_rc:
+                crop_clean[0:border_w, :] = bg_color
+                crop_clean[h_rc - border_w:, :] = bg_color
+            if border_w < w_rc:
+                crop_clean[:, 0:border_w] = bg_color
+                crop_clean[:, w_rc - border_w:] = bg_color
+
+        # 3. Vẽ đè vòng tròn màu nền lên vùng icon nếu có tọa độ cx, cy trong poi
+        cx = poi.get("x")
+        cy = poi.get("y")
+        if cx is not None and cy is not None:
+            cx_local = cx - x1
+            cy_local = cy - y1
+            r = int(16 * scale)
+            cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
+
+        tx1, ty1, tx2, ty2 = detect_text_area(crop_clean, scale)
+        crop = crop_clean[ty1:ty2, tx1:tx2]
         if crop.size > 0:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             cv2.imwrite(output_path, crop)
