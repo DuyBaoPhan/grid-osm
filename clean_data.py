@@ -181,7 +181,7 @@ def export_json(data: list, path: str) -> None:
     # Chỉ giữ các field cần thiết
     clean = [
         {
-            "name":             item["name"].strip(),
+            "name":             re.sub(r"\s+", " ", item["name"].replace("/", " ")).strip(),
             "lat":              item.get("approx_lat"),
             "lng":              item.get("approx_lng"),
             "tile_x":           item.get("tile_x"),
@@ -204,7 +204,7 @@ def export_csv(data: list, path: str) -> None:
         writer.writeheader()
         for item in data:
             writer.writerow({
-                "name":             item["name"].strip(),
+                "name":             re.sub(r"\s+", " ", item["name"].replace("/", " ")).strip(),
                 "lat":              item.get("approx_lat", ""),
                 "lng":              item.get("approx_lng", ""),
                 "tile_x":           item.get("tile_x", ""),

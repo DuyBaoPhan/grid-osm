@@ -91,6 +91,8 @@ def _strip_vietnamese_accents(s: str) -> str:
     return s
 
 def _clean_spelling(text: str) -> str:
+    # Loại bỏ các ký tự dấu nháy kép, nháy đơn, backtick và dấu gạch chéo ngược
+    text = re.sub(r"[\"\'`\\]", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 

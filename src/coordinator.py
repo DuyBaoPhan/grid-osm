@@ -519,22 +519,13 @@ def _deduplicate_pois(pois: List[dict]) -> List[dict]:
         return "".join(c for c in s if c.isalnum())
 
     def name_similarity(a: str, b: str) -> float:
-        """Tính tỷ lệ ký tự chung giữa 2 tên (0.0 → 1.0)."""
+        """Tính tỷ lệ tương đồng chuỗi giữa 2 tên bằng SequenceMatcher."""
         if not a or not b:
             return 0.0
         if a == b:
             return 1.0
-        # Tỷ lệ trùng dựa trên longest common subsequence đơn giản
-        shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-        if shorter in longer:
-            # Substring match: chỉ coi là trùng nếu tên ngắn >= 50% tên dài
-            return len(shorter) / len(longer)
-        # Character overlap ratio
-        from collections import Counter
-        c1 = Counter(shorter)
-        c2 = Counter(longer)
-        common = sum((c1 & c2).values())
-        return common / max(len(longer), 1)
+        import difflib
+        return difflib.SequenceMatcher(None, a, b).ratio()
 
     # Sắp xếp các POI theo chiều dài tên giảm dần để ưu tiên giữ tên đầy đủ hơn
     sorted_pois = sorted(pois, key=lambda p: len(p.get("name", "")), reverse=True)

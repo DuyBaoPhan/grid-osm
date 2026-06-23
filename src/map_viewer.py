@@ -186,6 +186,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     border-radius: 6px; color: #e2e8f0;
     font-size: 12px; padding: 4px 8px; white-space: nowrap;
   }}
+  .poi-label-tooltip {{
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: 1px solid rgba(15, 23, 42, 0.15) !important;
+    border-radius: 5px !important;
+    color: #0f172a !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    padding: 2px 6px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12) !important;
+    white-space: nowrap !important;
+  }}
+  .leaflet-tooltip-left.poi-label-tooltip::before {{
+    border-left-color: rgba(255, 255, 255, 0.95) !important;
+  }}
+  .leaflet-tooltip-right.poi-label-tooltip::before {{
+    border-right-color: rgba(255, 255, 255, 0.95) !important;
+  }}
 
   .btn-refresh {{
     display: block; width: 100%; margin-top: 14px;
@@ -307,51 +324,24 @@ renderGeoJson(geojson);
 
 // Vẽ các địa điểm (POIs) đã tìm thấy
 const poisData = {pois_data};
+let currentPoisList = poisData;
 const poiLayerGroup = L.layerGroup().addTo(map);
 
 function renderPois(poisList) {{
   poiLayerGroup.clearLayers();
   if (!poisList) return;
 
-  // Dịch chuyển nhẹ các marker quá gần nhau để hiển thị toàn bộ
-  const offsetScale = 0.000035; // ~4m
-  const coordinatesRegistry = {{}};
-  
   poisList.forEach(poi => {{
-    let lat = poi.lat;
-    let lng = poi.lng;
-    const key = `${{lat.toFixed(5)}}_${{lng.toFixed(5)}}`;
-    if (!coordinatesRegistry[key]) {{
-      coordinatesRegistry[key] = [];
-    }}
-    coordinatesRegistry[key].push(poi);
+    drawMarker(poi.lat, poi.lng, poi);
   }});
   
-  Object.keys(coordinatesRegistry).forEach(key => {{
-    const list = coordinatesRegistry[key];
-    const n = list.length;
-    
-    if (n === 1) {{
-      const poi = list[0];
-      drawMarker(poi.lat, poi.lng, poi, 1);
-    }} else {{
-      list.forEach((poi, index) => {{
-        const angle = (index * 2 * Math.PI) / n;
-        const distance = offsetScale * (1 + Math.floor(index / 8) * 0.5);
-        const newLat = poi.lat + Math.sin(angle) * distance;
-        const newLng = poi.lng + Math.cos(angle) * distance;
-        drawMarker(newLat, newLng, poi, n);
-      }});
-    }}
-  }});
-  
-  function drawMarker(lat, lng, poi, clusterSize) {{
+  function drawMarker(lat, lng, poi) {{
     const marker = L.circleMarker([lat, lng], {{
       radius: 6,
       color: '#0f172a',
       weight: 1.5,
       opacity: 1.0,
-      fillColor: clusterSize > 1 ? '#ff3355' : '#f43f5e',
+      fillColor: '#f43f5e',
       fillOpacity: 0.95
     }}).addTo(poiLayerGroup);
     
@@ -364,9 +354,6 @@ function renderPois(poisList) {{
       popupContent += `<h4 style="margin: 2px 0 0 0; font-size: 13px; font-weight: 600; line-height: 1.3; color: #0f172a;">${{poi.sub_info}}</h4>`;
     }}
     popupContent += `<span style="font-size: 10px; color: #64748b; display: block; margin-top: 6px;">Tọa độ: ${{poi.lat.toFixed(6)}}, ${{poi.lng.toFixed(6)}}</span>`;
-    if (clusterSize > 1) {{
-      popupContent += `<br/><span style="font-size: 9px; font-weight: 600; color: #ff3355; background: #fee2e2; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 4px;">⚠️ Trùng/gần tọa độ (Đã tách xoắn ốc)</span>`;
-    }}
     popupContent += `</div>`;
     
     marker.bindPopup(popupContent);
@@ -526,8 +513,12 @@ def build_and_save(
         if lat is not None and lng is not None:
             # Tách dòng đầu tiên làm tên chính, các dòng sau làm chú thích phụ
             parts = [part.strip() for part in name.split(" / ") if part.strip()]
-            main_name = parts[0] if parts else "Không rõ tên"
-            sub_info = ", ".join(parts[1:]) if len(parts) > 1 else ""
+            main_name = parts[0].replace("/", " ") if parts else "Không rõ tên"
+            sub_info = " ".join(parts[1:]).replace("/", " ") if len(parts) > 1 else ""
+            
+            import re
+            main_name = re.sub(r"\s+", " ", main_name).strip()
+            sub_info = re.sub(r"\s+", " ", sub_info).strip()
             
             formatted_pois.append({
                 "name": main_name,
