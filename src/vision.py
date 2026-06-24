@@ -36,12 +36,39 @@ from config import (
     VIETOCR_DEVICE,
     SAVE_POI_CROPS,
     POI_CROPS_DIR,
+    PADDLE_TEXT_DET_ENABLED,
 )
 
 logger = logging.getLogger(__name__)
 
 _YOLO_MODEL = None
 _VIETOCR_PREDICTOR = None
+_PADDLE_TEXT_DETECTOR = None
+
+def _get_paddle_text_detector():
+    """Lazy-load PaddleOCR để chỉ detect/recognize text."""
+    global _PADDLE_TEXT_DETECTOR
+    if not PADDLE_TEXT_DET_ENABLED:
+        return None
+    if _PADDLE_TEXT_DETECTOR is False:
+        return None
+    if _PADDLE_TEXT_DETECTOR is not None:
+        return _PADDLE_TEXT_DETECTOR
+    try:
+        os.environ.setdefault("FLAGS_use_mkldnn", "0")
+        os.environ.setdefault("FLAGS_enable_pir_api", "0")
+        from paddleocr import PaddleOCR
+        # Không truyền det/rec/cls ở constructor: một số bản PaddleOCR báo "Unknown argument: det".
+        _PADDLE_TEXT_DETECTOR = PaddleOCR(
+            use_angle_cls=False,
+            lang="en",
+        )
+        logger.info("Loaded PaddleOCR detector")
+        return _PADDLE_TEXT_DETECTOR
+    except Exception as exc:
+        _PADDLE_TEXT_DETECTOR = False
+        logger.warning("Không load được PaddleOCR: %s", exc)
+        return None
 
 def _get_yolo_model():
     global _YOLO_MODEL
@@ -257,9 +284,10 @@ def split_crop_into_lines(crop_img: np.ndarray, scale: float = 1.0) -> List[np.n
             return [crop_img]
             
         line_crops = []
+        pad_y = max(4, int(4 * scale))
         for sy, ey in bands:
-            y1 = max(0, sy - int(2 * scale))
-            y2 = min(h_sz, ey + int(2 * scale))
+            y1 = max(0, sy - pad_y)
+            y2 = min(h_sz, ey + pad_y)
             line_crops.append(crop_img[y1:y2, :])
             
         return line_crops
@@ -311,7 +339,7 @@ def _is_junk_line(s: str) -> bool:
     junk_pattern = (
         r'(?i)^(con|col|com|comm|cor|cot|cos|can|trn|trans|contra|contr|inter|hype|como|trns|colinter|ant|antr|dis|disc|discol)'
         r'(s|es|ers|ins|inters|ess|he|ste|cars|c|ar|shone|gers|tracess|ces|cess|monums|phousness|anshone|cars|ication|che|tess|ness|mogers'
-        r'|anaTis|naTis|ceptor|interpLat|interpOUm|prOUm|OUm|cept|conceptor|com|intersm|intersM|vers|sstering|teris|tracOM|cOM|COM)?$'
+        r'|anaTis|naTis|interpLat|interpOUm|prOUm|OUm|com|intersm|intersM|vers|sstering|teris|tracOM|cOM|COM)?$'
     )
     if re.match(junk_pattern, clean_s):
         return True
@@ -332,7 +360,7 @@ def _clean_junk_words(s: str) -> str:
         junk_pattern = (
             r'(?i)^(con|col|com|comm|cor|cot|cos|can|trn|trans|contra|contr|inter|hype|como|trns|colinter|disterat|terat|ant|antr|dis|disc|discol)'
             r'(s|es|ers|ins|inters|ess|he|ste|cars|c|ar|shone|gers|tracess|ces|cess|monums|phousness|anshone|cars|ication|che|tess|ness|mogers'
-            r'|eritonerizede|anaTis|naTis|ceptor|interpLat|interpOUm|prOUm|OUm|cept|conceptor|com|intersm|intersM|vers|sstering|teris|tracOM|cOM|COM)+$'
+            r'|eritonerizede|anaTis|naTis|interpLat|interpOUm|prOUm|OUm|com|intersm|intersM|vers|sstering|teris|tracOM|cOM|COM)+$'
         )
         if re.match(junk_pattern, w_clean):
             continue
@@ -430,12 +458,13 @@ def detect_text_area(
         sorted_boxes = sorted(idxs, key=lambda b: b[0])
         
         # 1. Kiểm tra và loại bỏ icon ở bên trái (nếu có)
+        pop_thresh = int(18 * scale)
         if len(sorted_boxes) >= 3:
             b_first = sorted_boxes[0]
             b_second = sorted_boxes[1]
             gap_left = b_second[0] - (b_first[0] + b_first[2])
-            # Nếu contour đầu tiên to/rộng cả chiều ngang lẫn dọc (>= 13px) và có khoảng trống với chữ
-            if b_first[2] >= int(13 * scale) and b_first[3] >= int(13 * scale) and gap_left >= int(3 * scale):
+            # Nếu contour đầu tiên to/rộng cả chiều ngang lẫn dọc (>= 18px) và có khoảng trống với chữ
+            if b_first[2] >= pop_thresh and b_first[3] >= pop_thresh and gap_left >= int(3 * scale):
                 sorted_boxes.pop(0)
         
         # 2. Kiểm tra và loại bỏ icon ở bên phải (nếu có)
@@ -443,7 +472,7 @@ def detect_text_area(
             b_last = sorted_boxes[-1]
             b_prev = sorted_boxes[-2]
             gap_right = b_last[0] - (b_prev[0] + b_prev[2])
-            if b_last[2] >= int(13 * scale) and b_last[3] >= int(13 * scale) and gap_right >= int(3 * scale):
+            if b_last[2] >= pop_thresh and b_last[3] >= pop_thresh and gap_right >= int(3 * scale):
                 sorted_boxes.pop()
         
         # Nếu sau khi loại bỏ icon vẫn còn ít nhất 1 hộp hợp lệ (đáp ứng từ ngắn hoặc dính nét)
@@ -520,6 +549,342 @@ def detect_text_area(
     
     return tx1, ty1, tx2, ty2
 
+def _strip_vietnamese_accents(s: str) -> str:
+    """Loại bỏ hoàn toàn dấu tiếng Việt và đưa về chữ thường (Dùng cho deduplicate)."""
+    s = s.lower()
+    s = re.sub(r"[àáảãạăằắẳẵặâầấẩẫậ]", "a", s)
+    s = re.sub(r"[èéẻẽẹêềếểễệ]", "e", s)
+    s = re.sub(r"[ìíỉĩị]", "i", s)
+    s = re.sub(r"[òóỏõọôồốổỗộơờớởỡợ]", "o", s)
+    s = re.sub(r"[ùúủũụưừứửữự]", "u", s)
+    s = re.sub(r"[ỳýỷỹỵ]", "y", s)
+    s = re.sub(r"[đ]", "d", s)
+    return s
+
+
+def _looks_like_bad_ocr(text: str) -> bool:
+    """Nhận diện kết quả OCR có khả năng rác để thử fallback PaddleOCR recognition."""
+    s = (text or "").strip()
+    if not s:
+        return True
+    clean = re.sub(r'[^A-Za-zÀ-ỹ0-9]', '', s)
+    if len(clean) <= 4:
+        return True
+    lower = _strip_vietnamese_accents(s).lower()
+    junk_tokens = (
+        "obst", "obs", "overstress", "couth", "quts", "orns", "orng",
+        "ongame", "oriem", "ducas", "seruper", "postotice", "pertume",
+        "obtrined", "parigheness", "qutminh", "qut"
+    )
+    if any(tok in lower for tok in junk_tokens):
+        return True
+    words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', s)
+    if words and len(words) <= 2 and not any(ch.isdigit() for ch in s):
+        vowel_count = sum(ch in 'aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ' for ch in lower)
+        letter_count = sum(ch.isalpha() for ch in lower)
+        if letter_count and vowel_count / letter_count < 0.28:
+            return True
+    return False
+
+
+def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
+    """Chấm điểm chất lượng OCR tổng quát, không phụ thuộc keyword/tên riêng."""
+    s = (text or "").strip()
+    if not s:
+        return -9999
+
+    words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', s)
+    letters = re.findall(r'[A-Za-zÀ-ỹ]', s)
+    digits = re.findall(r'\d', s)
+    vietnamese_marks = re.findall(r'[À-ỹ]', s)
+    clean_len = len(re.sub(r'[^A-Za-zÀ-ỹ0-9]', '', s))
+
+    score = clean_len
+    score += 8 * max(0, s.count(' / '))
+    score += 4 * max(0, len(words) - 1)
+    score += 2 * len(vietnamese_marks)
+
+    if _looks_like_bad_ocr(s):
+        score -= 80
+
+    if letters:
+        digit_ratio = len(digits) / max(1, len(letters) + len(digits))
+        if digit_ratio > 0.35:
+            score -= int(60 * digit_ratio)
+
+    # Phạt ký tự lạ thường là lỗi OCR/khuyến mãi/rác, nhưng không loại tuyệt đối.
+    odd_chars = len(re.findall(r'[?%#*"“”]', s))
+    score -= 10 * odd_chars
+
+    # Token 1 ký tự ở đầu/cuối thường là mẩu icon hoặc chữ rác.
+    if words and len(words[0]) == 1 and len(words) > 1:
+        score -= 18
+    if words and len(words[-1]) == 1 and len(words) > 1:
+        score -= 12
+
+    # Dòng quá ngắn chỉ chấp nhận nếu nó là label ngắn thật; cho điểm thấp để variant dài hơn thắng.
+    if clean_len <= 4:
+        score -= 30
+
+    # Cộng điểm thưởng siêu nhỏ theo thang phóng đại để giải quyết đồng điểm (tie-breaker)
+    return score + 0.05 * fx
+
+
+def _recognize_text_paddle(cv_img: np.ndarray) -> str:
+    """Fallback recognition bằng PaddleOCR trên crop đã chọn."""
+    detector = _get_paddle_text_detector()
+    if detector is None or cv_img is None or cv_img.size == 0:
+        return ""
+    try:
+        rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        results = detector.predict(rgb)
+        texts = []
+        for res in results if isinstance(results, list) else [results]:
+            if isinstance(res, dict):
+                for key in ("rec_texts", "texts"):
+                    vals = res.get(key)
+                    if isinstance(vals, list):
+                        texts.extend(str(v).strip() for v in vals if str(v).strip())
+                if "rec_text" in res and str(res["rec_text"]).strip():
+                    texts.append(str(res["rec_text"]).strip())
+            elif isinstance(res, (list, tuple)):
+                for item in res:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        rec = item[1]
+                        if isinstance(rec, (list, tuple)) and rec:
+                            texts.append(str(rec[0]).strip())
+                        elif isinstance(rec, str):
+                            texts.append(rec.strip())
+        cleaned = []
+        for t in texts:
+            t = _clean_junk_words(_clean_spelling(t))
+            if t and not _is_junk_line(t):
+                cleaned.append(t)
+        return " / ".join(cleaned)
+    except Exception as exc:
+        logger.debug("PaddleOCR recognition fallback error: %s", exc)
+        return ""
+
+
+def normalize_ocr_background(crop_img: np.ndarray) -> np.ndarray:
+    """Chuẩn hóa nền crop sang màu ngà sáng, giữ chữ màu/đậm để OCR đọc ổn định hơn."""
+    if crop_img is None or crop_img.size == 0:
+        return crop_img
+    try:
+        hsv = cv2.cvtColor(crop_img, cv2.COLOR_BGR2HSV)
+        s = hsv[:, :, 1]
+        v = hsv[:, :, 2]
+
+        # Giữ chữ màu đậm (V < 165) hoặc chữ có màu sắc sặc sỡ (S > 80)
+        # Loại bỏ các vùng nền xám/xanh nhạt của đường và nền đất ngà
+        text_mask = (v < 165) | (s > 80)
+        text_mask = cv2.dilate(text_mask.astype(np.uint8), np.ones((2, 2), np.uint8), iterations=1).astype(bool)
+        clean_bg = np.array([245, 242, 232], dtype=np.uint8)  # BGR ngà nhạt giống crop đọc tốt
+
+        out = crop_img.copy()
+        out[~text_mask] = clean_bg
+        return out
+    except Exception:
+        return crop_img
+
+
+def split_crop_into_lines_normalized(crop_img: np.ndarray, scale: float = 1.0) -> List[np.ndarray]:
+    """Tách crop thành các dòng chữ đơn lẻ dùng ngưỡng chiều cao tối thiểu 3*scale."""
+    h_sz, w_sz = crop_img.shape[:2]
+    if h_sz < int(12 * scale):
+        return [crop_img]
+        
+    try:
+        hsv = cv2.cvtColor(crop_img, cv2.COLOR_BGR2HSV)
+        s = hsv[:, :, 1]
+        v = hsv[:, :, 2]
+        
+        bg_s = np.median(s)
+        bg_v = np.median(v)
+        is_white_bg = (bg_s < 25)
+        
+        row_bg_ratios = []
+        for y in range(h_sz):
+            row_s = s[y, :]
+            row_v = v[y, :]
+            
+            if is_white_bg:
+                bg_pixels = np.sum((row_s < 35) & (row_v > 200))
+            else:
+                bg_pixels = np.sum((np.abs(row_s.astype(int) - int(bg_s)) < 40) & (np.abs(row_v.astype(int) - int(bg_v)) < 40))
+                
+            row_bg_ratios.append(bg_pixels / w_sz)
+            
+        row_bg_ratios = np.array(row_bg_ratios)
+        
+        GAP_THRESH = 0.93
+        is_gap = row_bg_ratios > GAP_THRESH
+        
+        bands = []
+        in_band = False
+        start_y = 0
+        
+        for y in range(h_sz):
+            if not is_gap[y]:
+                if not in_band:
+                    start_y = y
+                    in_band = True
+            else:
+                if in_band:
+                    end_y = y
+                    if end_y - start_y >= int(3 * scale):
+                        bands.append((start_y, end_y))
+                    in_band = False
+                    
+        if in_band:
+            if h_sz - start_y >= int(3 * scale):
+                bands.append((start_y, h_sz))
+                
+        if len(bands) <= 1:
+            return [crop_img]
+            
+        line_crops = []
+        pad_y = max(4, int(4 * scale))
+        for sy, ey in bands:
+            y1 = max(0, sy - pad_y)
+            y2 = min(h_sz, ey + pad_y)
+            line_crops.append(crop_img[y1:y2, :])
+            
+        return line_crops
+        
+    except Exception as e:
+        logger.debug("Lỗi khi chia dòng OCR normalized: %s", e)
+        return [crop_img]
+
+
+def _recognize_text_crop_vietocr_normalized(
+    cv_img: np.ndarray,
+    bbox: List[float],
+    icon_side: str = "left",
+    scale: float = 1.0,
+    cx: float = None,
+    cy: float = None
+) -> str:
+    """Hàm OCR phụ chạy trên nền được chuẩn hóa hoàn toàn và xử lý icon triệt để."""
+    predictor = _get_vietocr_predictor()
+    if predictor is None or cv_img is None:
+        return ""
+
+    try:
+        h_img, w_img = cv_img.shape[:2]
+        x1_orig, y1_orig, x2_orig, y2_orig = map(int, bbox)
+        
+        pad = int(16 * scale)
+        y1 = max(0, y1_orig - pad)
+        y2 = min(h_img, y2_orig + pad)
+        x1 = max(0, x1_orig - pad)
+        x2 = min(w_img, x2_orig + pad)
+        
+        raw_crop = cv_img[y1:y2, x1:x2]
+        if raw_crop.size == 0:
+            return ""
+
+        # 1. Khử nền bằng logic cải tiến
+        base_norm_img = normalize_ocr_background(raw_crop)
+        h_rc, w_rc = base_norm_img.shape[:2]
+
+        bg_color = [245, 242, 232]  # BGR ngà nhạt giống crop đọc tốt
+        cx_local = (cx - x1) if cx is not None else None
+        cy_local = (cy - y1) if cy is not None else None
+
+        def _run_normalized_variant(mask_icon: bool) -> str:
+            """Chạy OCR normalized với/không mask icon để tránh cắt mất chữ đầu."""
+            norm_img = base_norm_img.copy()
+
+            if mask_icon and cx_local is not None and cy_local is not None:
+                if icon_side == "left":
+                    mask_w = max(0, min(w_rc, int(cx_local + 6.5 * scale)))
+                    norm_img[:, 0:mask_w] = bg_color
+                elif icon_side == "right":
+                    mask_x = max(0, min(w_rc, int(cx_local - 6.5 * scale)))
+                    norm_img[:, mask_x:w_rc] = bg_color
+                elif icon_side == "top":
+                    mask_h = max(0, min(h_rc, int(cy_local + 6.5 * scale)))
+                    norm_img[0:mask_h, :] = bg_color
+
+            tx1, ty1, tx2, ty2 = detect_text_area(norm_img, scale)
+            tx1_safe = max(0, tx1 - int(2 * scale))
+            tx2_safe = min(w_rc, tx2 + int(4 * scale))
+            crop = norm_img[ty1:ty2, tx1_safe:tx2_safe]
+            if crop.size == 0:
+                return ""
+
+            line_crops = split_crop_into_lines_normalized(crop, scale)
+            variant_texts = []
+            for line_crop in line_crops:
+                if line_crop.size == 0:
+                    continue
+                line_rgb = cv2.cvtColor(line_crop, cv2.COLOR_BGR2RGB)
+                bg_color_line = line_crop[0, 0].tolist()
+                pad_h = max(4, int(6 * scale))
+                pad_w = max(8, int(12 * scale))
+                padded_line = cv2.copyMakeBorder(
+                    line_rgb,
+                    pad_h, pad_h, pad_w, pad_w,
+                    cv2.BORDER_CONSTANT,
+                    value=bg_color_line
+                )
+
+                def _clean_ocr_line(text: str) -> str:
+                    # Strip any rating-like prefix ending with a number in parentheses, e.g. "4.14 (382) - " or "J4x(382) - "
+                    text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', (text or '').strip()).strip()
+                    text_clean = _clean_junk_words(text_clean)
+                    if text_clean and not _is_junk_line(text_clean):
+                        return text_clean
+                    return ""
+
+                def _line_score(text: str) -> int:
+                    return _score_ocr_text_quality(text)
+
+                candidates = []
+                for fx in (1, 2, 3):
+                    if fx == 1:
+                        candidate_img = padded_line
+                    else:
+                        candidate_img = cv2.resize(
+                            padded_line,
+                            None,
+                            fx=fx,
+                            fy=fx,
+                            interpolation=cv2.INTER_CUBIC
+                        )
+                    raw_text = (predictor.predict(Image.fromarray(candidate_img)) or "").strip()
+                    clean_text = _clean_ocr_line(raw_text)
+                    if clean_text:
+                        score = _score_ocr_text_quality(clean_text, fx)
+                        candidates.append((score, clean_text))
+
+                if candidates:
+                    text_clean = max(candidates, key=lambda x: x[0])[1]
+                    variant_texts.append(text_clean)
+
+            return " / ".join(variant_texts)
+
+        masked_text = _run_normalized_variant(mask_icon=True)
+        unmasked_text = _run_normalized_variant(mask_icon=False)
+
+        def _variant_score(text: str) -> int:
+            clean_len = len(re.sub(r'[^A-Za-zÀ-ỹ0-9]', '', text or ""))
+            line_bonus = 12 * max(0, (text or "").count(" / "))
+            bad_penalty = 80 if _looks_like_bad_ocr(text) else 0
+            return clean_len + line_bonus - bad_penalty
+
+        # Nếu crop đã sạch icon, bản không mask thường giữ được chữ đầu (Little, sách, Mặn...).
+        # Chỉ chọn unmasked khi nó tốt hơn rõ ràng, tránh ảnh hưởng các POI có icon thật.
+        if unmasked_text and _variant_score(unmasked_text) >= _variant_score(masked_text) + 5:
+            return unmasked_text
+
+        return masked_text
+    except Exception as exc:
+        logger.debug("Lỗi trong recognize_text_crop_vietocr_normalized: %s", exc)
+        return ""
+
+
 def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_side: str = "left", scale: float = 1.0, cx: float = None, cy: float = None) -> str:
     predictor = _get_vietocr_predictor()
     if predictor is None or cv_img is None:
@@ -563,56 +928,75 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
 
     tx1, ty1, tx2, ty2 = detect_text_area(crop_clean, scale)
     crop = crop_clean[ty1:ty2, tx1:tx2]
-    if crop.size == 0:
-        return ""
+    
+    primary_text = ""
+    if crop.size > 0:
+        try:
+            # Tách crop thành các dòng chữ đơn lẻ
+            line_crops = split_crop_into_lines(crop, scale)
+            
+            texts = []
+            for line_crop in line_crops:
+                if line_crop.size == 0:
+                    continue
+                    
+                # Thêm viền sạch (padding) xung quanh ảnh với màu nền này để tránh lỗi biên của OCR
+                bg_color_line = line_crop[0, 0].tolist()
+                pad_h = max(4, int(6 * scale))
+                pad_w = max(8, int(12 * scale))
+                padded_line = cv2.copyMakeBorder(
+                    line_crop,
+                    pad_h, pad_h, pad_w, pad_w,
+                    cv2.BORDER_CONSTANT,
+                    value=bg_color_line
+                )
+                
+                rgb_line = cv2.cvtColor(padded_line, cv2.COLOR_BGR2RGB)
+                
+                # Check 1x, 2x, 3x scales just like the normalized path
+                candidates = []
+                for fx in (1, 2, 3):
+                    im = rgb_line if fx == 1 else cv2.resize(rgb_line, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
+                    raw_text = (predictor.predict(Image.fromarray(im)) or "").strip()
+                    text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
+                    text_clean = _clean_junk_words(text_clean)
+                    if text_clean:
+                        score = _score_ocr_text_quality(text_clean, fx)
+                        candidates.append((score, text_clean))
+                        
+                if candidates:
+                    best_line_text = max(candidates, key=lambda x: x[0])[1]
+                    if best_line_text and not _is_junk_line(best_line_text):
+                        texts.append(best_line_text)
+            primary_text = " / ".join(texts)
+        except Exception as e:
+            logger.debug("Primary VietOCR error: %s", e)
 
-    try:
-        # Tách crop thành các dòng chữ đơn lẻ
-        line_crops = split_crop_into_lines(crop, scale)
+    # 4. Chạy luồng normalized OCR làm fallback
+    norm_text = _recognize_text_crop_vietocr_normalized(cv_img, bbox, icon_side, scale, cx, cy)
+    
+    # 5. So sánh chất lượng và chọn kết quả tốt nhất bằng score tổng quát, không keyword.
+    primary_score = _score_ocr_text_quality(primary_text)
+    norm_score = _score_ocr_text_quality(norm_text)
+
+    if norm_score > primary_score + 3:
+        selected_text = norm_text
+        is_normalized_chosen = True
+    else:
+        selected_text = primary_text
+        is_normalized_chosen = False
         
-        texts = []
-        for line_crop in line_crops:
-            if line_crop.size == 0:
-                continue
-                
-            # Thêm viền sạch (padding) xung quanh ảnh với màu nền này để tránh lỗi biên của OCR
-            bg_color = line_crop[0, 0].tolist()
-            pad_h = max(4, int(6 * scale))
-            pad_w = max(8, int(12 * scale))
-            padded_line = cv2.copyMakeBorder(
-                line_crop,
-                pad_h, pad_h, pad_w, pad_w,
-                cv2.BORDER_CONSTANT,
-                value=bg_color
-            )
+    # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
+    if not selected_text or _looks_like_bad_ocr(selected_text):
+        paddle_text = _recognize_text_paddle(crop) if crop.size > 0 else ""
+        if paddle_text and not _looks_like_bad_ocr(paddle_text):
+            logger.info("  [OCR fallback] VietOCR selected='%s' -> PaddleOCR='%s'", selected_text, paddle_text)
+            return paddle_text
             
-            # Tiền xử lý mới: Đổi từ BGR sang RGB, phóng to 2x (thay vì 6x), và không dùng GaussianBlur
-            rgb_line = cv2.cvtColor(padded_line, cv2.COLOR_BGR2RGB)
-            rgb_2x = cv2.resize(
-                rgb_line,
-                None,
-                fx=2,
-                fy=2,
-                interpolation=cv2.INTER_CUBIC
-            )
-            
-            # Predict trực tiếp trên ảnh màu sắc nét
-            pil_img = Image.fromarray(rgb_2x)
-            text = predictor.predict(pil_img)
-            text_str = (text or "").strip()
-            if text_str:
-                # Clean rating prefix first (ví dụ: "4.74 (53) - Nhà hàng" -> "Nhà hàng")
-                text_clean = re.sub(r'^\d+(\.\d+)?\s*\(\d+\)\s*(-\s*)?', '', text_str).strip()
-                text_clean = _clean_junk_words(text_clean)
-                if text_clean and not _is_junk_line(text_clean):
-                    texts.append(text_clean)
-                
-        if not texts:
-            return ""
-        return " / ".join(texts)
-    except Exception as e:
-        logger.debug("VietOCR error: %s", e)
-        return ""
+    if is_normalized_chosen and selected_text:
+        logger.info("  [OCR normalized chosen] Primary='%s' -> Normalized='%s'", primary_text, selected_text)
+    return selected_text
+
 
 async def extract_pois_from_screenshot(
     screenshot_bytes: bytes,
@@ -929,60 +1313,175 @@ def _find_icon_boundary(crop_img: np.ndarray, icon_side: str, scale: float = 1.0
 
 
 def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float = 1.0):
-    """Lưu ảnh crop của POI, chỉ giữ phần text (bỏ phần icon)."""
+    """Lưu ảnh crop POI đẹp: chỉ text, padding đều, không lộ icon, không cắt chữ."""
     try:
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             return
-        
+
         bbox = poi.get("bbox")
         if not bbox:
             return
-        
+
         l, t, w, h = map(int, bbox)
         h_img, w_img = img.shape[:2]
 
-        pad = int(10 * scale)
-        y1 = max(0, t - pad)
-        y2 = min(h_img, t + h + pad)
-        x1 = max(0, l - pad)
-        x2 = min(w_img, l + w + pad)
+        # Lấy vùng rộng hơn bbox để detect đủ chữ sát biên trước khi crop lại đẹp.
+        outer_pad = max(10, int(12 * scale))
+        y1 = max(0, t - outer_pad)
+        y2 = min(h_img, t + h + outer_pad)
+        x1 = max(0, l - outer_pad)
+        x2 = min(w_img, l + w + outer_pad)
 
         raw_crop = img[y1:y2, x1:x2]
         if raw_crop.size == 0:
             return
 
-        # Tiền xử lý làm sạch nền:
-        # 1. Tính màu nền chủ đạo bằng median BGR của raw_crop
         bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
+        h_rc, w_rc = raw_crop.shape[:2]
 
-        # 2. Tạo bản sao sạch và tô đè màu nền lên vùng padding 10px ngoài
-        crop_clean = raw_crop.copy()
-        h_rc, w_rc = crop_clean.shape[:2]
-        border_w = int(10 * scale)
-        if border_w > 0:
-            if border_w < h_rc:
-                crop_clean[0:border_w, :] = bg_color
-                crop_clean[h_rc - border_w:, :] = bg_color
-            if border_w < w_rc:
-                crop_clean[:, 0:border_w] = bg_color
-                crop_clean[:, w_rc - border_w:] = bg_color
-
-        # 3. Vẽ đè vòng tròn màu nền lên vùng icon nếu có tọa độ cx, cy trong poi
         cx = poi.get("x")
         cy = poi.get("y")
-        if cx is not None and cy is not None:
-            cx_local = cx - x1
-            cy_local = cy - y1
-            r = int(16 * scale)
-            cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
+        icon_side = poi.get("icon_side", "left")
+        cx_local = (cx - x1) if cx is not None else None
+        cy_local = (cy - y1) if cy is not None else None
 
-        tx1, ty1, tx2, ty2 = detect_text_area(crop_clean, scale)
-        crop = crop_clean[ty1:ty2, tx1:tx2]
-        if crop.size > 0:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            cv2.imwrite(output_path, crop)
-            logger.info("  [Crop saved] %s", os.path.basename(output_path))
+        def _clean_outer_border(img_part: np.ndarray):
+            """Dọn viền của ảnh detect để không bắt nhiễu map ở vùng lấy rộng."""
+            border_w = max(8, int(10 * scale))
+            hp, wp = img_part.shape[:2]
+            if border_w > 0:
+                if border_w < hp:
+                    img_part[0:border_w, :] = bg_color
+                    img_part[hp - border_w:, :] = bg_color
+                if border_w < wp:
+                    img_part[:, 0:border_w] = bg_color
+                    img_part[:, wp - border_w:] = bg_color
+
+        def _mask_icon_for_detection(img_part: np.ndarray):
+            """Mask icon chỉ để tìm text box, không dùng ảnh này làm crop cuối."""
+            if img_part is None or img_part.size == 0 or cx_local is None or cy_local is None:
+                return
+            hp, wp = img_part.shape[:2]
+            if icon_side == "left":
+                mask_w = max(0, min(wp, int(cx_local + 7.5 * scale)))
+                img_part[:, :mask_w] = bg_color
+            elif icon_side == "right":
+                mask_x = max(0, min(wp, int(cx_local - 7.5 * scale)))
+                img_part[:, mask_x:] = bg_color
+            elif icon_side == "top":
+                mask_h = max(0, min(hp, int(cy_local + 7.5 * scale)))
+                img_part[:mask_h, :] = bg_color
+
+        # Ảnh detect có thể bị mask icon; crop cuối lấy từ raw_crop để không mất nét chữ.
+        detect_img = raw_crop.copy()
+        _clean_outer_border(detect_img)
+        _mask_icon_for_detection(detect_img)
+
+        tx1, ty1, tx2, ty2 = detect_text_area(detect_img, scale)
+
+        # Padding đẹp 4 phía. Giữ phải rộng hơn vì chữ cuối thường sát biên/nhỏ.
+        pad_left = max(6, int(8 * scale))
+        pad_right = max(10, int(14 * scale))
+        pad_top = max(4, int(5 * scale))
+        pad_bottom = max(5, int(6 * scale))
+        raw_tx1 = tx1
+        raw_ty1 = ty1
+        raw_tx2 = tx2
+        raw_ty2 = ty2
+        tx1 = max(0, raw_tx1 - pad_left)
+        ty1 = max(0, raw_ty1 - pad_top)
+        tx2 = min(w_rc, raw_tx2 + pad_right)
+        ty2 = min(h_rc, raw_ty2 + pad_bottom)
+
+        crop = raw_crop[ty1:ty2, tx1:tx2].copy()
+        if crop.size == 0:
+            return
+
+        # Dọn icon sót trong vùng padding, không tô vào vùng text đã detect.
+        final_h, final_w = crop.shape[:2]
+        text_left_in_crop = max(0, raw_tx1 - tx1)
+        text_right_in_crop = min(final_w, raw_tx2 - tx1)
+        text_top_in_crop = max(0, raw_ty1 - ty1)
+
+        if cx_local is not None and cy_local is not None:
+            # Dọn vùng icon theo tọa độ thật, gồm cả icon trắng/bóng mờ low-saturation.
+            # HSV-only không bắt được các mảng trắng/xám nên vẫn còn dấu vết.
+            if icon_side == "left":
+                icon_edge_in_crop = int(cx_local + 12.5 * scale) - tx1
+                clean_w = max(0, min(final_w, icon_edge_in_crop))
+                if clean_w > 0:
+                    crop[:, :clean_w] = bg_color
+            elif icon_side == "right":
+                icon_edge_in_crop = int(cx_local - 12.5 * scale) - tx1
+                clean_x = max(0, min(final_w, icon_edge_in_crop))
+                if clean_x < final_w:
+                    crop[:, clean_x:] = bg_color
+            elif icon_side == "top":
+                icon_edge_in_crop = int(cy_local + 12.5 * scale) - ty1
+                clean_h = max(0, min(final_h, icon_edge_in_crop))
+                if clean_h > 0:
+                    crop[:clean_h, :] = bg_color
+
+            # Dọn thêm mảng màu icon nếu còn chạm mép ngoài vùng hình chữ nhật.
+            def _erase_edge_connected_icon(side: str):
+                hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+                s = hsv_crop[:, :, 1]
+                v = hsv_crop[:, :, 2]
+                icon_mask = ((s > 35) & (v > 60)).astype(np.uint8) * 255
+                kernel = np.ones((3, 3), np.uint8)
+                icon_mask = cv2.dilate(icon_mask, kernel, iterations=1)
+                scan_w = min(final_w, max(18, int(28 * scale)))
+                scan_h = min(final_h, max(18, int(28 * scale)))
+                edge_tol = max(2, int(3 * scale))
+                clean_mask = np.zeros((final_h, final_w), dtype=np.uint8)
+
+                if side == "left":
+                    roi = icon_mask[:, :scan_w]
+                    x_base, y_base = 0, 0
+                elif side == "right":
+                    roi = icon_mask[:, final_w - scan_w:]
+                    x_base, y_base = final_w - scan_w, 0
+                elif side == "top":
+                    roi = icon_mask[:scan_h, :]
+                    x_base, y_base = 0, 0
+                else:
+                    return
+
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(roi, 8)
+                for label in range(1, num_labels):
+                    x, y, w_box, h_box, area = stats[label]
+                    if area < max(2, int(3 * scale * scale)):
+                        continue
+                    touches_edge = (
+                        (side == "left" and x <= edge_tol) or
+                        (side == "right" and x + w_box >= roi.shape[1] - edge_tol) or
+                        (side == "top" and y <= edge_tol)
+                    )
+                    if touches_edge:
+                        component = (labels == label).astype(np.uint8) * 255
+                        clean_mask[y_base:y_base + roi.shape[0], x_base:x_base + roi.shape[1]] |= component
+
+                if np.any(clean_mask):
+                    clean_mask[:] = cv2.dilate(clean_mask, kernel, iterations=1)
+                    crop[clean_mask > 0] = bg_color
+
+            if icon_side == "left":
+                _erase_edge_connected_icon("left")
+            elif icon_side == "right":
+                _erase_edge_connected_icon("right")
+            elif icon_side == "top":
+                _erase_edge_connected_icon("top")
+
+        # Làm sạch nền viền rất mỏng trên/dưới; không tô trái/phải để tránh mất nét đầu/cuối.
+        edge_pad = max(1, int(1 * scale))
+        if crop.shape[0] > 2 * edge_pad:
+            crop[0:edge_pad, :] = bg_color
+            crop[crop.shape[0] - edge_pad:, :] = bg_color
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        cv2.imwrite(output_path, crop)
+        logger.info("  [Crop saved] %s", os.path.basename(output_path))
     except Exception as e:
         logger.warning("Không thể lưu ảnh crop POI: %s", e)

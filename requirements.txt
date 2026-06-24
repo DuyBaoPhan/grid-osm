@@ -7,3 +7,4 @@ opencv-python-headless>=4.7.0.0
 torch>=2.0.0
 torchvision>=0.15.0
 vietocr>=0.3.13
+paddleocr>=2.7.0

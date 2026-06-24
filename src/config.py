@@ -64,6 +64,9 @@ VIETOCR_MODEL = "vgg_transformer"      # vgg_transformer | vgg_seq2seq
 VIETOCR_DEVICE = "cpu"                 # cpu | cuda
 VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
 OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
+PADDLE_TEXT_DET_ENABLED = True         # Dùng PaddleOCR detect vùng text trước khi đưa VietOCR đọc
+PADDLE_TEXT_DET_MIN_CONF = 0.45        # Ngưỡng confidence tối thiểu cho text box PaddleOCR
+PADDLE_TEXT_DET_ICON_MARGIN_PX = 28    # Vùng né icon trong crop POI khi lọc text box
 
 # ── YOLOv8 POI Detection ──────────────────────────────────────
 YOLO_MODEL_PATH = str(BASE_DIR / "model" / "bestv3.pt")
