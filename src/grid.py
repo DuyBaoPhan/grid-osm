@@ -12,37 +12,6 @@ import math
 from typing import List, Tuple, Optional
 import config
 
-# ── Standard OSM tile math (Unshifted) ───────────────────────
-
-def _std_lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
-    n = 2 ** zoom
-    tx = int((lng + 180.0) / 360.0 * n)
-    lat_rad = math.radians(lat)
-    ty = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
-    return tx, ty
-
-
-def _std_tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
-    n = 2 ** zoom
-    lng = (tx + 0.5) / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (ty + 0.5) / n)))
-    lat = math.degrees(lat_rad)
-    return lat, lng
-
-
-def _std_tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    n = 2 ** zoom
-
-    def _y_to_lat(y_frac: float) -> float:
-        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_frac / n))))
-
-    lng_min = tx / n * 360.0 - 180.0
-    lng_max = (tx + 1) / n * 360.0 - 180.0
-    lat_max = _y_to_lat(ty)
-    lat_min = _y_to_lat(ty + 1)
-    return lat_min, lng_min, lat_max, lng_max
-
-
 # ── Custom Grid coordinates for Perfect Edge-to-Edge Tiling ──
 
 _n = 2 ** config.ZOOM_LEVEL

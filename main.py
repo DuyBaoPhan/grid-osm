@@ -66,50 +66,6 @@ def _start_map_server(directory: str, port: int) -> ThreadingHTTPServer:
     return server
 
 
-# ── Main async ───────────────────────────────────────────────
-
-async def _detect_maximized_viewport() -> None:
-    """Khởi động trình duyệt ở chế độ maximized hoặc độ phân giải cao để đo kích thước viewport thực tế."""
-    import config
-    
-    if config.HEADLESS:
-        # Nếu chạy ẩn danh (headless), thiết lập cứng độ phân giải cao tiêu chuẩn
-        config.SCREENSHOT_W = 1920
-        config.SCREENSHOT_H = 1080
-        logger.info("Headless mode: Thiết lập độ phân giải mặc định %dx%d px", config.SCREENSHOT_W, config.SCREENSHOT_H)
-        return
-
-    logger.info("Đang tự động đo kích thước cửa sổ maximized...")
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=False,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--start-maximized",
-                ],
-            )
-            context = await browser.new_context(no_viewport=True)
-            page = await context.new_page()
-            # Chờ để trình duyệt hoàn tất việc phóng to
-            await page.wait_for_timeout(1000)
-            size = await page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
-            await browser.close()
-            
-            if size and "width" in size and "height" in size and size["width"] > 200:
-                config.SCREENSHOT_W = int(size["width"])
-                config.SCREENSHOT_H = int(size["height"])
-                logger.info("Đo kích thước maximized thành công: %dx%d px", config.SCREENSHOT_W, config.SCREENSHOT_H)
-                return
-    except Exception as e:
-        logger.warning("Không thể đo tự động kích thước maximized: %s. Sử dụng kích thước mặc định.", e)
-    
-    # Mặc định fallback nếu có lỗi xảy ra
-    config.SCREENSHOT_W = 1024
-    config.SCREENSHOT_H = 713
-
-
 async def main() -> None:
     _setup_logging()
 

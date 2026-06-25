@@ -117,11 +117,167 @@ def _strip_vietnamese_accents(s: str) -> str:
     s = re.sub(r"[đ]", "d", s)
     return s
 
+def _normalize_vietnamese_place_phrases(text: str) -> str:
+    """Chuẩn hóa cụm địa danh Việt bằng gazetteer ngoài file và fuzzy guard."""
+    try:
+        from src.vietnam_places import normalize_place_phrases
+    except ImportError:
+        try:
+            from vietnam_places import normalize_place_phrases
+        except ImportError:
+            return text
+    return normalize_place_phrases(text)
+
+
+def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
+    """Xóa token OCR lặp liền kề như `Bình Bình`, không đụng brand ALLCAPS."""
+    if not text:
+        return text
+
+    matches = list(re.finditer(r'[A-Za-zÀ-ỹĐđ0-9]+', text))
+    if len(matches) < 2:
+        return text
+
+    remove_indexes = set()
+    prev_key = None
+    prev_token = None
+    for idx, match in enumerate(matches):
+        token = match.group(0)
+        key = _strip_vietnamese_accents(token).lower()
+        if (
+            prev_key == key
+            and len(key) >= 3
+            and prev_token is not None
+            and not prev_token.isupper()
+            and not token.isupper()
+            and not any(ch.isdigit() for ch in prev_token + token)
+        ):
+            remove_indexes.add(idx)
+            continue
+        prev_key = key
+        prev_token = token
+
+    if not remove_indexes:
+        return text
+
+    out = []
+    last = 0
+    for idx, match in enumerate(matches):
+        if idx in remove_indexes:
+            out.append(text[last:match.start()].rstrip())
+            last = match.end()
+            continue
+        out.append(text[last:match.start()])
+        out.append(match.group(0))
+        last = match.end()
+    out.append(text[last:])
+    return re.sub(r'\s+', ' ', ''.join(out)).strip()
+
+
 def _clean_spelling(text: str) -> str:
-    # Loại bỏ các ký tự dấu nháy kép, nháy đơn, backtick và dấu gạch chéo ngược
-    text = re.sub(r"[\"\'`\\]", "", text)
+    # Loại bỏ các ký tự dấu nháy kép, nháy đơn, backtick, gạch chéo ngược và ngoặc rác từ icon/viền crop
+    text = re.sub(r"[\"\'`\\\[\]\{\}]", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
+    text = _normalize_vietnamese_place_phrases(text)
+    text = _remove_adjacent_duplicate_ocr_tokens(text)
     return text
+
+
+def _has_vietnamese_mark(token: str) -> bool:
+    """True nếu token có dấu tiếng Việt, gồm cả chữ đ/Đ."""
+    return bool(re.search(r'[À-ỹĐđ]', token or ""))
+
+
+def _merge_primary_diacritics(primary_text: str, selected_text: str) -> str:
+    """
+    Khi selected/normalized đúng cấu trúc hơn nhưng sai dấu nhẹ, mượn dấu từ Primary.
+    Chỉ thay token nếu:
+    - token bỏ dấu giống nhau
+    - cả Primary và selected đều có dấu Việt
+    - không đổi số/ký tự brand không dấu
+    Ví dụ: Thợ -> Thọ sẽ khôi phục Thợ; Xe không bị đổi thành Xẻ.
+    """
+    primary_tokens = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', primary_text or "")
+    selected_tokens = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', selected_text or "")
+    if not primary_tokens or len(primary_tokens) != len(selected_tokens):
+        return selected_text
+
+    replacements = []
+    changed = False
+    for p_tok, s_tok in zip(primary_tokens, selected_tokens):
+        if p_tok == s_tok:
+            replacements.append(s_tok)
+            continue
+        if (
+            _strip_vietnamese_accents(p_tok) == _strip_vietnamese_accents(s_tok)
+            and _has_vietnamese_mark(p_tok)
+            and _has_vietnamese_mark(s_tok)
+            and not any(ch.isdigit() for ch in p_tok + s_tok)
+        ):
+            replacements.append(p_tok)
+            changed = True
+        else:
+            replacements.append(s_tok)
+
+    if not changed:
+        return selected_text
+
+    repl_iter = iter(replacements)
+    return re.sub(r'[A-Za-zÀ-ỹĐđ0-9]+', lambda _: next(repl_iter), selected_text)
+
+
+def _vietnamese_tone_preference(token: str) -> int:
+    """Heuristic nhẹ để chọn dấu Việt tự nhiên hơn giữa hai token cùng base."""
+    t = token or ""
+    score = 0
+    # Dấu sắc/huyền/nặng thường ổn định hơn hỏi/ngã trong OCR nhỏ; không ép tuyệt đối.
+    score += 2 * len(re.findall(r'[áéíóúýấắếốớứ]', t, flags=re.IGNORECASE))
+    score += 1 * len(re.findall(r'[àèìòùỳầằềồờừ]', t, flags=re.IGNORECASE))
+    score += 1 * len(re.findall(r'[ạẹịọụỵậặệộợự]', t, flags=re.IGNORECASE))
+    score -= 1 * len(re.findall(r'[ảẻỉỏủỷẩẳểổởử]', t, flags=re.IGNORECASE))
+    score -= 1 * len(re.findall(r'[ãẽĩõũỹẫẵễỗỡữ]', t, flags=re.IGNORECASE))
+    return score
+
+
+def _has_vietnamese_shaped_vowel(token: str) -> bool:
+    """True nếu token có nguyên âm Việt đặc thù dễ bị OCR làm mất: ơ/ư/ă/â/ê/ô."""
+    return bool(re.search(r'[ăằắẳẵặâầấẩẫậêềếểễệôồốổỗộơờớởỡợưừứửữự]', token or "", flags=re.IGNORECASE))
+
+
+def _merge_best_diacritics(primary_text: str, selected_text: str) -> str:
+    """Chọn dấu tốt hơn giữa Primary và selected khi token cùng base bỏ dấu."""
+    primary_tokens = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', primary_text or "")
+    selected_tokens = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', selected_text or "")
+    if not primary_tokens or len(primary_tokens) != len(selected_tokens):
+        return selected_text
+
+    replacements = []
+    changed = False
+    for p_tok, s_tok in zip(primary_tokens, selected_tokens):
+        if p_tok == s_tok:
+            replacements.append(s_tok)
+            continue
+        if (
+            _strip_vietnamese_accents(p_tok) == _strip_vietnamese_accents(s_tok)
+            and _has_vietnamese_mark(p_tok)
+            and _has_vietnamese_mark(s_tok)
+            and not any(ch.isdigit() for ch in p_tok + s_tok)
+        ):
+            if _has_vietnamese_shaped_vowel(p_tok) and not _has_vietnamese_shaped_vowel(s_tok):
+                replacements.append(p_tok)
+                changed = True
+            elif _vietnamese_tone_preference(p_tok) > _vietnamese_tone_preference(s_tok):
+                replacements.append(p_tok)
+                changed = True
+            else:
+                replacements.append(s_tok)
+        else:
+            replacements.append(s_tok)
+
+    if not changed:
+        return selected_text
+    repl_iter = iter(replacements)
+    return re.sub(r'[A-Za-zÀ-ỹĐđ0-9]+', lambda _: next(repl_iter), selected_text)
 
 def expand_bbox_downward(img: np.ndarray, bbox: List[float], max_expand: int = 28) -> List[float]:
     """
@@ -612,9 +768,8 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
         if digit_ratio > 0.35:
             score -= int(60 * digit_ratio)
 
-    # Phạt ký tự lạ thường là lỗi OCR/khuyến mãi/rác, nhưng không loại tuyệt đối.
-    odd_chars = len(re.findall(r'[?%#*"“”]', s))
-    score -= 10 * odd_chars
+    artifact_penalty = _ocr_artifact_score(s) if '_ocr_artifact_score' in globals() else 0
+    score -= 14 * artifact_penalty
 
     # Token 1 ký tự ở đầu/cuối thường là mẩu icon hoặc chữ rác.
     if words and len(words[0]) == 1 and len(words) > 1:
@@ -622,12 +777,187 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
     if words and len(words[-1]) == 1 and len(words) > 1:
         score -= 12
 
+    # Áp dụng cùng rule cho từng segment ngăn bởi '/', vì lỗi thường xuất hiện dạng "D Little...".
+    for segment in re.split(r'\s*/\s*', s):
+        seg_words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', segment)
+        if len(seg_words) > 1 and len(seg_words[0]) == 1:
+            score -= 28
+        if len(seg_words) > 1 and len(seg_words[-1]) == 1:
+            score -= 16
+
     # Dòng quá ngắn chỉ chấp nhận nếu nó là label ngắn thật; cho điểm thấp để variant dài hơn thắng.
     if clean_len <= 4:
         score -= 30
 
     # Cộng điểm thưởng siêu nhỏ theo thang phóng đại để giải quyết đồng điểm (tie-breaker)
     return score + 0.05 * fx
+
+
+def _ocr_artifact_score(text: str) -> int:
+    """Đếm dấu hiệu OCR méo chữ/dấu câu, không phụ thuộc tên riêng."""
+    s = text or ""
+    score = 0
+    score += 3 * len(re.findall(r'[?#*"“”]', s))
+    score += 2 * len(re.findall(r'[():;]', s))
+    score += 2 * len(re.findall(r'(?<=\w)[\-–—](?=\w)', s))  # dấu gạch chen trong token: -laan
+    score += 2 * len(re.findall(r'\d[A-Za-zÀ-ỹ]|[A-Za-zÀ-ỹ]\d', s))  # 5Chạt
+    score += len(re.findall(r'[^\w\sÀ-ỹ/&.,%+\-–—]', s))
+    for segment in re.split(r'\s*/\s*', s):
+        words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', segment)
+        if len(words) > 1 and len(words[0]) == 1:
+            score += 2
+        if len(words) > 1 and len(words[-1]) == 1:
+            score += 1
+    return score
+
+
+def _normalized_regresses_quality(primary_text: str, norm_text: str) -> bool:
+    """Giữ Primary nếu normalized không cải thiện rõ mà làm méo token/dấu câu/chính tả."""
+    if not primary_text or not norm_text or _looks_like_bad_ocr(primary_text):
+        return False
+
+    primary_artifacts = _ocr_artifact_score(primary_text)
+    norm_artifacts = _ocr_artifact_score(norm_text)
+    primary_tokens = _ocr_tokens(primary_text)
+    norm_tokens = _ocr_tokens(norm_text)
+    if not primary_tokens or not norm_tokens:
+        return False
+
+    overlap = len(set(primary_tokens) & set(norm_tokens))
+    overlap_ratio = overlap / max(1, min(len(primary_tokens), len(norm_tokens)))
+    token_delta = abs(len(norm_tokens) - len(primary_tokens))
+
+    # Normalized cùng nội dung gần như Primary nhưng nhiều artifact hơn: giữ Primary.
+    if overlap_ratio >= 0.70 and norm_artifacts > primary_artifacts:
+        return True
+
+    # Normalized không có artifact hơn, nhưng chỉ là biến thể chính tả/dấu câu của Primary.
+    # Nếu Primary đã tốt, tránh override chỉ khi Normalized thực sự có thêm artifact.
+    if overlap_ratio >= 0.78 and token_delta <= 2 and norm_artifacts > primary_artifacts:
+        return True
+
+    # Normalized thêm segment/từ ngoài khi primary đã đủ dài thường là ăn chữ nhãn cạnh crop.
+    if len(primary_tokens) >= 4 and len(norm_tokens) > len(primary_tokens) + 1 and norm_artifacts >= primary_artifacts:
+        return True
+
+    return False
+
+
+def _ocr_tokens(text: str) -> List[str]:
+    """Token OCR đã bỏ dấu để so sánh bao hàm, không phụ thuộc tên riêng."""
+    return re.findall(r'[a-z0-9]+', _strip_vietnamese_accents(text or "").lower())
+
+
+def _contains_token_subsequence(container: List[str], needle: List[str]) -> bool:
+    if not needle or len(needle) > len(container):
+        return False
+    for start in range(0, len(container) - len(needle) + 1):
+        if container[start:start + len(needle)] == needle:
+            return True
+    return False
+
+
+def _normalized_adds_suspicious_text(primary_text: str, norm_text: str) -> bool:
+    """
+    Trả True khi normalized chỉ là primary cộng thêm text ngoài mép crop.
+    Rule tổng quát: primary đã nằm nguyên trong normalized, normalized có phần dư ở đầu/cuối,
+    thì coi phần dư là nhiễu trừ khi primary đang rỗng/rác.
+    """
+    primary_tokens = _ocr_tokens(primary_text)
+    norm_tokens = _ocr_tokens(norm_text)
+    if not primary_tokens or not norm_tokens:
+        return False
+    if len(norm_tokens) <= len(primary_tokens):
+        return False
+
+    match_start = -1
+    for start in range(0, len(norm_tokens) - len(primary_tokens) + 1):
+        if norm_tokens[start:start + len(primary_tokens)] == primary_tokens:
+            match_start = start
+            break
+
+    if match_start < 0:
+        return False
+
+    leading_extra = norm_tokens[:match_start]
+    trailing_extra = norm_tokens[match_start + len(primary_tokens):]
+
+    # Primary đã là chuỗi con đầy đủ, normalized chỉ thêm text ở mép crop: giữ primary.
+    # Bắt case "Lightness / Thư viện số..." và mọi nhiễu tương tự, không hardcode.
+    if leading_extra or trailing_extra:
+        return True
+
+    extra_tokens = norm_tokens.copy()
+    for token in primary_tokens:
+        try:
+            extra_tokens.remove(token)
+        except ValueError:
+            pass
+
+    if any(len(tok) <= 1 for tok in extra_tokens):
+        return True
+
+    for segment in re.split(r'\s*/\s*', norm_text or ""):
+        seg_words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', segment)
+        if len(seg_words) > 1 and (len(seg_words[0]) == 1 or len(seg_words[-1]) == 1):
+            return True
+
+    return False
+
+
+def _segment_has_strong_signal(segment: str) -> bool:
+    """Segment có khả năng là tên thật: nhiều từ, có dấu Việt, số địa chỉ, hoặc chữ hoa/thương hiệu ngắn."""
+    words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', segment or "")
+    if not words:
+        return False
+    if len(words) >= 2:
+        return True
+    token = words[0]
+    if re.search(r'[À-ỹ]', token) or re.search(r'\d', token):
+        return True
+    if token.isupper() and 2 <= len(token) <= 6:
+        return True
+    return False
+
+
+def _is_weak_edge_segment(segment: str) -> bool:
+    """Nhận diện segment rìa yếu sinh từ chữ/icon nhãn lân cận, không dựa tên riêng."""
+    s = (segment or "").strip()
+    words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', s)
+    if len(words) != 1:
+        return False
+    token = words[0]
+    clean = _strip_vietnamese_accents(token).lower()
+    if len(clean) <= 3:
+        return True
+    if re.search(r'[À-ỹ\d]', token):
+        return False
+    # Lowercase 1 từ ở rìa thường là mảnh chữ nhãn khác: reverses, tybrid...
+    if token[:1].islower() and len(clean) >= 5:
+        return True
+    # Titlecase dài kết thúc bằng đuôi OCR artifact như "Priviness".
+    # Giữ an toàn vì chỉ áp dụng khi token nằm ở mép và phần còn lại có tín hiệu mạnh.
+    if token[:1].isupper() and token[1:].islower() and len(clean) >= 8 and clean.endswith("iness"):
+        return True
+    # ALLCAPS dài không phải acronym ngắn thường là mảnh OCR cạnh crop.
+    if token.isupper() and len(clean) > 6:
+        return True
+    return False
+
+
+def _clean_ocr_edge_segments(text: str) -> str:
+    """Loại segment rác ở đầu/cuối khi kết quả có nhiều segment và lõi đủ mạnh."""
+    parts = [p.strip() for p in re.split(r'\s*/\s*', text or "") if p.strip()]
+    if len(parts) < 2:
+        return (text or "").strip()
+
+    kept = parts[:]
+    while len(kept) >= 2 and _is_weak_edge_segment(kept[0]) and any(_segment_has_strong_signal(p) for p in kept[1:]):
+        kept.pop(0)
+    while len(kept) >= 2 and _is_weak_edge_segment(kept[-1]) and any(_segment_has_strong_signal(p) for p in kept[:-1]):
+        kept.pop()
+
+    return " / ".join(kept)
 
 
 def _recognize_text_paddle(cv_img: np.ndarray) -> str:
@@ -919,21 +1249,19 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             crop_clean[:, 0:border_w] = bg_color
             crop_clean[:, w_rc - border_w:] = bg_color
 
-    # 3. Vẽ đè vòng tròn màu nền lên vùng icon nếu có tọa độ cx, cy
-    if cx is not None and cy is not None:
-        cx_local = cx - x1
-        cy_local = cy - y1
-        r = int(16 * scale)
-        cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
+    def _ocr_from_prepared_crop(prepared_crop: np.ndarray) -> str:
+        tx1, ty1, tx2, ty2 = detect_text_area(prepared_crop, scale)
+        # Nới nhẹ mép trái để tránh mất nét dọc đầu chữ như H/L/T khi crop sát icon.
+        tx1_safe = max(0, tx1 - int(6 * scale))
+        tx2_safe = min(prepared_crop.shape[1], tx2 + int(3 * scale))
+        crop_local = prepared_crop[ty1:ty2, tx1_safe:tx2_safe]
 
-    tx1, ty1, tx2, ty2 = detect_text_area(crop_clean, scale)
-    crop = crop_clean[ty1:ty2, tx1:tx2]
-    
-    primary_text = ""
-    if crop.size > 0:
+        if crop_local.size <= 0:
+            return ""
+
         try:
             # Tách crop thành các dòng chữ đơn lẻ
-            line_crops = split_crop_into_lines(crop, scale)
+            line_crops = split_crop_into_lines(crop_local, scale)
             
             texts = []
             for line_crop in line_crops:
@@ -943,7 +1271,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                 # Thêm viền sạch (padding) xung quanh ảnh với màu nền này để tránh lỗi biên của OCR
                 bg_color_line = line_crop[0, 0].tolist()
                 pad_h = max(4, int(6 * scale))
-                pad_w = max(8, int(12 * scale))
+                pad_w = max(10, int(16 * scale))
                 padded_line = cv2.copyMakeBorder(
                     line_crop,
                     pad_h, pad_h, pad_w, pad_w,
@@ -968,9 +1296,65 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                     best_line_text = max(candidates, key=lambda x: x[0])[1]
                     if best_line_text and not _is_junk_line(best_line_text):
                         texts.append(best_line_text)
-            primary_text = " / ".join(texts)
+            return " / ".join(texts)
         except Exception as e:
             logger.debug("Primary VietOCR error: %s", e)
+            return ""
+
+    # 3. Vẽ đè vòng tròn màu nền lên vùng icon nếu có tọa độ cx, cy.
+    # Chạy thêm bản không mask để tránh ăn mất chữ đầu khi bbox/icon sát chữ.
+    crop_masked = crop_clean.copy()
+    if cx is not None and cy is not None:
+        cx_local = cx - x1
+        cy_local = cy - y1
+        r = int(16 * scale)
+        cv2.circle(crop_masked, (int(cx_local), int(cy_local)), r, bg_color, -1)
+
+    primary_masked = _ocr_from_prepared_crop(crop_masked)
+    primary_unmasked = _ocr_from_prepared_crop(crop_clean)
+
+    def _should_use_unmasked(masked_text: str, unmasked_text: str) -> bool:
+        if not masked_text or not unmasked_text:
+            return bool(unmasked_text and not masked_text)
+        if _looks_like_bad_ocr(unmasked_text):
+            return False
+
+        masked_tokens = _ocr_tokens(masked_text)
+        unmasked_tokens = _ocr_tokens(unmasked_text)
+        if not masked_tokens or not unmasked_tokens:
+            return False
+
+        # Nếu cùng số token, chỉ cho unmasked thắng khi nó thật sự khôi phục token bị cắt đầu.
+        # Ví dụ cần cứu: tybrid -> hybrid (unmasked dài hơn 1 ký tự và chứa masked làm suffix).
+        # Ví dụ phải giữ: tam -> vi tam (unmasked chèn token nhiễu), sai gon -> sai gon giữ nguyên.
+        if len(masked_tokens) == len(unmasked_tokens):
+            masked_raw_tokens = re.findall(r'[A-Za-zÀ-ỹ0-9]+', masked_text)
+            improved_prefix = False
+            worsened = False
+            for idx, (m_tok, u_tok) in enumerate(zip(masked_tokens, unmasked_tokens)):
+                if m_tok == u_tok:
+                    continue
+                raw_m = masked_raw_tokens[idx] if idx < len(masked_raw_tokens) else ""
+                # Chỉ cứu token bắt đầu lowercase: tybrid -> hybrid.
+                # Không sửa token viết hoa hợp lệ: Efora -> LEfora.
+                if raw_m[:1].islower() and len(u_tok) == len(m_tok) + 1 and u_tok.endswith(m_tok):
+                    improved_prefix = True
+                    continue
+                worsened = True
+                break
+            return improved_prefix and not worsened
+
+        # Nếu unmasked thêm token, coi là nhiễu icon/chữ lân cận trừ khi masked gần như rỗng/rác.
+        if len(unmasked_tokens) > len(masked_tokens):
+            return _looks_like_bad_ocr(masked_text)
+
+        return False
+
+    if _should_use_unmasked(primary_masked, primary_unmasked):
+        primary_text = primary_unmasked
+        logger.info("  [OCR primary unmasked chosen] Masked='%s' -> Unmasked='%s'", primary_masked, primary_unmasked)
+    else:
+        primary_text = primary_masked
 
     # 4. Chạy luồng normalized OCR làm fallback
     norm_text = _recognize_text_crop_vietocr_normalized(cv_img, bbox, icon_side, scale, cx, cy)
@@ -979,16 +1363,36 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     primary_score = _score_ocr_text_quality(primary_text)
     norm_score = _score_ocr_text_quality(norm_text)
 
-    if norm_score > primary_score + 3:
+    if (
+        primary_text
+        and norm_text
+        and not _looks_like_bad_ocr(primary_text)
+        and _normalized_adds_suspicious_text(primary_text, norm_text)
+    ):
+        selected_text = primary_text
+        is_normalized_chosen = False
+        logger.info("  [OCR keep primary] Primary='%s' rejected suspicious Normalized='%s'", primary_text, norm_text)
+    elif _normalized_regresses_quality(primary_text, norm_text):
+        selected_text = primary_text
+        is_normalized_chosen = False
+        logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
+    elif norm_score > primary_score + 8:
         selected_text = norm_text
         is_normalized_chosen = True
     else:
         selected_text = primary_text
         is_normalized_chosen = False
+    if selected_text and primary_text and selected_text != primary_text:
+        merged_text = _merge_best_diacritics(primary_text, selected_text)
+        if merged_text != selected_text:
+            logger.info("  [OCR merge diacritics] Selected='%s' + Primary='%s' -> '%s'", selected_text, primary_text, merged_text)
+            selected_text = merged_text
         
     # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
     if not selected_text or _looks_like_bad_ocr(selected_text):
-        paddle_text = _recognize_text_paddle(crop) if crop.size > 0 else ""
+        tx1, ty1, tx2, ty2 = detect_text_area(crop_masked, scale)
+        crop_for_paddle = crop_masked[ty1:ty2, max(0, tx1 - int(6 * scale)):tx2]
+        paddle_text = _recognize_text_paddle(crop_for_paddle) if crop_for_paddle.size > 0 else ""
         if paddle_text and not _looks_like_bad_ocr(paddle_text):
             logger.info("  [OCR fallback] VietOCR selected='%s' -> PaddleOCR='%s'", selected_text, paddle_text)
             return paddle_text
@@ -1166,6 +1570,10 @@ async def extract_pois_from_screenshot(
         # OCR text dùng logic phóng to 6x và phân tích đa dòng (loại bỏ icon)
         text = _recognize_text_crop_vietocr(img, b_expanded, icon_side, scale, cx=cx, cy=cy)
         name = _clean_spelling(text)
+        name_cleaned = _clean_ocr_edge_segments(name)
+        if name_cleaned != name:
+            logger.info("  [OCR edge cleanup] '%s' -> '%s'", name, name_cleaned)
+            name = name_cleaned
         
         if not name:
             name = f"Unknown_{i}"
@@ -1226,91 +1634,6 @@ def draw_detections(image_bytes: bytes, pois: List[dict]) -> bytes:
 
 def enhance_for_detection(image_bytes: bytes) -> bytes:
     return image_bytes
-
-def remove_background(image_bytes: bytes) -> bytes:
-    return image_bytes
-
-def _find_icon_boundary(crop_img: np.ndarray, icon_side: str, scale: float = 1.0) -> int:
-    """
-    Tìm số pixel cần bỏ từ cạnh icon-side để đến vùng text.
-
-    Nguyên tắc an toàn:
-    - Ngưỡng thấp (SAT=35, FG=0.25) để nhận diện được cả icon màu nhạt
-    - Kết quả luôn được clamp vào [MIN_PX, MAX_PX] để không bao giờ cắt quá mức
-    - Nếu không phát hiện icon rõ ràng, fallback về DEFAULT_PX - bảo thủ, an toàn
-    - Các giá trị tĩnh theo scale (đã xác nhận qua thực nghiệm) thay vì dùng yolo_height
-      (yolo_height quá lớn ~40-60px, gây cắt lấn vào chữ tên địa điểm)
-    """
-    DEFAULT_PX = int(32 * scale)   # icon ~20px + gap ~5px + viền ~7px
-    MIN_PX     = int(18 * scale)   # tối thiểu: icon ~15px nhỏ nhất
-    MAX_PX     = int(42 * scale)   # tối đa: tránh lấn vào chữ
-
-    if crop_img is None or crop_img.size == 0:
-        return DEFAULT_PX
-    try:
-        hsv = cv2.cvtColor(crop_img, cv2.COLOR_BGR2HSV)
-        s = hsv[:, :, 1]
-        v = hsv[:, :, 2]
-        h_sz, w_sz = crop_img.shape[:2]
-
-        # Ngưỡng thấp hơn (35) để nhận diện được các icon màu nhạt/desaturated (như UBND, xám, xanh nhạt)
-        SAT_THRESH   = 35  # icon sat > 120-200; chữ màu xanh sat ~40-70 → bị loại
-        VAL_MIN      = 60   # loại shadow
-        VAL_MAX      = 256  # cho phép bắt tất cả các màu icon sáng chói (V=255)
-        FG_RATIO     = 0.25 # ≥25% pixel trong cột phải là icon-colored
-        MAX_SCAN     = MAX_PX + int(4 * scale)
-        MARGIN       = int(2 * scale)
-        REQUIRED_GAP = int(10 * scale)
-
-        icon_mask = (s > SAT_THRESH) & (v > VAL_MIN) & (v < VAL_MAX)
-
-        # Pre-check: nếu toàn bộ crop có nhiều pixel màu sắc (nền cam/xanh của label quảng cáo),
-        # không thể phát hiện icon đơn lẻ → dùng DEFAULT_PX để không cắt nhầm text
-        overall_ratio = float(np.sum(icon_mask)) / (h_sz * w_sz) if (h_sz * w_sz > 0) else 0.0
-        if overall_ratio > 0.40:
-            return DEFAULT_PX
-
-        def _scan(indices, is_col: bool) -> int:
-            last_icon = -1
-            gap = 0
-            found = False
-            for idx in indices:
-                col_data = icon_mask[:, idx] if is_col else icon_mask[idx, :]
-                denom = h_sz if is_col else w_sz
-                ratio = float(np.sum(col_data)) / denom
-                if ratio > FG_RATIO:
-                    last_icon = idx
-                    gap = 0
-                    found = True
-                elif found:
-                    gap += 1
-                    if gap >= REQUIRED_GAP:
-                        break
-            return last_icon
-
-        result = None
-        if icon_side == "left":
-            last = _scan(range(min(w_sz, MAX_SCAN)), is_col=True)
-            if last >= 0:
-                result = last + MARGIN
-        elif icon_side == "right":
-            last = _scan(range(w_sz - 1, max(-1, w_sz - MAX_SCAN - 1), -1), is_col=True)
-            if last >= 0:
-                result = w_sz - last + MARGIN
-        elif icon_side == "top":
-            last = _scan(range(min(h_sz, MAX_SCAN)), is_col=False)
-            if last >= 0:
-                result = last + MARGIN
-
-        if result is not None:
-            # Clamp kết quả vào [MIN_PX, MAX_PX] → không bao giờ cắt quá mức
-            return max(MIN_PX, min(MAX_PX, result))
-
-
-    except Exception:
-        pass
-    return DEFAULT_PX
-
 
 def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float = 1.0):
     """Lưu ảnh crop POI đẹp: chỉ text, padding đều, không lộ icon, không cắt chữ."""

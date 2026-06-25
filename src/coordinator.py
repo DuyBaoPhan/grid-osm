@@ -443,28 +443,6 @@ class Coordinator:
         except Exception as exc:
             logger.debug("Could not write map_status.json: %s", exc)
 
-    # ── Internal helpers ─────────────────────────────────────
-    def _find_frontier_tiles(self) -> Set[TileCoord]:
-        """
-        Tìm các tile chưa xử lý kề với các tile đã xử lý (frontier BFS).
-        Dùng để tiếp tục scan khi queue trống nhưng vẫn còn tile chưa quét.
-        """
-        frontier: Set[TileCoord] = set()
-        for tx, ty in self._visited:
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    if dx == 0 and dy == 0:
-                        continue
-                    n = (tx + dx, ty + dy)
-                    if (
-                        n in self._all_tiles_set
-                        and n not in self._visited
-                        and n not in self._discarded
-                        and n not in self._queued
-                    ):
-                        frontier.add(n)
-        return frontier
-
 
 # ── Utilities ────────────────────────────────────────────────
 
