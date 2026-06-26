@@ -179,6 +179,9 @@ def _clean_spelling(text: str) -> str:
     text = re.sub(r"[\"\'`\\\[\]\{\}]", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
     text = _normalize_vietnamese_place_phrases(text)
+    # OCR hay nhầm Cúng -> Cũng trong ngữ cảnh dịch vụ/đồ cúng; chỉ sửa khi có cụm ngữ cảnh rõ.
+    text = re.sub(r'(?i)\b(Đồ|Dịch vụ Đồ)\s+Cũng\b', lambda m: m.group(1) + ' Cúng', text)
+    text = re.sub(r'(?i)\bCũng\s+Trọn\s+Gói\b', 'Cúng Trọn Gói', text)
     text = _remove_adjacent_duplicate_ocr_tokens(text)
     return text
 
@@ -520,7 +523,7 @@ def _clean_junk_words(s: str) -> str:
         )
         if re.match(junk_pattern, w_clean):
             continue
-        junk_standalone = {'quantousus', 'unstitute', 'discepter', 'quantous', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1'}
+        junk_standalone = {'quantousus', 'unstitute', 'discepter', 'quantous', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1', 'disserian'}
         if w_clean.lower() in junk_standalone:
             continue
         cleaned_words.append(w)
@@ -528,6 +531,81 @@ def _clean_junk_words(s: str) -> str:
     res = " ".join(cleaned_words).strip()
     res = re.sub(r'^[\s,\-/]+|[\s,\-/]+$', '', res).strip()
     return res
+
+
+def _looks_like_junk_token(token: str, *, is_edge: bool = False) -> bool:
+    """Nhận diện token OCR vô nghĩa để không xuất ra kết quả cuối."""
+    raw = (token or "").strip()
+    clean = re.sub(r'[^A-Za-zÀ-ỹĐđ0-9]', '', raw)
+    if not clean:
+        return True
+
+    key = _strip_vietnamese_accents(clean).lower()
+    if key in {"tp", "cn", "k", "q", "p"}:
+        return False
+    if any(ch.isdigit() for ch in clean):
+        return False
+    if re.search(r'[À-ỹĐđ]', clean):
+        return False
+    if clean.isupper() and 2 <= len(clean) <= 6:
+        return False
+    if is_edge and len(clean) <= 2 and not clean[:1].isupper():
+        return True
+
+    artifact_suffixes = (
+        "erian", "iness", "teris", "cess", "tess", "tracess", "oum",
+        "natis", "shone", "mogers", "phousness", "interpoum",
+    )
+    if len(key) >= 7 and key.endswith(artifact_suffixes):
+        return True
+    if key in {"disserian", "quantousus", "unstitute", "discepter"}:
+        return True
+    if len(key) >= 8 and not clean[:1].isupper():
+        vowels = sum(ch in "aeiouy" for ch in key)
+        letters = sum(ch.isalpha() for ch in key)
+        if letters and vowels / letters < 0.25:
+            return True
+    return False
+
+
+def _clean_final_ocr_text(text: str) -> str:
+    """Cleanup cuối: không để ký tự/từ rác lọt ra output."""
+    if not text:
+        return ""
+    text = _clean_spelling(text)
+    parts = [p.strip() for p in re.split(r'\s*/\s*', text) if p.strip()]
+    cleaned_parts = []
+    for part_idx, part in enumerate(parts):
+        part = re.sub(r'^[^A-Za-zÀ-ỹĐđ0-9]+|[^A-Za-zÀ-ỹĐđ0-9]+$', '', part).strip()
+        part = _clean_junk_words(part)
+        words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part)
+        kept_words = []
+        for idx, word in enumerate(words):
+            is_edge = idx == 0 or idx == len(words) - 1
+            if _looks_like_junk_token(word, is_edge=is_edge):
+                continue
+            kept_words.append(word)
+        if kept_words:
+            # Nếu không xóa token nào, giữ nguyên dấu câu hợp lệ trong segment (vd: `Chợ Nga, TP`).
+            if len(kept_words) == len(words):
+                cleaned_parts.append(part)
+            else:
+                cleaned_parts.append(" ".join(kept_words))
+    cleaned = " / ".join(cleaned_parts)
+    cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
+    return cleaned.strip()
+
+
+def _junk_token_count(text: str) -> int:
+    parts = [p.strip() for p in re.split(r'\s*/\s*', text or "") if p.strip()]
+    count = 0
+    for part_idx, part in enumerate(parts):
+        words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part)
+        for idx, word in enumerate(words):
+            is_edge = idx == 0 or idx == len(words) - 1
+            if _looks_like_junk_token(word, is_edge=is_edge):
+                count += 1
+    return count
 
 def detect_text_area(
     crop_img: np.ndarray,
@@ -770,6 +848,8 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
 
     artifact_penalty = _ocr_artifact_score(s) if '_ocr_artifact_score' in globals() else 0
     score -= 14 * artifact_penalty
+    if '_junk_token_count' in globals():
+        score -= 45 * _junk_token_count(s)
 
     # Token 1 ký tự ở đầu/cuối thường là mẩu icon hoặc chữ rác.
     if words and len(words[0]) == 1 and len(words) > 1:
@@ -784,12 +864,16 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
             score -= 28
         if len(seg_words) > 1 and len(seg_words[-1]) == 1:
             score -= 16
+        # Ending ngắn sau token dài thường là chữ bị cụt/nối dòng sai: "Steakhous / Ste".
+        if len(seg_words) == 1 and len(seg_words[0]) <= 3 and segment == s.split('/')[-1].strip():
+            previous_words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', ' / '.join(re.split(r'\s*/\s*', s)[:-1]))
+            if previous_words and len(previous_words[-1]) >= 7:
+                score -= 35
 
     # Dòng quá ngắn chỉ chấp nhận nếu nó là label ngắn thật; cho điểm thấp để variant dài hơn thắng.
     if clean_len <= 4:
         score -= 30
 
-    # Cộng điểm thưởng siêu nhỏ theo thang phóng đại để giải quyết đồng điểm (tie-breaker)
     return score + 0.05 * fx
 
 
@@ -1360,46 +1444,80 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     norm_text = _recognize_text_crop_vietocr_normalized(cv_img, bbox, icon_side, scale, cx, cy)
     
     # 5. So sánh chất lượng và chọn kết quả tốt nhất bằng score tổng quát, không keyword.
-    primary_score = _score_ocr_text_quality(primary_text)
-    norm_score = _score_ocr_text_quality(norm_text)
+    def _candidate_score(text: str, source: str) -> float:
+        cleaned = _clean_final_ocr_text(text)
+        if not cleaned:
+            return -9999
+        score = _score_ocr_text_quality(cleaned)
+        # Không cộng bonus riêng cho normalized: log thực tế cho thấy normalized hay dài/sạch hơn nhưng đổi sai chữ gốc
+        # như `Bưu` -> `Bir`, `Cổng` -> `Cống`, `19th-century` -> `9th-censury`.
+        return score
 
-    if (
-        primary_text
-        and norm_text
-        and not _looks_like_bad_ocr(primary_text)
-        and _normalized_adds_suspicious_text(primary_text, norm_text)
-    ):
-        selected_text = primary_text
-        is_normalized_chosen = False
-        logger.info("  [OCR keep primary] Primary='%s' rejected suspicious Normalized='%s'", primary_text, norm_text)
-    elif _normalized_regresses_quality(primary_text, norm_text):
-        selected_text = primary_text
-        is_normalized_chosen = False
-        logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
-    elif norm_score > primary_score + 8:
-        selected_text = norm_text
+    candidates = []
+    for source, raw_text in (("primary", primary_text), ("normalized", norm_text)):
+        cleaned = _clean_final_ocr_text(raw_text)
+        if cleaned:
+            candidates.append((_candidate_score(raw_text, source), source, cleaned, raw_text))
+
+    if candidates:
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        best_score, best_source, selected_text, selected_raw = candidates[0]
+        primary_candidate = next((item for item in candidates if item[1] == "primary"), None)
+        if (
+            best_source == "normalized"
+            and primary_candidate
+            and not _looks_like_bad_ocr(primary_text)
+            and _normalized_adds_suspicious_text(primary_text, norm_text)
+        ):
+            _, _, primary_cleaned, _ = primary_candidate
+            selected_text = primary_cleaned
+            best_source = "primary"
+            logger.info(
+                "  [OCR keep primary] Primary='%s' rejected suspicious-extra Normalized='%s'",
+                primary_cleaned,
+                norm_text,
+            )
+        if best_source == "normalized" and primary_candidate and not _looks_like_bad_ocr(primary_text):
+            primary_score, _, primary_cleaned, _ = primary_candidate
+            norm_gain = best_score - primary_score
+            if norm_gain < 9:
+                selected_text = primary_cleaned
+                best_source = "primary"
+                logger.info(
+                    "  [OCR keep primary] Primary='%s' rejected non-clear Normalized='%s' (gain=%.1f)",
+                    primary_cleaned,
+                    selected_raw,
+                    norm_gain,
+                )
+        is_normalized_chosen = best_source == "normalized"
+        if best_source == "primary" and norm_text and _normalized_regresses_quality(primary_text, norm_text):
+            logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
+        elif best_source == "normalized":
+            logger.info("  [OCR normalized chosen] Primary='%s' -> Normalized='%s'", primary_text, selected_text)
+    elif norm_text:
+        selected_text = _clean_final_ocr_text(norm_text)
         is_normalized_chosen = True
     else:
-        selected_text = primary_text
+        selected_text = _clean_final_ocr_text(primary_text)
         is_normalized_chosen = False
+
     if selected_text and primary_text and selected_text != primary_text:
         merged_text = _merge_best_diacritics(primary_text, selected_text)
-        if merged_text != selected_text:
+        merged_text = _clean_final_ocr_text(merged_text)
+        if merged_text and merged_text != selected_text:
             logger.info("  [OCR merge diacritics] Selected='%s' + Primary='%s' -> '%s'", selected_text, primary_text, merged_text)
             selected_text = merged_text
         
     # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
-    if not selected_text or _looks_like_bad_ocr(selected_text):
+    if not selected_text or _looks_like_bad_ocr(selected_text) or _junk_token_count(selected_text) > 0:
         tx1, ty1, tx2, ty2 = detect_text_area(crop_masked, scale)
         crop_for_paddle = crop_masked[ty1:ty2, max(0, tx1 - int(6 * scale)):tx2]
-        paddle_text = _recognize_text_paddle(crop_for_paddle) if crop_for_paddle.size > 0 else ""
-        if paddle_text and not _looks_like_bad_ocr(paddle_text):
+        paddle_text = _clean_final_ocr_text(_recognize_text_paddle(crop_for_paddle)) if crop_for_paddle.size > 0 else ""
+        if paddle_text and not _looks_like_bad_ocr(paddle_text) and _junk_token_count(paddle_text) == 0:
             logger.info("  [OCR fallback] VietOCR selected='%s' -> PaddleOCR='%s'", selected_text, paddle_text)
             return paddle_text
-            
-    if is_normalized_chosen and selected_text:
-        logger.info("  [OCR normalized chosen] Primary='%s' -> Normalized='%s'", primary_text, selected_text)
-    return selected_text
+
+    return _clean_final_ocr_text(selected_text)
 
 
 async def extract_pois_from_screenshot(
