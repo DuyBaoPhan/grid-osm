@@ -165,10 +165,10 @@ def load_or_download_boundary(district_name: str) -> Optional[dict]:
     return None
 
 
-def is_point_in_boundary(lat: float, lng: float, geometry: dict) -> bool:
+def is_point_in_boundary(lat: float, lng: float, geometry: dict, buffer_meters: float = 0.0) -> bool:
     """
     Kiểm tra xem một tọa độ (lat, lng) có nằm trong GeoJSON geometry (Polygon hoặc MultiPolygon) không.
-    Lưu ý: Tọa độ GeoJSON ở dạng [longitude, latitude].
+    Hỗ trợ tham số buffer_meters (nới rộng ranh giới ra một khoảng mét) để tránh mất POI ở biên.
     """
     geom_type = geometry.get("type")
     coords = geometry.get("coordinates", [])
@@ -191,18 +191,62 @@ def is_point_in_boundary(lat: float, lng: float, geometry: dict) -> bool:
             p1x, p1y = p2x, p2y
         return inside
 
+    # Kiểm tra xem có nằm trực tiếp trong Polygon/MultiPolygon không
+    is_inside = False
     if geom_type == "Polygon":
-        if not coords:
-            return False
-        return pip(lng, lat, coords[0])
-    
+        if coords:
+            is_inside = pip(lng, lat, coords[0])
     elif geom_type == "MultiPolygon":
         for poly_coords in coords:
             if poly_coords and pip(lng, lat, poly_coords[0]):
+                is_inside = True
+                break
+
+    if is_inside:
+        return True
+
+    if buffer_meters <= 0.0:
+        return False
+
+    # Nếu nằm ngoài, kiểm tra xem có nằm trong vùng đệm (buffer) không
+    # Chuyển đổi buffer_meters sang độ (độ vĩ độ/kinh độ gần đúng tại TP.HCM)
+    lat_buf = buffer_meters / 111000.0
+    lng_buf = buffer_meters / 109000.0
+    max_buf_sq = max(lat_buf, lng_buf) ** 2
+
+    def point_to_segment_dist_sq(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+        dx = bx - ax
+        dy = by - ay
+        if dx == 0 and dy == 0:
+            return (px - ax) ** 2 + (py - ay) ** 2
+        t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+        t = max(0.0, min(1.0, t))
+        cx = ax + t * dx
+        cy = ay + t * dy
+        return (px - cx) ** 2 + (py - cy) ** 2
+
+    def check_poly_buffer(poly: list) -> bool:
+        n = len(poly)
+        if n < 2:
+            return False
+        for i in range(n):
+            p1 = poly[i]
+            p2 = poly[(i + 1) % n]
+            dist_sq = point_to_segment_dist_sq(lng, lat, p1[0], p1[1], p2[0], p2[1])
+            if dist_sq <= max_buf_sq:
                 return True
         return False
-    
+
+    if geom_type == "Polygon":
+        if coords and check_poly_buffer(coords[0]):
+            return True
+    elif geom_type == "MultiPolygon":
+        for poly_coords in coords:
+            if poly_coords and check_poly_buffer(poly_coords[0]):
+                return True
+
     return False
+
 
 
 def generate_all_tiles(
@@ -242,11 +286,17 @@ def generate_all_tiles(
             extract_points(coords)
             
             if lats and lngs:
-                lat_min, lat_max = min(lats), max(lats)
-                lng_min, lng_max = min(lngs), max(lngs)
+                # Nới rộng bbox ranh giới thêm 100m (khoảng 0.0009 độ) để không bỏ sót các ô tiếp giáp biên giới
+                lat_buf = 100.0 / 111000.0
+                lng_buf = 100.0 / 109000.0
+                
+                lat_min = min(lats) - lat_buf
+                lat_max = max(lats) + lat_buf
+                lng_min = min(lngs) - lng_buf
+                lng_max = max(lngs) + lng_buf
                 
                 logger.info(
-                    "District polygon boundary bbox: lat=[%.6f, %.6f], lng=[%.6f, %.6f]",
+                    "District polygon boundary bbox (buffered 100m): lat=[%.6f, %.6f], lng=[%.6f, %.6f]",
                     lat_min, lat_max, lng_min, lng_max
                 )
                 
@@ -284,7 +334,8 @@ def generate_all_tiles(
                             (t_lat_max, t_lng_max),
                             (clat, clng)
                         ]
-                        if any(is_point_in_boundary(lat, lng, geometry) for lat, lng in corners):
+                        # Cho phép nới rộng ranh giới 100m để lấy thêm các ô kề biên
+                        if any(is_point_in_boundary(lat, lng, geometry, buffer_meters=100.0) for lat, lng in corners):
                             tiles.append((tx, ty))
                 
                 logger.info("Generated %d tiles inside polygon boundary of '%s'", len(tiles), district_name)

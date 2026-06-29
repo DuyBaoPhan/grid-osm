@@ -37,6 +37,7 @@ from config import (
 )
 from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
 from src.vision import extract_pois_from_screenshot, draw_detections, enhance_for_detection
+from src.canonical_matcher import resolve_canonical_name
 
 logger = logging.getLogger(__name__)
 
@@ -421,10 +422,39 @@ class Worker:
                 distance_meters = 0.0
                 bearing_deg = 0.0
 
-            # Giữ tất cả POI tìm thấy trong screenshot. Coordinator sẽ lo việc khử trùng (deduplication)
-            # nếu cùng một địa điểm xuất hiện ở nhiều tile cạnh nhau.
+            canonical_match = resolve_canonical_name(
+                name,
+                name,
+                browser_coords,
+                poi_lat=poi_lat,
+                poi_lng=poi_lng,
+            )
+            suggested_name = canonical_match.selected if canonical_match.action == "use_canonical" else ""
+            if suggested_name and suggested_name != name:
+                logger.info(
+                    "  [CanonicalSuggestion] OCR='%s' suggested='%s' source=%s score=%.3f",
+                    name,
+                    suggested_name,
+                    canonical_match.source,
+                    canonical_match.score,
+                )
+            if canonical_match.needs_review:
+                logger.info(
+                    "  [NeedsReview] OCR='%s' best_score=%.3f reason=%s",
+                    name,
+                    canonical_match.score,
+                    canonical_match.reason,
+                )
+
+            # Giữ text OCR trong crop làm nguồn chân lý. Canonical/nearby chỉ là gợi ý, không overwrite `name`.
             pois.append({
                 "name":             name,
+                "ocr_name":         name,
+                "suggested_canonical_name": suggested_name,
+                "name_source":      "ocr",
+                "name_match_score": round(canonical_match.score, 3),
+                "needs_review":     canonical_match.needs_review,
+                "review_reason":    canonical_match.reason,
                 "approx_lat":       poi_lat,
                 "approx_lng":       poi_lng,
                 "tile_x":           tx,
