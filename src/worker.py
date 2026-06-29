@@ -12,6 +12,7 @@
 import asyncio
 import logging
 import os
+import re
 from typing import List, Tuple, Optional
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright
@@ -286,15 +287,66 @@ class Worker:
         # Detect-first pipeline: giữ nguyên nền bản đồ gốc để detect chính xác nhất.
         enhanced_screenshot = enhance_for_detection(raw_screenshot)
 
-        # Nhận diện POI bằng YOLOv8 + VietOCR (Dùng ảnh đã CROP để tọa độ khớp với ảnh lưu)
+        # Nhận diện POI trên ảnh FULL có overlap để không cắt mất nhãn nằm sát mép vùng quét.
+        # Tọa độ OCR lúc này đã là tọa độ ảnh full, nên crop offset phải = 0.
+        vision_metadata = dict(img_metadata)
+        vision_metadata["core_x1"] = float(img_metadata.get("crop_x1", 0.0))
+        vision_metadata["core_y1"] = float(img_metadata.get("crop_y1", 0.0))
+        vision_metadata["core_x2"] = float(img_metadata.get("crop_x1", 0.0)) + float(SCREENSHOT_W)
+        vision_metadata["core_y2"] = float(img_metadata.get("crop_y1", 0.0)) + float(SCREENSHOT_H)
+        vision_metadata["crop_x1"] = 0.0
+        vision_metadata["crop_y1"] = 0.0
         poi_names, outside_district = await extract_pois_from_screenshot(
-            compressed_screenshot, tx=tx, ty=ty, img_metadata=img_metadata
+            raw_screenshot, tx=tx, ty=ty, img_metadata=vision_metadata
         )
+        core_l = float(vision_metadata.get("core_x1", img_metadata.get("crop_x1", 0.0)))
+        core_t = float(vision_metadata.get("core_y1", img_metadata.get("crop_y1", 0.0)))
+        core_r = float(vision_metadata.get("core_x2", core_l + SCREENSHOT_W))
+        core_b = float(vision_metadata.get("core_y2", core_t + SCREENSHOT_H))
+        before_filter = len(poi_names)
+        poi_names = [
+            p for p in poi_names
+            if p.get("x") is not None and p.get("y") is not None
+            and core_l <= float(p.get("x")) <= core_r
+            and core_t <= float(p.get("y")) <= core_b
+        ]
+        if len(poi_names) != before_filter:
+            logger.info(
+                "  [OverlapFilter] Kept %d/%d POIs inside core tile bounds",
+                len(poi_names), before_filter,
+            )
         logger.info("  [2/2] YOLOv8 + VietOCR Detection Done.")
+
+        # Dùng overlap screenshot để giảm nhãn bị cắt mép; không chụp rescue phụ để tránh quét lại.
+        # poi_names = await self._rescue_edge_cut_pois(
+        #     poi_names,
+        #     center_lat=lat,
+        #     center_lng=lng,
+        #     tx=tx,
+        #     ty=ty,
+        # )
 
         # Lưu screenshot: vẽ khung đỏ trực tiếp lên ảnh để giám sát
         if SAVE_SCREENSHOTS:
-            final_img = draw_detections(compressed_screenshot, poi_names)
+            debug_pois = []
+            debug_dx = float(img_metadata.get("crop_x1", 0.0))
+            debug_dy = float(img_metadata.get("crop_y1", 0.0))
+            for p in poi_names:
+                dp = dict(p)
+                if dp.get("x") is not None:
+                    dp["x"] = float(dp["x"]) - debug_dx
+                if dp.get("y") is not None:
+                    dp["y"] = float(dp["y"]) - debug_dy
+                bbox = dp.get("bbox")
+                if bbox and len(bbox) >= 4:
+                    dp["bbox"] = [
+                        float(bbox[0]) - debug_dx,
+                        float(bbox[1]) - debug_dy,
+                        float(bbox[2]),
+                        float(bbox[3]),
+                    ]
+                debug_pois.append(dp)
+            final_img = draw_detections(compressed_screenshot, debug_pois)
             await self._save_screenshot(final_img, tx, ty)
 
         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
@@ -347,9 +399,10 @@ class Worker:
                 if has_ocr_xy:
                     x_val = float(item.get("x"))
                     y_val = float(item.get("y"))
-                    # Quy đổi từ hệ tọa độ ảnh crop về ảnh gốc full viewport
-                    x_phys = x_val + crop_x1
-                    y_phys = y_val + crop_y1
+                    # OCR đang chạy trên ảnh full có overlap, nên x/y đã là tọa độ full viewport.
+                    # Không cộng crop_x1/crop_y1; chỉ debug overlay mới trừ offset khi vẽ lên tile crop.
+                    x_phys = x_val
+                    y_phys = y_val
                     poi_lat = None
                     poi_lng = None
                 elif dom_match:
@@ -489,6 +542,117 @@ class Worker:
             )
         else:
             logger.info("  => No POI found at this tile")
+
+    async def _rescue_edge_cut_pois(
+        self,
+        poi_names: List[dict],
+        *,
+        center_lat: float,
+        center_lng: float,
+        tx: int,
+        ty: int,
+    ) -> List[dict]:
+        """Chụp lại view đã dịch tâm cho POI bị cắt mép và dùng OCR tốt hơn nếu có."""
+        edge_items = [p for p in poi_names if p.get("edge_cut")]
+        if not edge_items:
+            return poi_names
+
+        # Giới hạn mỗi tile để tránh rescue làm chậm toàn bộ scan khi có nhiều label sát mép.
+        max_rescues = 1
+        for item in edge_items[:max_rescues]:
+            old_name = item.get("name", "").strip()
+            edge_sides = item.get("edge_sides") or []
+            try:
+                rescue_lat, rescue_lng = self._compute_rescue_center(
+                    center_lat, center_lng, edge_sides
+                )
+                rescue_bbox = self._bbox_for_center(rescue_lat, rescue_lng)
+                rescue_url = _GMAP_URL.format(
+                    zoom=SCREENSHOT_ZOOM,
+                    lat=round(rescue_lat, 6),
+                    lng=round(rescue_lng, 6),
+                )
+                logger.info(
+                    "  [EdgeRescue] Re-capturing clipped POI '%s' sides=%s at (%.6f, %.6f)",
+                    old_name, ",".join(edge_sides), rescue_lat, rescue_lng,
+                )
+                _raw, rescue_img, rescue_meta = await self._capture_screenshot(
+                    rescue_url, rescue_bbox, self.coord._boundary
+                )
+                rescue_pois, _ = await extract_pois_from_screenshot(
+                    rescue_img, tx=tx, ty=ty, img_metadata=rescue_meta
+                )
+                best = self._select_rescue_candidate(old_name, rescue_pois)
+                if best:
+                    new_name = best.get("name", "").strip()
+                    item["original_edge_name"] = old_name
+                    item["name"] = new_name
+                    item["rescued_from_edge"] = True
+                    item["rescue_edge_sides"] = edge_sides
+                    item["rescue_confidence"] = best.get("confidence")
+                    logger.info("  [EdgeRescue] '%s' -> '%s'", old_name, new_name)
+            except Exception as exc:
+                logger.warning("  [EdgeRescue] Failed for '%s': %s", old_name, exc)
+        return poi_names
+
+    def _compute_rescue_center(self, lat: float, lng: float, edge_sides: List[str]) -> Tuple[float, float]:
+        """Dịch tâm map về phía mép bị cắt để label quay vào giữa ảnh hơn."""
+        width_css = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
+        height_css = SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX
+        px = width_css / 2.0
+        py = height_css / 2.0
+        shift_x = width_css * 0.28
+        shift_y = height_css * 0.28
+        if "right" in edge_sides:
+            px += shift_x
+        if "left" in edge_sides:
+            px -= shift_x
+        if "top" in edge_sides:
+            py -= shift_y
+        if "bottom" in edge_sides:
+            py += shift_y
+        return pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, px, py)
+
+    def _bbox_for_center(self, lat: float, lng: float) -> Tuple[float, float, float, float]:
+        """Tạo bbox metadata quanh center rescue bằng kích thước viewport hiện tại."""
+        width_css = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
+        height_css = SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX
+        tl_lat, tl_lng = pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, 0, 0)
+        br_lat, br_lng = pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, width_css, height_css)
+        return min(br_lat, tl_lat), min(tl_lng, br_lng), max(br_lat, tl_lat), max(tl_lng, br_lng)
+
+    def _select_rescue_candidate(self, old_name: str, candidates: List[dict]) -> Optional[dict]:
+        """Chọn OCR rescue tốt hơn: dài hơn, không Unknown, ưu tiên cùng prefix/suffix bỏ dấu."""
+        old_clean = self._name_key(old_name)
+        if not old_clean:
+            return None
+        best = None
+        best_score = 0.0
+        for cand in candidates:
+            name = cand.get("name", "").strip()
+            key = self._name_key(name)
+            if not key or key.startswith("unknown"):
+                continue
+            length_gain = len(key) - len(old_clean)
+            contains = old_clean in key or key in old_clean
+            prefix = key[:8] == old_clean[:8] if len(old_clean) >= 8 and len(key) >= 8 else False
+            score = length_gain + (20 if contains else 0) + (12 if prefix else 0)
+            if "..." in old_name or "…" in old_name:
+                score += 10
+            if len(key) <= len(old_clean) + 2 and not contains:
+                continue
+            if score > best_score:
+                best = cand
+                best_score = score
+        return best
+
+    def _name_key(self, text: str) -> str:
+        try:
+            from src.vision import _strip_vietnamese_accents
+            text = _strip_vietnamese_accents(text or "")
+        except Exception:
+            text = (text or "").lower()
+        return re.sub(r"[^a-z0-9]+", "", text.lower())
 
     async def _extract_all_visible_poi_coords_from_browser(self) -> dict:
         """

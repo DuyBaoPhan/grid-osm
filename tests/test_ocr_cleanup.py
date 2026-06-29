@@ -4,7 +4,13 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
 from src.vietnam_places import normalize_ocr_spelling, normalize_place_phrases
-from src.vision import _clean_final_ocr_text, _junk_token_count, _merge_best_diacritics
+from src.vision import (
+    _clean_final_ocr_text,
+    _junk_token_count,
+    _merge_best_diacritics,
+    _normalized_adds_suspicious_text,
+    _normalized_has_valid_main_name_extension,
+)
 
 
 def test_context_spelling_fixes_common_ocr_errors():
@@ -49,3 +55,41 @@ def test_crop_regressions_do_not_rewrite_marked_vietnamese_words():
 def test_food_words_only_correct_in_food_context():
     assert normalize_place_phrases("Quan mien pho ga") == "Quan Miền Phở gà"
     assert normalize_place_phrases("Vuon Trong Pho Gia Dinh Connection") == "Vườn Trong Phố Gia Định Connection"
+
+
+def test_normalized_fuller_main_name_extension_is_allowed():
+    assert _normalized_adds_suspicious_text(
+        "Hello Thợ-Cứu hộ xe",
+        "Hello Thọ - Cứu Hộ Xe / Máy & Sửa Xe Lưu Động",
+    )
+    assert _normalized_has_valid_main_name_extension(
+        "Hello Thợ-Cứu hộ xe",
+        "Hello Thọ - Cứu Hộ Xe / Máy & Sửa Xe Lưu Động",
+    )
+    assert _normalized_adds_suspicious_text(
+        "Đồ cúng Thiên",
+        "Đồ Cúng Thiên / Phúc - CN Phú Mỹ",
+    )
+    assert _normalized_has_valid_main_name_extension(
+        "Đồ cúng Thiên",
+        "Đồ Cúng Thiên / Phúc - CN Phú Mỹ",
+    )
+
+
+def test_normalized_description_or_category_extension_is_rejected():
+    assert _normalized_adds_suspicious_text(
+        "Saigon Central / Post Office",
+        "Saigon Central / Post Office / Ao Dai City Tour in Saigon / Group CLR English Chine",
+    )
+    assert not _normalized_has_valid_main_name_extension(
+        "Saigon Central / Post Office",
+        "Saigon Central / Post Office / Ao Dai City Tour in Saigon / Group CLR English Chine",
+    )
+    assert _normalized_adds_suspicious_text(
+        "MCM Post Office",
+        "MCM Post Office / 5.0 (121) / Luxury for her at DAFC Onl",
+    )
+    assert not _normalized_has_valid_main_name_extension(
+        "MCM Post Office",
+        "MCM Post Office / 5.0 (121) / Luxury for her at DAFC Onl",
+    )

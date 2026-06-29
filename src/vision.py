@@ -961,6 +961,87 @@ def _contains_token_subsequence(container: List[str], needle: List[str]) -> bool
     return False
 
 
+def _normalized_has_valid_main_name_extension(primary_text: str, norm_text: str) -> bool:
+    """True nếu normalized = primary + phần tiếp theo có dạng tên chính, không phải mô tả/category."""
+    primary_tokens = _ocr_tokens(_clean_spelling(primary_text))
+    norm_tokens = _ocr_tokens(_clean_spelling(norm_text))
+    if not primary_tokens or not norm_tokens or len(norm_tokens) <= len(primary_tokens):
+        return False
+
+    match_start = -1
+    for start in range(0, len(norm_tokens) - len(primary_tokens) + 1):
+        if norm_tokens[start:start + len(primary_tokens)] == primary_tokens:
+            match_start = start
+            break
+    if match_start < 0:
+        return False
+
+    extra_leading = norm_tokens[:match_start]
+    extra_trailing = norm_tokens[match_start + len(primary_tokens):]
+    if extra_leading:
+        # Extra phía trước dễ là chữ nhãn khác/icon hơn là tên bị cắt.
+        return False
+    if not extra_trailing:
+        return False
+
+    norm_parts = [p.strip() for p in re.split(r'\s*/\s*', norm_text or "") if p.strip()]
+    primary_key = " ".join(primary_tokens)
+    extra_parts = []
+    seen_primary = False
+    for part in norm_parts:
+        part_tokens = _ocr_tokens(_clean_spelling(part))
+        if not seen_primary and part_tokens and _contains_token_subsequence(part_tokens, primary_tokens):
+            seen_primary = True
+            continue
+        if seen_primary:
+            extra_parts.append(part)
+
+    if not extra_parts:
+        return False
+
+    for part in extra_parts:
+        tokens = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part)
+        word_tokens = [t for t in tokens if t != "&"]
+        if not word_tokens:
+            return False
+        if _is_junk_line(part) or _looks_like_bad_ocr(part):
+            return False
+
+        meaningful_part = " ".join(word_tokens)
+        if _junk_token_count(meaningful_part) > 0:
+            return False
+
+        # Dòng mô tả/rating/category thường có nhiều dấu câu/số hoặc là câu dài viết thường.
+        # Không dùng keyword riêng theo ngành/tỉnh để tránh hardcode theo trường hợp.
+        if re.search(r'\d+(?:[.,]\d+)?\s*(?:\(|★|\*)', part):
+            return False
+        if re.search(r'\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:AM|PM|am|pm)\b', part):
+            return False
+        digit_count = sum(ch.isdigit() for ch in part)
+        letter_count = sum(ch.isalpha() for ch in part)
+        if digit_count and digit_count / max(1, digit_count + letter_count) > 0.18:
+            return False
+
+        word_count = len(word_tokens)
+        has_vietnamese = bool(re.search(r'[À-ỹĐđ]', part))
+        title_or_upper = sum(1 for t in word_tokens if t[:1].isupper() or t.isupper())
+        title_ratio = title_or_upper / max(1, word_count)
+        has_acronym = any(t.isupper() and 2 <= len(t) <= 6 for t in word_tokens)
+        has_name_separator = bool(re.search(r'[&+\-/]', part))
+        mostly_lower = title_or_upper == 0
+
+        if word_count > 7:
+            return False
+        if word_count >= 5 and mostly_lower:
+            return False
+        if word_count >= 4 and not (has_vietnamese or has_acronym or title_ratio >= 0.5 or has_name_separator):
+            return False
+        if not (has_vietnamese or has_acronym or title_ratio >= 0.5 or has_name_separator):
+            return False
+
+    return True
+
+
 def _normalized_adds_suspicious_text(primary_text: str, norm_text: str) -> bool:
     """
     Trả True khi normalized chỉ là primary cộng thêm text ngoài mép crop.
@@ -1191,6 +1272,31 @@ def split_crop_into_lines_normalized(crop_img: np.ndarray, scale: float = 1.0) -
         return [crop_img]
 
 
+def _select_primary_line_crops(line_crops: List[np.ndarray]) -> List[np.ndarray]:
+    """Chỉ giữ dòng tên chính: ưu tiên dòng có font/chiều cao chữ lớn nhất, bỏ mô tả nhỏ bên dưới."""
+    usable = [crop for crop in line_crops if crop is not None and crop.size > 0]
+    if len(usable) <= 1:
+        return usable
+
+    heights = [crop.shape[0] for crop in usable]
+    max_h = max(heights)
+    if max_h <= 0:
+        return usable[:1]
+
+    # Google Maps thường đặt tên chính ở đầu nhãn; category/mô tả nằm dưới.
+    # Padding làm dòng nhỏ có crop height gần dòng chính, nên không chọn mọi dòng gần max.
+    first_h = heights[0]
+    keep_threshold = max(first_h * 0.92, max_h * 0.82)
+    kept = []
+    for crop, h in zip(usable, heights):
+        if h >= keep_threshold:
+            kept.append(crop)
+            continue
+        break
+
+    return kept or [usable[0]]
+
+
 def _recognize_text_crop_vietocr_normalized(
     cv_img: np.ndarray,
     bbox: List[float],
@@ -1248,7 +1354,7 @@ def _recognize_text_crop_vietocr_normalized(
             if crop.size == 0:
                 return ""
 
-            line_crops = split_crop_into_lines_normalized(crop, scale)
+            line_crops = _select_primary_line_crops(split_crop_into_lines_normalized(crop, scale))
             variant_texts = []
             for line_crop in line_crops:
                 if line_crop.size == 0:
@@ -1364,8 +1470,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             return ""
 
         try:
-            # Tách crop thành các dòng chữ đơn lẻ
-            line_crops = split_crop_into_lines(crop_local, scale)
+            line_crops = _select_primary_line_crops(split_crop_into_lines(crop_local, scale))
             
             texts = []
             for line_crop in line_crops:
@@ -1507,6 +1612,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             and primary_candidate
             and not _looks_like_bad_ocr(primary_text)
             and _normalized_adds_suspicious_text(primary_text, norm_text)
+            and not _normalized_has_valid_main_name_extension(primary_text, norm_text)
         ):
             _, _, primary_cleaned, _ = primary_candidate
             selected_text = primary_cleaned
@@ -1592,6 +1698,13 @@ async def extract_pois_from_screenshot(
 
     result = results[0]
     boxes = result.boxes
+
+    core_x1 = float(img_metadata.get("core_x1", 0.0)) if img_metadata else 0.0
+    core_y1 = float(img_metadata.get("core_y1", 0.0)) if img_metadata else 0.0
+    core_x2 = float(img_metadata.get("core_x2", img.shape[1])) if img_metadata else float(img.shape[1])
+    core_y2 = float(img_metadata.get("core_y2", img.shape[0])) if img_metadata else float(img.shape[0])
+    core_margin = max(8.0, 12.0 * scale)
+    skipped_overlap = 0
     
     for i, box in enumerate(boxes):
         b = box.xyxy[0].cpu().numpy()
@@ -1604,6 +1717,14 @@ async def extract_pois_from_screenshot(
         bottom = float(b[3])
         height = bottom - top
         width = right - left
+        box_cx = (left + right) / 2.0
+        box_cy = (top + bottom) / 2.0
+        if (
+            box_cx < core_x1 - core_margin or box_cx > core_x2 + core_margin
+            or box_cy < core_y1 - core_margin or box_cy > core_y2 + core_margin
+        ):
+            skipped_overlap += 1
+            continue
         
         # Crop squares for scores using a fixed icon size of 32 * scale
         icon_size_check = int(32 * scale)
@@ -1735,6 +1856,18 @@ async def extract_pois_from_screenshot(
         if not name:
             name = f"Unknown_{i}"
   
+        # Đánh dấu POI bị cắt sát mép ảnh để worker chụp rescue view riêng.
+        edge_margin = max(24.0, 48.0 * scale)
+        edge_sides = []
+        if left_exp <= edge_margin:
+            edge_sides.append("left")
+        if right_exp >= (w_img - edge_margin):
+            edge_sides.append("right")
+        if top_exp <= edge_margin:
+            edge_sides.append("top")
+        if bottom_exp >= (h_img - edge_margin):
+            edge_sides.append("bottom")
+
         poi_item = {
             "name": name,
             "x": cx,
@@ -1744,6 +1877,9 @@ async def extract_pois_from_screenshot(
             "has_icon": True,
             "icon_side": icon_side,
             "yolo_height": float(height),
+            "edge_cut": bool(edge_sides),
+            "edge_sides": edge_sides,
+            "edge_margin_px": float(edge_margin),
         }
         pois.append(poi_item)
   
@@ -1756,6 +1892,9 @@ async def extract_pois_from_screenshot(
             output_path = os.path.join(POI_CROPS_DIR, filename)
             save_poi_crop(screenshot_bytes, poi_item, output_path, scale)
             
+    if skipped_overlap:
+        logger.info("  [OverlapFilter] Skipped %d detections outside core tile before OCR", skipped_overlap)
+
     return pois, False
 
 def draw_detections(image_bytes: bytes, pois: List[dict]) -> bytes:

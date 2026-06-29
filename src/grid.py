@@ -286,9 +286,9 @@ def generate_all_tiles(
             extract_points(coords)
             
             if lats and lngs:
-                # Nới rộng bbox ranh giới thêm 100m (khoảng 0.0009 độ) để không bỏ sót các ô tiếp giáp biên giới
-                lat_buf = 100.0 / 111000.0
-                lng_buf = 100.0 / 109000.0
+                # Không nới ranh quận; chống cắt nhãn ở biên vùng quét dùng SCREENSHOT_OVERLAP_PX.
+                lat_buf = 0.0
+                lng_buf = 0.0
                 
                 lat_min = min(lats) - lat_buf
                 lat_max = max(lats) + lat_buf
@@ -296,7 +296,7 @@ def generate_all_tiles(
                 lng_max = max(lngs) + lng_buf
                 
                 logger.info(
-                    "District polygon boundary bbox (buffered 100m): lat=[%.6f, %.6f], lng=[%.6f, %.6f]",
+                    "District polygon boundary bbox (buffered 0m): lat=[%.6f, %.6f], lng=[%.6f, %.6f]",
                     lat_min, lat_max, lng_min, lng_max
                 )
                 
@@ -334,8 +334,8 @@ def generate_all_tiles(
                             (t_lat_max, t_lng_max),
                             (clat, clng)
                         ]
-                        # Cho phép nới rộng ranh giới 100m để lấy thêm các ô kề biên
-                        if any(is_point_in_boundary(lat, lng, geometry, buffer_meters=100.0) for lat, lng in corners):
+                        # Không nới ranh quận; chỉ lấy tile chạm/nằm trong boundary thật.
+                        if any(is_point_in_boundary(lat, lng, geometry, buffer_meters=0.0) for lat, lng in corners):
                             tiles.append((tx, ty))
                 
                 logger.info("Generated %d tiles inside polygon boundary of '%s'", len(tiles), district_name)

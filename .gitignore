@@ -25,7 +25,17 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+crops
+screenshots
+results.json
+map_data.json
+map_data.js
+map_status.json
+map_viewer.html
+checkpoint.json
+tests
+scripts
+data
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -50,7 +60,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
 # Translations
 *.mo
 *.pot

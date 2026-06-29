@@ -36,7 +36,7 @@ TILE_SIZE      = 256
 GRID_SIZE      = 5               # Lưới phân tích: 5×5 = 25 ô, mỗi ô ~3m×3m ở zoom 21
 SCREENSHOT_W   = 1920            # Fullscreen width (1920x1080)
 SCREENSHOT_H   = 1080            # Fullscreen height
-SCREENSHOT_OVERLAP_PX = 80       # Khoảng tràn viền xung quanh ô quét (để tránh mất chữ/icon sát mép)
+SCREENSHOT_OVERLAP_PX = 100      # Khoảng tràn viền xung quanh ô quét (tăng để cứu chữ/icon sát mép tốt hơn)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
 SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
 SAVE_POI_CROPS = True            # Lưu riêng từng mảnh ảnh POI được nhận diện
