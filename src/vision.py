@@ -129,6 +129,18 @@ def _normalize_vietnamese_place_phrases(text: str) -> str:
     return normalize_place_phrases(text)
 
 
+def _normalize_ocr_spelling_by_dictionary(text: str) -> str:
+    """Sửa lỗi OCR theo dictionary/context ngoài vision.py, tránh hardcode POI cụ thể."""
+    try:
+        from src.vietnam_places import normalize_ocr_spelling
+    except ImportError:
+        try:
+            from vietnam_places import normalize_ocr_spelling
+        except ImportError:
+            return text
+    return normalize_ocr_spelling(text)
+
+
 def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
     """Xóa token OCR lặp liền kề như `Bình Bình`, không đụng brand ALLCAPS."""
     if not text:
@@ -175,13 +187,11 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
 
 
 def _clean_spelling(text: str) -> str:
-    # Loại bỏ các ký tự dấu nháy kép, nháy đơn, backtick, gạch chéo ngược và ngoặc rác từ icon/viền crop
+    # Loại bỏ ký tự quote/bracket/backslash rác từ icon/viền crop, giữ dấu câu POI hợp lệ.
     text = re.sub(r"[\"\'`\\\[\]\{\}]", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
     text = _normalize_vietnamese_place_phrases(text)
-    # OCR hay nhầm Cúng -> Cũng trong ngữ cảnh dịch vụ/đồ cúng; chỉ sửa khi có cụm ngữ cảnh rõ.
-    text = re.sub(r'(?i)\b(Đồ|Dịch vụ Đồ)\s+Cũng\b', lambda m: m.group(1) + ' Cúng', text)
-    text = re.sub(r'(?i)\bCũng\s+Trọn\s+Gói\b', 'Cúng Trọn Gói', text)
+    text = _normalize_ocr_spelling_by_dictionary(text)
     text = _remove_adjacent_duplicate_ocr_tokens(text)
     return text
 
@@ -503,8 +513,12 @@ def _is_junk_line(s: str) -> bool:
     if re.match(junk_pattern, clean_s):
         return True
     # Từ rác standalone không khớp pattern prefix+suffix
-    junk_standalone = {'quantousus', 'qUantousus', 'unstitute', 'discepter', 'quantous', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1'}
+    junk_standalone = {'quantousus', 'quantous', 'unstitute', 'discepter', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1',
+                       'rorizo', 'pronaganda', 'mazzer', 'disserian', 'chotol', 'priviness', 'toescaly', 'pravered', 'dismitted'}
     if clean_s.lower() in junk_standalone:
+        return True
+    # Từ bị lẫn chữ số vào giữa từ (ví dụ ororiz00ne, col0ner, ene00n)
+    if re.search(r'[a-z]\d{2,}[a-z]', clean_s.lower()) and len(clean_s) >= 5:
         return True
         
     return False
@@ -523,8 +537,13 @@ def _clean_junk_words(s: str) -> str:
         )
         if re.match(junk_pattern, w_clean):
             continue
-        junk_standalone = {'quantousus', 'unstitute', 'discepter', 'quantous', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1', 'disserian'}
+        junk_standalone = {'quantousus', 'quantous', 'unstitute', 'discepter', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1',
+                           'disserian', 'pravered', 'priviness', 'toescaly', 'chotol', 'dismitted',
+                           'rorizo', 'pronaganda', 'mazzer'}
         if w_clean.lower() in junk_standalone:
+            continue
+        # Từ bị lẫn chữ số vào giữa (ví dụ ororiz00ne) - đặc điểm ảo giác OCR
+        if re.search(r'[a-z]\d{2,}[a-z]', w_clean.lower()) and len(w_clean) >= 5:
             continue
         cleaned_words.append(w)
     
@@ -549,7 +568,7 @@ def _looks_like_junk_token(token: str, *, is_edge: bool = False) -> bool:
         return False
     if clean.isupper() and 2 <= len(clean) <= 6:
         return False
-    if is_edge and len(clean) <= 2 and not clean[:1].isupper():
+    if is_edge and len(clean) <= 1 and not clean[:1].isupper():
         return True
 
     artifact_suffixes = (
@@ -558,7 +577,8 @@ def _looks_like_junk_token(token: str, *, is_edge: bool = False) -> bool:
     )
     if len(key) >= 7 and key.endswith(artifact_suffixes):
         return True
-    if key in {"disserian", "quantousus", "unstitute", "discepter"}:
+    if key in {"disserian", "quantousus", "unstitute", "discepter", "pravered", "priviness", "toescaly", "chotol", "dismitted",
+               "rorizo", "pronaganda", "mazzer", "bete", "luwcate"}:
         return True
     if len(key) >= 8 and not clean[:1].isupper():
         vowels = sum(ch in "aeiouy" for ch in key)
@@ -1212,13 +1232,13 @@ def _recognize_text_crop_vietocr_normalized(
 
             if mask_icon and cx_local is not None and cy_local is not None:
                 if icon_side == "left":
-                    mask_w = max(0, min(w_rc, int(cx_local + 6.5 * scale)))
+                    mask_w = max(0, min(w_rc, int(cx_local + 18.0 * scale)))
                     norm_img[:, 0:mask_w] = bg_color
                 elif icon_side == "right":
-                    mask_x = max(0, min(w_rc, int(cx_local - 6.5 * scale)))
+                    mask_x = max(0, min(w_rc, int(cx_local - 18.0 * scale)))
                     norm_img[:, mask_x:w_rc] = bg_color
                 elif icon_side == "top":
-                    mask_h = max(0, min(h_rc, int(cy_local + 6.5 * scale)))
+                    mask_h = max(0, min(h_rc, int(cy_local + 18.0 * scale)))
                     norm_img[0:mask_h, :] = bg_color
 
             tx1, ty1, tx2, ty2 = detect_text_area(norm_img, scale)
@@ -1391,8 +1411,18 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     if cx is not None and cy is not None:
         cx_local = cx - x1
         cy_local = cy - y1
-        r = int(16 * scale)
-        cv2.circle(crop_masked, (int(cx_local), int(cy_local)), r, bg_color, -1)
+        if icon_side == "left":
+            mask_w = max(0, min(w_rc, int(cx_local + 18.0 * scale)))
+            crop_masked[:, 0:mask_w] = bg_color
+        elif icon_side == "right":
+            mask_x = max(0, min(w_rc, int(cx_local - 18.0 * scale)))
+            crop_masked[:, mask_x:w_rc] = bg_color
+        elif icon_side == "top":
+            mask_h = max(0, min(h_rc, int(cy_local + 18.0 * scale)))
+            crop_masked[0:mask_h, :] = bg_color
+        else:
+            r = int(16 * scale)
+            cv2.circle(crop_masked, (int(cx_local), int(cy_local)), r, bg_color, -1)
 
     primary_masked = _ocr_from_prepared_crop(crop_masked)
     primary_unmasked = _ocr_from_prepared_crop(crop_clean)
@@ -1431,6 +1461,15 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         # Nếu unmasked thêm token, coi là nhiễu icon/chữ lân cận trừ khi masked gần như rỗng/rác.
         if len(unmasked_tokens) > len(masked_tokens):
             return _looks_like_bad_ocr(masked_text)
+
+        # Nếu unmasked ít token hơn, tức là nó sạch nhiễu icon/mảnh cắt rác (vd: 'Pravered / Tiệm...' -> 'Tiệm...')
+        if len(unmasked_tokens) < len(masked_tokens):
+            masked_clean_toks = [_strip_vietnamese_accents(t).lower() for t in masked_tokens]
+            unmasked_clean_toks = [_strip_vietnamese_accents(t).lower() for t in unmasked_tokens]
+            is_subset = all(ut in masked_clean_toks for ut in unmasked_clean_toks)
+            has_junk = any(_looks_like_junk_token(w) for w in masked_tokens)
+            if has_junk or is_subset:
+                return True
 
         return False
 
@@ -1922,7 +1961,12 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
             crop[crop.shape[0] - edge_pad:, :] = bg_color
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        cv2.imwrite(output_path, crop)
+        is_success, im_buf_arr = cv2.imencode(".png", crop)
+        if is_success:
+            with open(output_path, "wb") as f:
+                f.write(im_buf_arr.tobytes())
+        else:
+            cv2.imwrite(output_path, crop)
         logger.info("  [Crop saved] %s", os.path.basename(output_path))
     except Exception as e:
         logger.warning("Không thể lưu ảnh crop POI: %s", e)

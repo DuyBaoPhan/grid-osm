@@ -217,11 +217,11 @@ class Coordinator:
             geo_inside = True  # Mặc định: coi là trong quận
             if self._boundary:
                 clat, clng = tile_center(tx, ty, ZOOM_LEVEL)
-                geo_inside = is_point_in_boundary(clat, clng, self._boundary)
+                geo_inside = is_point_in_boundary(clat, clng, self._boundary, buffer_meters=100.0)
 
             if outside_district and geo_inside:
                 logger.info(
-                    "  [GeoOverride] LLM said outside but tile (%d,%d) IS inside polygon → overriding!",
+                    "  [GeoOverride] LLM said outside but tile (%d,%d) IS inside polygon (buffered 100m) → overriding!",
                     tx, ty,
                 )
                 outside_district = False
@@ -246,7 +246,8 @@ class Coordinator:
                     filtered_pois.append(poi)
                     continue
                 if self._boundary:
-                    if is_point_in_boundary(poi_lat, poi_lng, self._boundary):
+                    # Cho phép lưu POI ở sát biên quận trong vòng 100m để tránh mất thông tin địa điểm ở vùng giáp ranh
+                    if is_point_in_boundary(poi_lat, poi_lng, self._boundary, buffer_meters=100.0):
                         filtered_pois.append(poi)
                     else:
                         logger.info(

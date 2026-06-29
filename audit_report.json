@@ -1,0 +1,962 @@
+[
+  {
+    "crop": "tile_0_0_poi_0_ÁO_DÀI_AND_ÁO__BÀ_BA_RENTALS__Costumestore.png",
+    "crop_text": "ÁO DÀI AND ÁO / BÀ BA RENTALS / Costumestore",
+    "best_result_index": 12,
+    "best_result_name": "ÁO DÀI AND ÁO / BÀ BA RENTALS / Costumestore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_1_Hum_Central_-_Healthy__Veggies_Delights__Vegetarian.png",
+    "crop_text": "Hum Central - Healthy / Veggies Delights / Vegetarian",
+    "best_result_index": 5,
+    "best_result_name": "Hum Central - Healthy / Veggies Delights / Vegetarian",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_2_Bưu_điện_trung__TÂM_SÀI_GÒN__Grand_19th-century__post_office.png",
+    "crop_text": "Bưu điện trung / TÂM SÀI GÒN / Grand 19th-century / post office",
+    "best_result_index": 1,
+    "best_result_name": "Bưu điện trung / TÂM SÀI GÒN / Grand 19th-century / post office",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_3_Highlands_Coffee__Saigon_Post_Office.png",
+    "crop_text": "Highlands Coffee / Saigon Post Office",
+    "best_result_index": 30,
+    "best_result_name": "Highlands Coffee / Saigon Post Office",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_4_Cổng_Đường_sách__TP._Hồ_Chí_Minh.png",
+    "crop_text": "Cổng Đường sách / TP. Hồ Chí Minh",
+    "best_result_index": 42,
+    "best_result_name": "Cổng Đường sách / TP. Hồ Chí Minh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_5_Bãi_giữ_xe_Đường__sách_Highlands.png",
+    "crop_text": "Bãi giữ xe Đường / sách Highlands",
+    "best_result_index": 43,
+    "best_result_name": "Bãi giữ xe Đường / sách Highlands",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_6_Vườn_Trong_Phố,_Gia__Định_Connection.png",
+    "crop_text": "Vườn Trong Phố, Gia / Định Connection",
+    "best_result_index": 31,
+    "best_result_name": "Vườn Trong Phố, Gia / Định Connection",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_7_LPBank_PGD_Bưu_điện__Giao_dịch_Sài_Gòn.png",
+    "crop_text": "LPBank PGD Bưu điện / Giao dịch Sài Gòn",
+    "best_result_index": 23,
+    "best_result_name": "LPBank PGD Bưu điện / Giao dịch Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_0_poi_8_MCM_Post_Office__Bag_shop.png",
+    "crop_text": "MCM Post Office / Bag shop",
+    "best_result_index": 68,
+    "best_result_name": "MCM Post Office / Bag shop",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_0_Destiny_Winter__Clothes_Store__Clothing_store.png",
+    "crop_text": "Destiny Winter / Clothes Store / Clothing store",
+    "best_result_index": 8,
+    "best_result_name": "Destiny Winter / Clothes Store / Clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_1_PASTA_CLUB__Not_so_Italian.png",
+    "crop_text": "PASTA CLUB / Not so Italian",
+    "best_result_index": 64,
+    "best_result_name": "PASTA CLUB / Not so Italian",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_2_Capi_Studio__DIY_Souvenirs_8__Souvenir_store.png",
+    "crop_text": "Capi Studio / DIY Souvenirs 8 / Souvenir store",
+    "best_result_index": 9,
+    "best_result_name": "Capi Studio / DIY Souvenirs 8 / Souvenir store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_3_Đường_sách__Nguyễn_Văn_Bình__Bookstore.png",
+    "crop_text": "Đường sách / Nguyễn Văn Bình / Bookstore",
+    "best_result_index": 19,
+    "best_result_name": "Đường sách / Nguyễn Văn Bình / Bookstore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_4_Mặn_Mòi,_Bến_Nghé__Homey_Authentic__Vietnamese.png",
+    "crop_text": "Mặn Mòi, Bến Nghé / Homey Authentic / Vietnamese",
+    "best_result_index": 7,
+    "best_result_name": "Mặn Mòi, Bến Nghé / Homey Authentic / Vietnamese",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_5_The_Box_Market__125_Hai_Bà_Trưng__Shopping_mall.png",
+    "crop_text": "The Box Market / 125 Hai Bà Trưng / Shopping mall",
+    "best_result_index": 6,
+    "best_result_name": "The Box Market / 125 Hai Bà Trưng / Shopping mall",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_6_Con_Mèo_Nhỏ__Little_Cats_Studio.png",
+    "crop_text": "Con Mèo Nhỏ / Little Cats Studio",
+    "best_result_index": 48,
+    "best_result_name": "Con Mèo Nhỏ / Little Cats Studio",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_7_Thư_viện_số__Nguyễn_An_Ninh.png",
+    "crop_text": "Thư viện số / Nguyễn An Ninh",
+    "best_result_index": 59,
+    "best_result_name": "Thư viện số / Nguyễn An Ninh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_8_District_One_Central__Clothing_store.png",
+    "crop_text": "District One Central / Clothing store",
+    "best_result_index": 32,
+    "best_result_name": "District One Central / Clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_9_Book_Street__Lighthouse_Monument.png",
+    "crop_text": "Book Street / Lighthouse Monument",
+    "best_result_index": 44,
+    "best_result_name": "Book Street / Lighthouse Monument",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_10_Đường_sách_TP__Hồ_Chí_Minh.png",
+    "crop_text": "Đường sách TP / Hồ Chí Minh",
+    "best_result_index": 65,
+    "best_result_name": "Đường sách TP / Hồ Chí Minh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_11_HYBEAR_SHOP__Clothing_store.png",
+    "crop_text": "HYBEAR SHOP / Clothing store",
+    "best_result_index": 60,
+    "best_result_name": "HYBEAR SHOP / Clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_12_OHQUAO_Souvenir_Dept__Souvenir_store.png",
+    "crop_text": "OHQUAO Souvenir Dept / Souvenir store",
+    "best_result_index": 33,
+    "best_result_name": "OHQUAO Souvenir Dept / Souvenir store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_13_Chợ_Nga,_TP__Hồ_Chí_Minh.png",
+    "crop_text": "Chợ Nga, TP / Hồ Chí Minh",
+    "best_result_index": 72,
+    "best_result_name": "Chợ Nga, TP / Hồ Chí Minh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_14_VIETTUI_XÁCH__Fashion_accessories_store.png",
+    "crop_text": "VIETTUI XÁCH / Fashion accessories store",
+    "best_result_index": 20,
+    "best_result_name": "VIETTUI XÁCH / Fashion accessories store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_15_concept__Giftshop.png",
+    "crop_text": "concept / Giftshop",
+    "best_result_index": 89,
+    "best_result_name": "concept / Giftshop",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_16_Nhà_sách_Kim_Đồng__Book_store.png",
+    "crop_text": "Nhà sách Kim Đồng / Book store",
+    "best_result_index": 53,
+    "best_result_name": "Nhà sách Kim Đồng / Book store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_17_Văn_phòng_đăng_ký_đất__đai_-_Chi_nhánh_Quận_1.png",
+    "crop_text": "Văn phòng đăng ký đất / đai - Chi nhánh Quận 1",
+    "best_result_index": 10,
+    "best_result_name": "Văn phòng đăng ký đất / đai - Chi nhánh Quận 1",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_18_Nhà_Xuất_Bản_Trẻ__Bookstore.png",
+    "crop_text": "Nhà Xuất Bản Trẻ / Bookstore",
+    "best_result_index": 61,
+    "best_result_name": "Nhà Xuất Bản Trẻ / Bookstore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_19_Pacobooks__Bookstore.png",
+    "crop_text": "Pacobooks / Bookstore",
+    "best_result_index": 79,
+    "best_result_name": "Pacobooks / Bookstore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_20_UBND_phường_Sài_Gòn.png",
+    "crop_text": "UBND phường Sài Gòn",
+    "best_result_index": 88,
+    "best_result_name": "UBND phường Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_21_Phường_Sài_Gòn.png",
+    "crop_text": "Phường Sài Gòn",
+    "best_result_index": 100,
+    "best_result_name": "Phường Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_22_Cafe_Sách_Phương_Nam.png",
+    "crop_text": "Cafe Sách Phương Nam",
+    "best_result_index": 83,
+    "best_result_name": "Cafe Sách Phương Nam",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_23_Little_Cats_Bookstore.png",
+    "crop_text": "Little Cats Bookstore",
+    "best_result_index": 80,
+    "best_result_name": "Little Cats Bookstore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_24_Đẹp_Café.png",
+    "crop_text": "Đẹp Café",
+    "best_result_index": 111,
+    "best_result_name": "Đẹp Café",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_25_NXB_Tổng_hợp.png",
+    "crop_text": "NXB Tổng hợp",
+    "best_result_index": 103,
+    "best_result_name": "NXB Tổng hợp",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-1_poi_26_Oliviais_Prime_Steakhou.png",
+    "crop_text": "Oliviais Prime Steakhou",
+    "best_result_index": 74,
+    "best_result_name": "Oliviais Prime Steakhou",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_0_Shop_Thời_Trang__Nữ-Coin_Store__Womens_clothing_store.png",
+    "crop_text": "Shop Thời Trang / Nữ-Coin Store / Womens clothing store",
+    "best_result_index": 4,
+    "best_result_name": "Shop Thời Trang / Nữ-Coin Store / Womens clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_1_ATUMI_Saigon_Central__Post_Office_Store__Luggage_store.png",
+    "crop_text": "ATUMI Saigon Central / Post Office Store / Luggage store",
+    "best_result_index": 3,
+    "best_result_name": "ATUMI Saigon Central / Post Office Store / Luggage store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_2_Miss_Saigon_Premium__Perfume_Bưu_điện.png",
+    "crop_text": "Miss Saigon Premium / Perfume Bưu điện",
+    "best_result_index": 26,
+    "best_result_name": "Miss Saigon Premium / Perfume Bưu điện",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_3_Maison_Marou__Café_Nguyễn_Du.png",
+    "crop_text": "Maison Marou / Café Nguyễn Du",
+    "best_result_index": 55,
+    "best_result_name": "Maison Marou / Café Nguyễn Du",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_4_Arabica_Hồ_Chí__Minh_city_Roastery.png",
+    "crop_text": "Arabica Hồ Chí / Minh city Roastery",
+    "best_result_index": 37,
+    "best_result_name": "Arabica Hồ Chí / Minh city Roastery",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_5_Katinat_Saigon__Kafé_-_Nguyễn_Du.png",
+    "crop_text": "Katinat Saigon / Kafé - Nguyễn Du",
+    "best_result_index": 45,
+    "best_result_name": "Katinat Saigon / Kafé - Nguyễn Du",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_6_Quán_Miến_Phở_Gà,_Phố__Nướng_Mai_Xuân_Cảnh.png",
+    "crop_text": "Quán Miến Phở Gà, Phố / Nướng Mai Xuân Cảnh",
+    "best_result_index": 13,
+    "best_result_name": "Quán Miến Phở Gà, Phố / Nướng Mai Xuân Cảnh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_7_Circle_K_Nguyễn_Du__Convenience_store.png",
+    "crop_text": "Circle K Nguyễn Du / Convenience store",
+    "best_result_index": 27,
+    "best_result_name": "Circle K Nguyễn Du / Convenience store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_8_Cứu_Hộ_Xe_Máy__Sửa_Xe_Máy_Tận_Nơi.png",
+    "crop_text": "Cứu Hộ Xe Máy / Sửa Xe Máy Tận Nơi",
+    "best_result_index": 40,
+    "best_result_name": "Cứu Hộ Xe Máy / Sửa Xe Máy Tận Nơi",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_9_Cu_Sữa_-_HotDog.png",
+    "crop_text": "Cu Sữa - HotDog",
+    "best_result_index": 96,
+    "best_result_name": "Cu Sữa - HotDog",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_10_Pravered__Tiệm_Nhà_Nấm_89.png",
+    "crop_text": "Pravered / Tiệm Nhà Nấm 89",
+    "best_result_index": 69,
+    "best_result_name": "Pravered / Tiệm Nhà Nấm 89",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_11_Trà_Đêm_Nhà_thờ.png",
+    "crop_text": "Trà Đêm Nhà thờ",
+    "best_result_index": 97,
+    "best_result_name": "Trà Đêm Nhà thờ",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_12_Ăn_Vặt_-_Nước_Mía_Pé_Ty.png",
+    "crop_text": "Ăn Vặt - Nước Mía Pé Ty",
+    "best_result_index": 75,
+    "best_result_name": "Ăn Vặt - Nước Mía Pé Ty",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_13_sód.png",
+    "crop_text": "sód",
+    "best_result_index": 116,
+    "best_result_name": "sód",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_1_poi_14_Bra.png",
+    "crop_text": "Bra",
+    "best_result_index": 117,
+    "best_result_name": "Bra",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_0_poi_0_Nhà_thờ_Đức_Bà_Sài_Gòn__19th-century__European-style_cathedral.png",
+    "crop_text": "Nhà thờ Đức Bà Sài Gòn / 19th-century / European-style cathedral",
+    "best_result_index": 0,
+    "best_result_name": "Nhà thờ Đức Bà Sài Gòn / 19th-century / European-style cathedral",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_0_poi_1_Hello_Thợ_-_Cứu_Hộ_Xe__Máy_Sửa_Xe_Lưu_Động.png",
+    "crop_text": "Hello Thợ - Cứu Hộ Xe / Máy Sửa Xe Lưu Động",
+    "best_result_index": 14,
+    "best_result_name": "Hello Thợ - Cứu Hộ Xe / Máy Sửa Xe Lưu Động",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_0_poi_2_Nhà_thờ_Đức_Bà.png",
+    "crop_text": "Nhà thờ Đức Bà",
+    "best_result_index": 101,
+    "best_result_name": "Nhà thờ Đức Bà",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_0_poi_3_sách_Nguyễn_Văn_Bình.png",
+    "crop_text": "sách Nguyễn Văn Bình",
+    "best_result_index": 84,
+    "best_result_name": "sách Nguyễn Văn Bình",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_0_poi_4_Công_viên_Hàn_Thuyên.png",
+    "crop_text": "Công viên Hàn Thuyên",
+    "best_result_index": 85,
+    "best_result_name": "Công viên Hàn Thuyên",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_0_Cheese_Coffee__Nguyễn_Du.png",
+    "crop_text": "Cheese Coffee / Nguyễn Du",
+    "best_result_index": 62,
+    "best_result_name": "Passio Coffee / 53 Nguyễn Du",
+    "score": 0.7347,
+    "status": "MISSING"
+  },
+  {
+    "crop": "tile_1_0_poi_1_Bưu_Cục_Giao_dịch__Quốc_Tế_Sài_Gòn.png",
+    "crop_text": "Bưu Cục Giao dịch / Quốc Tế Sài Gòn",
+    "best_result_index": 38,
+    "best_result_name": "Bưu Cục Giao dịch / Quốc Tế Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_2_Bưu_điện_Thành__phố_Hồ_Chí_Minh.png",
+    "crop_text": "Bưu điện Thành / phố Hồ Chí Minh",
+    "best_result_index": 49,
+    "best_result_name": "Bưu điện Thành / phố Hồ Chí Minh",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_3_Bao_Bì_Thành_Công__Packaging_supply_store.png",
+    "crop_text": "Bao Bì Thành Công / Packaging supply store",
+    "best_result_index": 16,
+    "best_result_name": "Bao Bì Thành Công / Packaging supply store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_4_wăbẽ_săbẽ_boutique__Temporarily_closed.png",
+    "crop_text": "wăbẽ săbẽ boutique / Temporarily closed",
+    "best_result_index": 24,
+    "best_result_name": "wăbẽ săbẽ boutique / Temporarily closed",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_5_THAIYEN_CAFE__CAFE_yen-_80.png",
+    "crop_text": "THAIYEN CAFE / CAFE yen- 80",
+    "best_result_index": 66,
+    "best_result_name": "THAIYEN CAFE / CAFE yen- 80",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_6_Bếp_Nội_Nhà_Làm.png",
+    "crop_text": "Bếp Nội Nhà Làm",
+    "best_result_index": 98,
+    "best_result_name": "Bếp Nội Nhà Làm",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_7_Mực_chiên_bơ_ông__Gù__Nhà_thờ_Đức_Bà.png",
+    "crop_text": "Mực chiên bơ ông / Gù / Nhà thờ Đức Bà",
+    "best_result_index": 28,
+    "best_result_name": "Mực chiên bơ ông / Gù ? Nhà thờ Đức Bà",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_8_Passio_Coffee__53_Nguyễn_Du.png",
+    "crop_text": "Passio Coffee / 53 Nguyễn Du",
+    "best_result_index": 62,
+    "best_result_name": "Passio Coffee / 53 Nguyễn Du",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_9_SaiGon_House.png",
+    "crop_text": "SaiGon House",
+    "best_result_index": 104,
+    "best_result_name": "SaiGon House",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_10_THE_COFFEE_LAB.png",
+    "crop_text": "THE COFFEE LAB",
+    "best_result_index": 102,
+    "best_result_name": "THE COFFEE LAB",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_11_Phê_La_-_Hai_Bà_Trưng.png",
+    "crop_text": "Phê La - Hai Bà Trưng",
+    "best_result_index": 81,
+    "best_result_name": "Phê La - Hai Bà Trưng",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_0_poi_12_Trung_Tâm_Y_Khoa_Diag.png",
+    "crop_text": "Trung Tâm Y Khoa Diag",
+    "best_result_index": 82,
+    "best_result_name": "Trung Tâm Y Khoa Diag",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_0_Diamond__Department_Store__Department_store.png",
+    "crop_text": "Diamond / Department Store / Department store",
+    "best_result_index": 11,
+    "best_result_name": "Diamond / Department Store / Department store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_1_23_(HWA_PUNG__JEONG)_24__Viên_Kean__GEOX.png",
+    "crop_text": "23 (HWA PUNG / JEONG) 24 / Viên Kean / GEOX",
+    "best_result_index": 15,
+    "best_result_name": "23 (HWA PUNG / JEONG) 24 / Viên Kean / GEOX",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_2_Hồng_Sâm_Cheong_Kwan__Jang_-_Diamond_Plaza__Shoppingmall.png",
+    "crop_text": "Hồng Sâm Cheong Kwan / Jang - Diamond Plaza / Shoppingmall",
+    "best_result_index": 2,
+    "best_result_name": "Hồng Sâm Cheong Kwan / Jang - Diamond Plaza / Shoppingmall",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_3_Vọng_xoay_Phạm_Ngọc__Thạch_Giáo_Lê_Duẩn.png",
+    "crop_text": "Vọng xoay Phạm Ngọc / Thạch Giáo Lê Duẩn",
+    "best_result_index": 21,
+    "best_result_name": "Vọng xoay Phạm Ngọc / Thạch Giáo Lê Duẩn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_4_Italianis_Pizza_F5__Diamond_Plaza__Pizza.png",
+    "crop_text": "Italianis Pizza F5 / Diamond Plaza / Pizza",
+    "best_result_index": 17,
+    "best_result_name": "Italianis Pizza F5 / Diamond Plaza / Pizza",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_5_Calvin_Klein__Clothing_store.png",
+    "crop_text": "Calvin Klein / Clothing store",
+    "best_result_index": 56,
+    "best_result_name": "Calvin Klein / Clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_6_Diptyque__Perfumestore.png",
+    "crop_text": "Diptyque / Perfumestore",
+    "best_result_index": 76,
+    "best_result_name": "Diptyque / Perfumestore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_7_Mister_Waffle__Diamond_Plaza.png",
+    "crop_text": "Mister Waffle / Diamond Plaza",
+    "best_result_index": 57,
+    "best_result_name": "Mister Waffle / Diamond Plaza",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_8_Cửa_hàng_Estee_Lauder__Cosmetics_store.png",
+    "crop_text": "Cửa hàng Estee Lauder / Cosmetics store",
+    "best_result_index": 25,
+    "best_result_name": "Cửa hàng Estee Lauder / Cosmetics store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_9_Dropfoods_Vietnam.png",
+    "crop_text": "Dropfoods Vietnam",
+    "best_result_index": 91,
+    "best_result_name": "Dropfoods Vietnam",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_10_Nike_Kid__hildrens_clothing_store.png",
+    "crop_text": "Nike Kid / hildrens clothing store",
+    "best_result_index": 41,
+    "best_result_name": "Nike Kid / hildrens clothing store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_11_An_Law_Vietnam__International.png",
+    "crop_text": "An Law Vietnam / International",
+    "best_result_index": 54,
+    "best_result_name": "An Law Vietnam / International",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_12_GEOX__Shoestore.png",
+    "crop_text": "GEOX / Shoestore",
+    "best_result_index": 93,
+    "best_result_name": "GEOX / Shoestore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_13_Little_Hong_Kong.png",
+    "crop_text": "Little Hong Kong",
+    "best_result_index": 94,
+    "best_result_name": "Little Hong Kong",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_14_Trạm_xe_đạp_công__TNGo_-_UBND_Quận_1.png",
+    "crop_text": "Trạm xe đạp công / TNGo - UBND Quận 1",
+    "best_result_index": 34,
+    "best_result_name": "Trạm xe đạp công / TNGo - UBND Quận 1",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_15_Trung_tâm_Hoa_Kỳ.png",
+    "crop_text": "Trung tâm Hoa Kỳ",
+    "best_result_index": 95,
+    "best_result_name": "Trung tâm Hoa Kỳ",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_16_Efora__Fashion_accessories_store.png",
+    "crop_text": "Efora / Fashion accessories store",
+    "best_result_index": 46,
+    "best_result_name": "Efora / Fashion accessories store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_17_FURLA_CORNER__Fashion_accessories_store.png",
+    "crop_text": "FURLA CORNER / Fashion accessories store",
+    "best_result_index": 22,
+    "best_result_name": "FURLA CORNER / Fashion accessories store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_-1_poi_18_Toanablamona__Plaza_-_Office_Saigor.png",
+    "crop_text": "Toanablamona / Plaza - Office Saigor",
+    "best_result_index": 35,
+    "best_result_name": "Toanablamona / Plaza - Office Saigor",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_0_Pisco_Hana__Bar_Lounge.png",
+    "crop_text": "Pisco Hana / Bar Lounge",
+    "best_result_index": 77,
+    "best_result_name": "Pisco Hana / Bar Lounge",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_1_Bưu_Chính_viễn__thông_TP.HCM.png",
+    "crop_text": "Bưu Chính viễn / thông TP.HCM",
+    "best_result_index": 58,
+    "best_result_name": "Bưu Chính viễn / thông TP.HCM",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_2_Nikura_-_Contemporary__Nikkei_Cuisine.png",
+    "crop_text": "Nikura - Contemporary / Nikkei Cuisine",
+    "best_result_index": 29,
+    "best_result_name": "Nikura - Contemporary / Nikkei Cuisine",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_3_Haeduri_Hai_Bà_Trưng.png",
+    "crop_text": "Haeduri Hai Bà Trưng",
+    "best_result_index": 86,
+    "best_result_name": "Haeduri Hai Bà Trưng",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_4_Cosmetics_store.png",
+    "crop_text": "Cosmetics store",
+    "best_result_index": 99,
+    "best_result_name": "Cosmetics store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_5_Vérité_Patisserie__Hai_Bà_Trưng.png",
+    "crop_text": "Vérité Patisserie / Hai Bà Trưng",
+    "best_result_index": 50,
+    "best_result_name": "Vérité Patisserie / Hai Bà Trưng",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_6_Ecowear__Costume_store.png",
+    "crop_text": "Ecowear / Costume store",
+    "best_result_index": 78,
+    "best_result_name": "Ecowear / Costume store",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_7_InterPulse_Fitness.png",
+    "crop_text": "InterPulse Fitness",
+    "best_result_index": 90,
+    "best_result_name": "InterPulse Fitness",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_8_JW_Café.png",
+    "crop_text": "JW Café",
+    "best_result_index": 113,
+    "best_result_name": "JW Café",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_9_Club_Lounge.png",
+    "crop_text": "Club Lounge",
+    "best_result_index": 106,
+    "best_result_name": "Club Lounge",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_1_-1_poi_10_telipad.png",
+    "crop_text": "telipad",
+    "best_result_index": 114,
+    "best_result_name": "telipad",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_0_Wings_Tea_House__PHÀN_THUYÊN__Bubble_Tea.png",
+    "crop_text": "Wings Tea House / PHÀN THUYÊN / Bubble Tea",
+    "best_result_index": 18,
+    "best_result_name": "Wings Tea House / PHÀN THUYÊN / Bubble Tea",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_1_Italianis_Pizza__Han_Thuyen__Pizza.png",
+    "crop_text": "Italianis Pizza / Han Thuyen / Pizza",
+    "best_result_index": 36,
+    "best_result_name": "Italianis Pizza / Han Thuyen / Pizza",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_2_Trường_Tiêu__học_Hòa_Bình.png",
+    "crop_text": "Trường Tiêu / học Hòa Bình",
+    "best_result_index": 70,
+    "best_result_name": "Trường Tiêu / học Hòa Bình",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_3_Nice_Weathered__The_coffee_shop.png",
+    "crop_text": "Nice Weathered / The coffee shop",
+    "best_result_index": 51,
+    "best_result_name": "Nice Weathered / The coffee shop",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_4_RuNam_dor__Modern_French.png",
+    "crop_text": "RuNam dor / Modern French",
+    "best_result_index": 73,
+    "best_result_name": "RuNam dor / Modern French",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_5_Viet_Nguyen__Lawyer_Office.png",
+    "crop_text": "Viet Nguyen / Lawyer Office",
+    "best_result_index": 67,
+    "best_result_name": "Viet Nguyen / Lawyer Office",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_6_Lắp_đặt_máy_chấm__công_Toàn_quốc.png",
+    "crop_text": "Lắp đặt máy chấm / công Toàn quốc",
+    "best_result_index": 47,
+    "best_result_name": "Lắp đặt máy chấm / công Toàn quốc",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_7_ADORÉ_WORLD__COFFEE.png",
+    "crop_text": "ADORÉ WORLD / COFFEE",
+    "best_result_index": 87,
+    "best_result_name": "ADORÉ WORLD / COFFEE",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_8_The_Dreamers__Bakery_Coffee.png",
+    "crop_text": "The Dreamers / Bakery Coffee",
+    "best_result_index": 63,
+    "best_result_name": "The Dreamers / Bakery Coffee",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_9_Nhàn.png",
+    "crop_text": "Nhàn",
+    "best_result_index": 115,
+    "best_result_name": "Nhàn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_10_Cà_Phê_Bệt.png",
+    "crop_text": "Cà Phê Bệt",
+    "best_result_index": 108,
+    "best_result_name": "Cà Phê Bệt",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_-1_1_poi_11_Dismitted.png",
+    "crop_text": "Dismitted",
+    "best_result_index": 110,
+    "best_result_name": "Dismitted",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_0_Starbucks__MPlaza_Sài_Gòn.png",
+    "crop_text": "Starbucks / MPlaza Sài Gòn",
+    "best_result_index": 71,
+    "best_result_name": "Starbucks / MPlaza Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_1_Văn_phòng_đại__diện_Daegu_Bank.png",
+    "crop_text": "Văn phòng đại / diện Daegu Bank",
+    "best_result_index": 52,
+    "best_result_name": "Văn phòng đại / diện Daegu Bank",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_2_Mikura_Restaurant__036_Ja_Japanese.png",
+    "crop_text": "Mikura Restaurant / 036 Ja Japanese",
+    "best_result_index": 39,
+    "best_result_name": "Mikura Restaurant / 036 Ja Japanese",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_3_VNPT_Sài_Gòn.png",
+    "crop_text": "VNPT Sài Gòn",
+    "best_result_index": 105,
+    "best_result_name": "VNPT Sài Gòn",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_4_CHAGEI__Teastore.png",
+    "crop_text": "CHAGEI / Teastore",
+    "best_result_index": 92,
+    "best_result_name": "CHAGEI / Teastore",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_5_Tạo_Concept.png",
+    "crop_text": "Tạo Concept",
+    "best_result_index": 107,
+    "best_result_name": "Tạo Concept",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_6_Star__Mar.png",
+    "crop_text": "Star / Mar",
+    "best_result_index": 109,
+    "best_result_name": "Star / Mar",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_7_SV.png",
+    "crop_text": "SV",
+    "best_result_index": 118,
+    "best_result_name": "SV",
+    "score": 1.0,
+    "status": "OK"
+  },
+  {
+    "crop": "tile_0_-2_poi_8_DISMINES.png",
+    "crop_text": "DISMINES",
+    "best_result_index": 112,
+    "best_result_name": "DISMINES",
+    "score": 1.0,
+    "status": "OK"
+  }
+]
