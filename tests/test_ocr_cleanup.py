@@ -136,3 +136,10 @@ def test_category_suffix_and_admin_normalized_regressions_are_rejected():
     assert _clean_final_ocr_text("VIET TUI XÁCH / Fashion accessories store") == "VIET TUI XÁCH"
     assert _clean_final_ocr_text("OHQUAO Souvenir Dept / Souvenir store") == "OHQUAO Souvenir Dept"
     assert _normalized_regresses_quality("UBND phường sài Gòn", "JBND - Công Sài Gòn")
+
+
+def test_stray_leading_capital_artifacts_are_removed_safely():
+    assert _clean_final_ocr_text("TUMI Saigon Central / LPost Office Store") == "TUMI Saigon Central / Post Office Store"
+    assert _clean_final_ocr_text("LEfora") == "Efora"
+    assert _clean_final_ocr_text("LEfola") == "Efora"
+    assert _clean_final_ocr_text("LPBank PGD Bưu điện") == "LPBank PGD Bưu điện"

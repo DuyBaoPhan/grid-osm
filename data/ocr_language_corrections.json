@@ -1,0 +1,50 @@
+{
+  "contextual_token_corrections": [
+    {"wrong_base": "xe", "canonical": "Xe", "context": ["may", "moto", "gan", "sua", "cuu", "ho"]},
+    {"wrong_base": "tho", "canonical": "Thợ", "context": ["sua", "xe", "cuu", "ho", "hello"]},
+    {"wrong_base": "vat", "canonical": "Vặt", "context": ["an", "quan", "mon", "nuoc", "mia"]},
+    {"wrong_base": "van", "canonical": "Ăn", "context": ["vat", "nuoc", "mia", "mon"]},
+    {"wrong_base": "bar", "canonical": "Bãi", "context": ["do", "xe"]},
+    {"wrong_base": "bai", "canonical": "Bãi", "context": ["do", "xe"]},
+    {"wrong_base": "dai", "canonical": "Bãi", "context": ["do", "xe"]},
+    {"wrong_base": "do", "canonical": "đỗ", "context": ["bai", "bar", "dai", "xe"]},
+    {"wrong_base": "tieu", "canonical": "Tiểu", "context": ["truong", "hoc", "hoa", "binh"]},
+    {"wrong_base": "phan", "canonical": "Hàn", "context": ["thuyen"]},
+    {"wrong_base": "mia", "canonical": "Mía", "context": ["nuoc", "ep", "mia"]},
+    {"wrong_base": "chien", "canonical": "chiên", "context": ["muc", "bo", "ga", "ca"]},
+    {"wrong_base": "cung", "canonical": "Cúng", "context": ["do", "dich", "vu", "tron", "goi"]},
+    {"wrong_base": "bardo", "canonical": "Bãi đỗ", "context": ["xe", "duong", "sach"]},
+    {"wrong_base": "bardoc", "canonical": "Bãi đỗ", "context": ["xe", "duong", "sach"]},
+    {"wrong_base": "vong", "canonical": "Vòng", "context": ["xoay", "xoai", "xoi"]},
+    {"wrong_base": "xoay", "canonical": "xoay", "context": ["vong", "vongxoay", "vongxoai"]},
+    {"wrong_base": "iem", "canonical": "Tiệm", "context": ["nha", "nh", "nam", "quan", "shop", "store"]},
+    {"wrong_base": "nh", "canonical": "Nhà", "context": ["iem", "tiem", "nam", "hang", "thuoc", "sach", "tho"]},
+    {"wrong_base": "hach", "canonical": "Thạch", "context": ["pham", "ngoc", "vong", "xoay", "duong", "le"]},
+    {"wrong_base": "ong", "canonical": "Vòng", "context": ["xoay", "pham", "ngoc"]},
+    {"wrong_base": "lam", "canonical": "Làm", "context": ["nha", "noi", "bep", "handmade"]}
+  ],
+  "contextual_phrase_corrections": [
+    {"source": ["nguyen", "van", "binh"], "target": ["Nguyễn", "Văn", "Bình"]},
+    {"source": ["ho", "chi", "minh"], "target": ["Hồ", "Chí", "Minh"]},
+    {"source": ["buu", "dien", "trung", "tam"], "target": ["Bưu", "điện", "Trung", "tâm"]},
+    {"source": ["duong", "sach"], "target": ["Đường", "sách"]},
+    {"source": ["nha", "sach", "kim", "dong"], "target": ["Nhà", "sách", "Kim", "Đồng"]},
+    {"source": ["pho", "ga"], "target": ["Phở", "Gà"]},
+    {"source": ["pho", "nguyen", "hue"], "target": ["Phố", "Nguyễn", "Huệ"]},
+    {"source": ["ca", "phe"], "target": ["Cà", "phê"]},
+    {"source": ["cafe"], "target": ["Cafe"]},
+    {"source": ["nha", "hang"], "target": ["Nhà", "hàng"]},
+    {"source": ["khach", "san"], "target": ["Khách", "sạn"]},
+    {"source": ["nha", "thuoc"], "target": ["Nhà", "thuốc"]},
+    {"source": ["sua", "xe"], "target": ["Sửa", "Xe"]},
+    {"source": ["cuu", "ho", "xe"], "target": ["Cứu", "Hộ", "Xe"]},
+    {"source": ["nuoc", "mia"], "target": ["Nước", "Mía"]},
+    {"source": ["an", "vat"], "target": ["Ăn", "Vặt"]},
+    {"source": ["do", "cung"], "target": ["Đồ", "Cúng"]}
+  ],
+  "safe_standalone_aliases": {
+    "hanoi": "Hà Nội",
+    "saigon": "Sài Gòn",
+    "hcm": "HCM"
+  }
+}

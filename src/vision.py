@@ -236,7 +236,27 @@ def _fix_latin_brand_ocr_artifacts(text: str) -> str:
             return 'D' + token[1:]
         return token
 
-    return re.sub(r'\bĐ[A-Za-z]{3,}\b', _fix_crossed_d, text)
+    text = re.sub(r'\bĐ[A-Za-z]{3,}\b', _fix_crossed_d, text)
+
+    def _fix_stray_leading_capital(match):
+        token = match.group(0)
+        # OCR/icon edge can glue one uppercase letter before a normal TitleCase token:
+        # `LPost`, `LEfora`. Do not touch real camel/acronym brands like `LPBank`.
+        if not re.fullmatch(r'[A-Z][A-Z][a-z]{3,}', token):
+            return token
+        if len(token) >= 3 and token[2].isupper():
+            return token
+        candidate = token[1:]
+        if re.fullmatch(r'[A-Z][a-z]*ola', candidate):
+            candidate = candidate[:-3] + 'ora'
+        key = _strip_vietnamese_accents(candidate).lower()
+        vowels = sum(ch in 'aeiouy' for ch in key)
+        letters = sum(ch.isalpha() for ch in key)
+        if letters >= 4 and vowels / max(1, letters) >= 0.25:
+            return candidate
+        return token
+
+    return re.sub(r'\b[A-Z][A-Z][a-z]{3,}\b', _fix_stray_leading_capital, text)
 
 
 def _clean_spelling(text: str) -> str:
