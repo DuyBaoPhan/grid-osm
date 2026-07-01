@@ -25,7 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.vietnam_places import strip_vietnamese_accents
-from src.vision import _clean_final_ocr_text, _get_vietocr_predictor, _recognize_text_crop_vietocr
+import src.vision as vision
+from src.vision import _clean_final_ocr_text, _get_vietocr_predictor
 
 # Mẫu tên file: tile_0_0_poi_4_Cổng_Đường_sách__TP._Hồ_Chí_Minh.png
 # __ đại diện cho dấu gạch chéo phân cách phân đoạn (/)
@@ -69,7 +70,7 @@ def calculate_token_f1(actual: str, expected: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
-def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = False):
+def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = False, limit: int = 0, disable_paddle: bool = True):
     crops_path = Path(crops_dir)
     if not crops_path.exists():
         print(f"Lỗi: Thư mục ảnh crop '{crops_dir}' không tồn tại.")
@@ -110,10 +111,15 @@ def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = Fa
         print(f"Đã cập nhật và lưu {len(manifest)} nhãn vào manifest {manifest_path}")
 
     # 2. Khởi động predictor VietOCR
-    print("Đang tải mô hình VietOCR...")
+    if disable_paddle:
+        # Benchmark cần tốc độ và tránh load PaddleOCR nặng. Mục tiêu là đánh giá VietOCR + cleanup.
+        vision._recognize_text_paddle = lambda _crop: ""
+        print("Đã tắt PaddleOCR fallback trong benchmark để chạy nhanh hơn.", flush=True)
+
+    print("Đang tải mô hình VietOCR...", flush=True)
     predictor = _get_vietocr_predictor()
     if predictor is None:
-        print("Lỗi: Không thể tải mô hình VietOCR.")
+        print("Lỗi: Không thể tải mô hình VietOCR.", flush=True)
         return
 
     # 3. Chạy benchmark
@@ -121,8 +127,12 @@ def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = Fa
     total_token_f1 = 0.0
     total_exact_match = 0
 
-    print("\nBắt đầu chạy benchmark trên từng ảnh crop:")
-    print("=" * 80)
+    if limit and limit > 0:
+        crop_files = crop_files[:limit]
+        print(f"Giới hạn benchmark: {len(crop_files)} ảnh đầu tiên.", flush=True)
+
+    print("\nBắt đầu chạy benchmark trên từng ảnh crop:", flush=True)
+    print("=" * 80, flush=True)
 
     for idx, filename in enumerate(crop_files, 1):
         expected = manifest.get(filename)
@@ -146,7 +156,7 @@ def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = Fa
         
         try:
             # Chạy hàm nhận diện chuẩn của vision.py
-            raw_text = _recognize_text_crop_vietocr(cv_img, bbox, scale=1.0)
+            raw_text = vision._recognize_text_crop_vietocr(cv_img, bbox, scale=1.0)
             actual = _clean_final_ocr_text(raw_text)
         except Exception as e:
             print(f"[{idx:3d}] ✗ Lỗi khi chạy OCR cho {filename}: {e}")
@@ -159,9 +169,9 @@ def run_benchmark(crops_dir: str, manifest_path: str, update_manifest: bool = Fa
         total_exact_match += em
 
         status_char = "✓" if em else ("~" if f1 >= 0.8 else "✗")
-        print(f"[{idx:3d}] {status_char} File: {filename}")
-        print(f"      Expected: {expected!r}")
-        print(f"      Actual:   {actual!r} (F1: {f1:.2%})")
+        print(f"[{idx:3d}] {status_char} File: {filename}", flush=True)
+        print(f"      Expected: {expected!r}", flush=True)
+        print(f"      Actual:   {actual!r} (F1: {f1:.2%})", flush=True)
 
         results.append({
             "filename": filename,
@@ -249,7 +259,7 @@ def generate_html_report(results: list[dict], em_rate: float, avg_f1: float, out
         </thead>
         <tbody>
     """
-
+ 
     for idx, r in enumerate(results, 1):
         f1 = r["f1"]
         em = r["em"]
@@ -290,6 +300,8 @@ if __name__ == "__main__":
     parser.add_argument("--crops", default="crops", help="Thư mục chứa ảnh crop POI")
     parser.add_argument("--manifest", default="data/ocr_benchmark_manifest.json", help="Đường dẫn file manifest JSON")
     parser.add_argument("--update-manifest", action="store_true", help="Ghi đè manifest bằng nhãn trích xuất từ tên file")
+    parser.add_argument("--limit", type=int, default=0, help="Chỉ benchmark N ảnh đầu tiên (0 = toàn bộ)")
+    parser.add_argument("--enable-paddle", action="store_true", help="Bật PaddleOCR fallback trong benchmark (chậm)")
     args = parser.parse_args()
 
-    run_benchmark(args.crops, args.manifest, args.update_manifest)
+    run_benchmark(args.crops, args.manifest, args.update_manifest, args.limit, not args.enable_paddle)

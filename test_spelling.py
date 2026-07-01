@@ -18,101 +18,20 @@ from src.vietnam_places import normalize_place_phrases
 # Test cases: (input_ocr, expected_output, description)
 # ============================================================
 test_cases = [
-    # === Tile (0,0) - Bưu điện Trung tâm ===
-    ("Buu dien trung tam Sai Gon",
-     None,  # partial match OK - at minimum "Sài Gòn" và "Bưu điện" phải đúng
-     "Bưu điện Trung tâm (no accents)"),
-
-    ("Buu dien Sai Gon",
-     None,
-     "Bưu điện Sài Gòn variant"),
-
-    ("LPBank PGD Buu dien Giao dich Sai Gon",
-     None,
-     "LPBank + Bưu điện + Giao dịch (brand should stay)"),
-
-    # === Tile (0,-1) - Đường sách, Cổng ===
-    ("Cong Duong sach TP. Ho Chi Minh",
-     None,
-     "Cổng Đường sách TP.HCM"),
-
-    ("Bai giu xe Duong Sach Highlands",
-     None,
-     "Bãi giữ xe Đường Sách Highlands"),
-
-    ("Highlands Coffee Saigon Post Office",
-     "Highlands Coffee Saigon Post Office",  # brand, must NOT change
-     "Brand name should not be modified"),
-
-    # === Tile (0,1) - Chợ Bến Thành ===
-    ("Cho Ben Thanh",
-     None,
-     "Chợ Bến Thành"),
-
-    ("Nha hang com tam",
-     None,
-     "Nhà hàng cơm tấm"),
-
-    # === Tile (-1,0) - Nhà thờ Đức Bà ===
-    ("Nha tho Duc Ba",
-     None,
-     "Nhà thờ Đức Bà"),
-
-    ("Cong vien Tao Dan",
-     None,
-     "Công viên Tao Đàn"),
-
-    # === Tile (1,0) - Nhà hát, khách sạn ===
-    ("Nha hat Thanh pho",
-     None,
-     "Nhà hát Thành phố"),
-
-    ("Khach san Sofitel",
-     None,
-     "Khách sạn Sofitel (brand stays)"),
-
-    # === Tests tổng quát ===
-    ("Ho Chi Minh",
-     "Hồ Chí Minh",
-     "Hồ Chí Minh exact match"),
-
-    ("Saigon Post Office",
-     "Saigon Post Office",  # English brand, stays
-     "English brand unchanged"),
-
-    ("MCM Post Office",
-     "MCM Post Office",  # ALLCAPS brand, stays
-     "ALLCAPS brand unchanged"),
-
-    ("Vuon Trong Pho",
-     None,
-     "Vườn Trong Phố"),
-
-    ("Ca phe sua da",
-     None,
-     "Cà phê sữa đá"),
-
-    ("Pho bo Hanoi",
-     None,
-     "Phở bò Hà Nội"),
-
-    # === Anti-regression: không được sửa sai ===
-    ("PASTA CLUB Not so Italian",
-     "PASTA CLUB Not so Italian",
-     "ALLCAPS brand must stay"),
-
-    ("Con Meo Nho Little Cats Studio",
-     None,
-     "Con Mèo Nhỏ Little Cats Studio (partial fix OK)"),
-
-    # === Trường hợp đã có dấu đúng ===
-    ("Bưu điện Trung tâm Sài Gòn",
-     "Bưu điện Trung tâm Sài Gòn",
-     "Already correct - must not change"),
-
-    ("Highlands Coffee",
-     "Highlands Coffee",
-     "English brand already OK"),
+    ("Nguyen Van Binh", "Nguyễn Văn Bình", "Exact 3-token person/street name"),
+    ("Buu dien trung tam", "Bưu điện Trung tâm", "Exact 4-token POI phrase"),
+    ("duong sach", "Đường sách", "Exact 2-token phrase"),
+    ("Nha sach Kim Dong", "Nhà sách Kim Đồng", "Exact 4-token bookstore name"),
+    ("pho", "pho", "Ambiguous single token must stay unchanged"),
+    ("mai", "mai", "Ambiguous single token must stay unchanged"),
+    ("ga", "ga", "Ambiguous single token must stay unchanged"),
+    ("pho ga", "Phở Gà", "Ambiguous words corrected only in clear phrase"),
+    ("pho nguyen hue", "Phố Nguyễn Huệ", "Ambiguous pho corrected by clear street phrase"),
+    ("PASTA CLUB Not so Italian", "PASTA CLUB Not so Italian", "ALLCAPS brand must stay"),
+    ("MCM Post Office", "MCM Post Office", "ALLCAPS brand unchanged"),
+    ("Highlands Coffee Saigon Post Office", "Highlands Coffee Saigon Post Office", "English brand phrase unchanged"),
+    ("Bưu điện Trung tâm Sài Gòn", "Bưu điện Trung tâm Sài Gòn", "Already correct - must not change"),
+    ("Highlands Coffee", "Highlands Coffee", "English brand already OK"),
 ]
 
 
