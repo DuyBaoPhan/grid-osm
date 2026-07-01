@@ -1,3 +1,5 @@
+# Original src/worker.py archived before package split.
+# Kept as comments only; runtime code lives in split modules.
 # # =============================================================
 # # worker.py — Playwright browser worker
 # #
@@ -8,15 +10,15 @@
 # #   - Báo kết quả cho Coordinator
 # #   - Tự restart browser mỗi BROWSER_RESTART_EVERY tile
 # # =============================================================
-
+#
 # import asyncio
 # import logging
 # import os
 # import re
 # from typing import List, Tuple, Optional
-
+#
 # from playwright.async_api import Browser, BrowserContext, Page, Playwright
-
+#
 # from config import (
 #     BROWSER_RESTART_EVERY,
 #     CENTER_LAT,
@@ -39,39 +41,39 @@
 # from grid import tile_center, tile_bbox, tile_viewport_bbox, pixel_to_gps
 # from src.vision import extract_pois_from_screenshot, draw_detections, enhance_for_detection
 # from src.canonical_matcher import resolve_canonical_name
-
+#
 # logger = logging.getLogger(__name__)
-
+#
 # TileCoord = Tuple[int, int]
-
+#
 # # URL template Google Maps
 # _GMAP_URL = "https://www.google.com/maps/@{lat},{lng},{zoom}z"
-
-
+#
+#
 # class Worker:
 #     """
 #     Playwright-based tile processor.
-
+#
 #     Sử dụng:
 #         async with async_playwright() as pw:
 #             worker = Worker(worker_id=0, coordinator=coord)
 #             await worker.run(pw)
 #     """
-
+#
 #     def __init__(self, worker_id: int, coordinator) -> None:
 #         self.id = worker_id
 #         self.coord = coordinator
-
+#
 #         self._playwright: Playwright | None = None
 #         self._browser: Browser | None = None
 #         self._context: BrowserContext | None = None
 #         self._page: Page | None = None
-
+#
 #         self._tile_count = 0          # tiles xử lý kể từ lần start/restart cuối
 #         self._total_processed = 0     # tổng tiles đã xử lý
-
+#
 #     # ── Browser lifecycle ────────────────────────────────────
-
+#
 #     async def _start_browser(self) -> None:
 #         """Khởi động Chromium instance nếu chưa có."""
 #         assert self._playwright is not None, "Playwright is not initialized"
@@ -91,12 +93,12 @@
 #             )
 #             self._tile_count = 0
 #             logger.info("[Worker %d] Browser started.", self.id)
-
+#
 #     async def _start_page(self) -> None:
 #         """Tạo context mới và page mới sạch sẽ cho ô quét hiện tại."""
 #         await self._close_page()
 #         await self._start_browser()
-        
+#
 #         self._context = await self._browser.new_context(
 #             viewport={"width": SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX, "height": SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX},
 #             user_agent=(
@@ -106,7 +108,7 @@
 #             bypass_csp=True,
 #         )
 #         self._page = await self._context.new_page()
-
+#
 #         # Inject CSS to hide Google Maps UI elements before they render
 #         await self._page.add_init_script("""
 #             const style = document.createElement('style');
@@ -139,7 +141,7 @@
 #             `;
 #             document.documentElement.appendChild(style);
 #         """)
-
+#
 #     async def _close_page(self) -> None:
 #         """Đóng context và page hiện tại."""
 #         for obj in [self._page, self._context]:
@@ -149,7 +151,7 @@
 #                 except Exception:
 #                     pass
 #         self._page = self._context = None
-
+#
 #     async def _close_browser(self) -> None:
 #         """Đóng toàn bộ browser và dọn dẹp tài nguyên."""
 #         await self._close_page()
@@ -159,17 +161,17 @@
 #             except Exception:
 #                 pass
 #         self._browser = None
-
+#
 #     # ── Main loop ────────────────────────────────────────────
-
+#
 #     async def run(self, playwright: Playwright) -> None:
 #         """Vòng lặp chính của worker — chạy đến khi queue rỗng."""
 #         self._playwright = playwright
-
+#
 #         try:
 #             while True:
 #                 tile = await self.coord.get_next_tile()
-
+#
 #                 if tile is None:
 #                     # Queue tạm thời trống — worker khác có thể đang xử lý tile cuối
 #                     # Retry nhiều lần với thời gian chờ tăng dần
@@ -189,7 +191,7 @@
 #                     if gave_up:
 #                         logger.info("[Worker %d] Queue confirmed empty — shutting down.", self.id)
 #                         break
-
+#
 #                 # Restart browser định kỳ để giải phóng RAM
 #                 if self._tile_count >= BROWSER_RESTART_EVERY:
 #                     logger.info(
@@ -198,7 +200,7 @@
 #                     )
 #                     await self._close_browser()
 #                     await self._start_browser()
-
+#
 #                 # In trang thai truoc khi xu ly tile
 #                 stats = self.coord.stats
 #                 logger.info(
@@ -209,23 +211,23 @@
 #                     stats["queue_size"],
 #                     stats["pois_found"],
 #                 )
-
+#
 #                 await self._process_tile(tile)
-
+#
 #                 self._tile_count += 1
 #                 self._total_processed += 1
-
+#
 #                 await asyncio.sleep(DELAY_BETWEEN_REQ)
-
+#
 #         finally:
 #             await self._close_browser()
 #             logger.info(
 #                 "[Worker %d] Done. Total tiles processed: %d",
 #                 self.id, self._total_processed,
 #             )
-
+#
 #     # ── Tile processor ───────────────────────────────────────
-
+#
 #     async def _process_tile(self, tile: TileCoord) -> None:
 #         """
 #         Xử lý 1 tile:
@@ -246,10 +248,10 @@
 #         strict_bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
 #         url = _GMAP_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
 #         logger.info("  [Navigate] URL: %s (zoom=%d)", url, SCREENSHOT_ZOOM)
-
+#
 #         # Đảm bảo khởi động trình duyệt và page mới cho ô quét này
 #         await self._start_page()
-
+#
 #         browser_coords = {}
 #         img_metadata = {}
 #         for attempt in range(1, MAX_RETRIES + 2):
@@ -283,10 +285,10 @@
 #                     # Re-queue để thử lại trong phiên sau
 #                     await self.coord._queue.put(tile)
 #                     return
-
+#
 #         # Detect-first pipeline: giữ nguyên nền bản đồ gốc để detect chính xác nhất.
 #         enhanced_screenshot = enhance_for_detection(raw_screenshot)
-
+#
 #         # Nhận diện POI trên ảnh FULL có overlap để không cắt mất nhãn nằm sát mép vùng quét.
 #         # Tọa độ OCR lúc này đã là tọa độ ảnh full, nên crop offset phải = 0.
 #         vision_metadata = dict(img_metadata)
@@ -316,7 +318,7 @@
 #                 len(poi_names), before_filter,
 #             )
 #         logger.info("  [2/2] YOLOv8 + VietOCR Detection Done.")
-
+#
 #         # Dùng overlap screenshot để giảm nhãn bị cắt mép; không chụp rescue phụ để tránh quét lại.
 #         # poi_names = await self._rescue_edge_cut_pois(
 #         #     poi_names,
@@ -325,7 +327,7 @@
 #         #     tx=tx,
 #         #     ty=ty,
 #         # )
-
+#
 #         # Lưu screenshot: vẽ khung đỏ trực tiếp lên ảnh để giám sát
 #         if SAVE_SCREENSHOTS:
 #             debug_pois = []
@@ -348,13 +350,13 @@
 #                 debug_pois.append(dp)
 #             final_img = draw_detections(compressed_screenshot, debug_pois)
 #             await self._save_screenshot(final_img, tx, ty)
-
+#
 #         # Đóng page và context để giải phóng tài nguyên sau khi quét xong ô này
 #         await self._close_page()
-
+#
 #         # Lọc và khớp tọa độ địa điểm
 #         lat_min, lng_min, lat_max, lng_max = strict_bbox
-        
+#
 #         # Hàm so khớp mềm tên POI từ LLM với nhãn DOM trích xuất được
 #         def find_dom_match(poi_name: str, dom_coords: dict) -> Optional[dict]:
 #             # 1. Khớp chính xác tuyệt đối
@@ -371,16 +373,16 @@
 #                 if len(k) > 3 and (k_lower in poi_name_lower or poi_name_lower in k_lower):
 #                     return v
 #             return None
-
+#
 #         pois = []
 #         pois = []
 #         for item in poi_names:
 #             name = item.get("name", "").strip()
 #             if not name:
 #                 continue
-
+#
 #             dom_match = find_dom_match(name, browser_coords)
-            
+#
 #             try:
 #                 import math
 #                 img_w = img_metadata.get("width", 612)
@@ -390,7 +392,7 @@
 #                 scale = img_metadata.get("scale", 2.0)
 #                 crop_x1 = img_metadata.get("crop_x1", 0.0)
 #                 crop_y1 = img_metadata.get("crop_y1", 0.0)
-
+#
 #                 # 1. Pixel exact từ vision.py là nguồn chân lý:
 #                 #    has_icon=True  -> tâm bbox icon.
 #                 #    has_icon=False -> tâm bbox text/label.
@@ -418,16 +420,16 @@
 #                     y_phys = center_y
 #                     poi_lat = None
 #                     poi_lng = None
-
+#
 #                 # 2. Tính khoảng cách pixel vật lý (distance_pixels) từ tâm
 #                 distance_pixels = math.sqrt((x_phys - center_x)**2 + (y_phys - center_y)**2)
-
+#
 #                 # 3. Tính bearing từ tâm theo pixel
 #                 dx = x_phys - center_x
 #                 dy = center_y - y_phys  # Trục Oy hướng lên (Bắc) là dương, pixel y đi xuống
 #                 bearing_rad = math.atan2(dx, dy)
 #                 bearing_deg = (math.degrees(bearing_rad) + 360.0) % 360.0
-
+#
 #                 # 4. Quy đổi pixel ➔ GPS
 #                 # a. Quy đổi sang CSS pixels
 #                 dist_css = distance_pixels / scale
@@ -437,14 +439,14 @@
 #                 meters_per_css_pixel = tile_width_meters / 256.0
 #                 # c. Tính khoảng cách mét
 #                 distance_meters = dist_css * meters_per_css_pixel
-
+#
 #                 if poi_lat is None or poi_lng is None:
 #                     # Quy đổi kích thước ảnh và vị trí pixel từ vật lý sang CSS pixels trước khi tính toán
 #                     width_css = img_w / scale
 #                     height_css = img_h / scale
 #                     pixel_x_css = x_phys / scale
 #                     pixel_y_css = y_phys / scale
-
+#
 #                     # Áp dụng công thức pixel_to_gps chính xác tiêu chuẩn Web Mercator
 #                     poi_lat, poi_lng = pixel_to_gps(
 #                         center_lat=lat,
@@ -456,7 +458,7 @@
 #                         pixel_y=pixel_y_css,
 #                         tile_size=256
 #                     )
-                    
+#
 #                     logger.info(
 #                         "  [GeoPixelExact] Resolved '%s' from OCR pixel center → x=%d y=%d (phys_x=%d phys_y=%d) dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
 #                         name, int(item.get("x", 0)), int(item.get("y", 0)), int(x_phys), int(y_phys), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
@@ -466,7 +468,7 @@
 #                         "  [LeafletDOM-Fallback] Resolved '%s' via DOM fallback → x=%d y=%d dist_px=%.1f dist_m=%.1fm bearing=%.1fdeg → (%.6f, %.6f)",
 #                         name, int(x_val), int(y_val), distance_pixels, distance_meters, bearing_deg, poi_lat, poi_lng
 #                     )
-
+#
 #             except Exception as geo_err:
 #                 logger.warning("  [GeoPixel] Lỗi khi tính toán tọa độ và khoảng cách: %s. Trở về center GPS mặc định.", geo_err)
 #                 poi_lat = lat
@@ -474,7 +476,7 @@
 #                 distance_pixels = 0.0
 #                 distance_meters = 0.0
 #                 bearing_deg = 0.0
-
+#
 #             canonical_match = resolve_canonical_name(
 #                 name,
 #                 name,
@@ -498,7 +500,7 @@
 #                     canonical_match.score,
 #                     canonical_match.reason,
 #                 )
-
+#
 #             # Giữ text OCR trong crop làm nguồn chân lý. Canonical/nearby chỉ là gợi ý, không overwrite `name`.
 #             pois.append({
 #                 "name":             name,
@@ -522,7 +524,7 @@
 #                     "bottom_right": {"lat": round(img_metadata.get("bottom_right_lat", 0.0), 6), "lng": round(img_metadata.get("bottom_right_lng", 0.0), 6)},
 #                 }
 #             })
-
+#
 #         # 8 hàng xóm trong lưới tọa độ custom
 #         neighbors: List[TileCoord] = [
 #             (tx + dx, ty + dy)
@@ -530,9 +532,9 @@
 #             for dy in [-1, 0, 1]
 #             if not (dx == 0 and dy == 0)
 #         ]
-
+#
 #         await self.coord.report_result(tile, pois, neighbors, outside_district)
-
+#
 #         if pois:
 #             poi_list = ", ".join(p["name"] for p in pois[:5])
 #             suffix = f" (+{len(pois)-5} more)" if len(pois) > 5 else ""
@@ -542,7 +544,7 @@
 #             )
 #         else:
 #             logger.info("  => No POI found at this tile")
-
+#
 #     async def _rescue_edge_cut_pois(
 #         self,
 #         poi_names: List[dict],
@@ -556,7 +558,7 @@
 #         edge_items = [p for p in poi_names if p.get("edge_cut")]
 #         if not edge_items:
 #             return poi_names
-
+#
 #         # Giới hạn mỗi tile để tránh rescue làm chậm toàn bộ scan khi có nhiều label sát mép.
 #         max_rescues = 1
 #         for item in edge_items[:max_rescues]:
@@ -594,7 +596,7 @@
 #             except Exception as exc:
 #                 logger.warning("  [EdgeRescue] Failed for '%s': %s", old_name, exc)
 #         return poi_names
-
+#
 #     def _compute_rescue_center(self, lat: float, lng: float, edge_sides: List[str]) -> Tuple[float, float]:
 #         """Dịch tâm map về phía mép bị cắt để label quay vào giữa ảnh hơn."""
 #         width_css = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
@@ -612,7 +614,7 @@
 #         if "bottom" in edge_sides:
 #             py += shift_y
 #         return pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, px, py)
-
+#
 #     def _bbox_for_center(self, lat: float, lng: float) -> Tuple[float, float, float, float]:
 #         """Tạo bbox metadata quanh center rescue bằng kích thước viewport hiện tại."""
 #         width_css = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
@@ -620,7 +622,7 @@
 #         tl_lat, tl_lng = pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, 0, 0)
 #         br_lat, br_lng = pixel_to_gps(lat, lng, SCREENSHOT_ZOOM, width_css, height_css, width_css, height_css)
 #         return min(br_lat, tl_lat), min(tl_lng, br_lng), max(br_lat, tl_lat), max(tl_lng, br_lng)
-
+#
 #     def _select_rescue_candidate(self, old_name: str, candidates: List[dict]) -> Optional[dict]:
 #         """Chọn OCR rescue tốt hơn: dài hơn, không Unknown, ưu tiên cùng prefix/suffix bỏ dấu."""
 #         old_clean = self._name_key(old_name)
@@ -645,7 +647,7 @@
 #                 best = cand
 #                 best_score = score
 #         return best
-
+#
 #     def _name_key(self, text: str) -> str:
 #         try:
 #             from src.vision import _strip_vietnamese_accents
@@ -653,7 +655,7 @@
 #         except Exception:
 #             text = (text or "").lower()
 #         return re.sub(r"[^a-z0-9]+", "", text.lower())
-
+#
 #     async def _extract_all_visible_poi_coords_from_browser(self) -> dict:
 #         """
 #         Trích xuất TOÀN BỘ nhãn địa điểm hiển thị trên bản đồ DOM hiện tại
@@ -662,7 +664,7 @@
 #         """
 #         if self._page is None:
 #             return {}
-
+#
 #         try:
 #             coords = await self._page.evaluate(
 #                 """
@@ -686,10 +688,10 @@
 #                         }
 #                     }
 #                     if (!mapInstance) return {};
-
+#
 #                     const mapEl = document.getElementById('map') || document.body;
 #                     const results = {};
-
+#
 #                     // 1. Quét SVG text
 #                     const svgTexts = mapEl.querySelectorAll('text');
 #                     for (const el of svgTexts) {
@@ -705,7 +707,7 @@
 #                             } catch(e) {}
 #                         }
 #                     }
-
+#
 #                     // 2. Quét Leaflet markers/tooltips
 #                     const labels = mapEl.querySelectorAll(
 #                         '.leaflet-marker-icon, .leaflet-tooltip, .leaflet-popup-content, [class*="label"]'
@@ -723,7 +725,7 @@
 #                             } catch(e) {}
 #                         }
 #                     }
-
+#
 #                     return results;
 #                 }
 #                 """
@@ -732,7 +734,7 @@
 #         except Exception as exc:
 #             logger.warning("[Worker %d] Failed to extract DOM coords: %s", self.id, exc)
 #             return {}
-
+#
 #     async def _capture_screenshot(
 #         self,
 #         url: str,
@@ -770,7 +772,7 @@
 #                         raise
 #             else:
 #                 raise
-        
+#
 #         # Nhấn Escape để đóng popup/card panel
 #         try:
 #             await self._page.wait_for_timeout(2000)
@@ -780,12 +782,12 @@
 #             await self._page.wait_for_timeout(300)
 #         except Exception:
 #             pass
-
+#
 #         # 2. JavaScript: ẩn UI overlay và chờ Google Maps load
 #         crop_box = None
 #         try:
 #             crop_box = await self._page.evaluate(f"""async () => {{
-
+#
 #                 // ── 1. Click nút đóng (X) của bất kỳ panel/card nào đang mở ──────────
 #                 const closeBtns = document.querySelectorAll(
 #                     '[aria-label="Close"], [aria-label="Đóng"], [aria-label="close"], '
@@ -794,12 +796,12 @@
 #                 );
 #                 closeBtns.forEach(btn => {{ try {{ btn.click(); }} catch(e) {{}} }});
 #                 await new Promise(resolve => setTimeout(resolve, 800));
-
+#
 #                 // ── 2. Hàm ẩn element theo vùng vị trí ──────────────────────────────────
 #                 const HEADER_H = 160;   // search bar + category tabs (Restaurants, Hotels...)
 #                 const PANEL_W  = 450;   // left panel card (This area, POI detail, etc.)
 #                 const SKIP_TAGS = new Set(['CANVAS','SCRIPT','STYLE','HTML','BODY','HEAD','IMG']);
-
+#
 #                 function hideOverlayElements() {{
 #                     document.querySelectorAll('body *').forEach(el => {{
 #                         if (SKIP_TAGS.has(el.tagName)) return;
@@ -828,11 +830,11 @@
 #                         }});
 #                     }});
 #                 }}
-
+#
 #                 // ── 3. Chạy ngay lập tức ─────────────────────────────────────────────────
 #                 hideOverlayElements();
-
-
+#
+#
 #                 // ── 4. MutationObserver: ẩn liên tục khi Google Maps tạo element mới ────
 #                 // (Google Maps SPA tái tạo category tabs sau mỗi lần re-render)
 #                 const observer = new MutationObserver(() => hideOverlayElements());
@@ -841,25 +843,25 @@
 #                     subtree: true,
 #                     attributes: false
 #                 }});
-
+#
 #                 // Backup interval mỗi 500ms phòng khi MutationObserver bỏ sót
 #                 const hideInterval = setInterval(hideOverlayElements, 500);
-
+#
 #                 // ── 5. Dispatch resize để Google Maps fill viewport ───────────────────────
 #                 window.dispatchEvent(new Event('resize'));
 #                 await new Promise(resolve => setTimeout(resolve, 1000));
 #                 window.dispatchEvent(new Event('resize'));
-
+#
 #                 // ── 6. Chờ lâu hơn cho map load (tăng từ 10s lên 20s vì ảnh đang trắng) ─────────
 #                 await new Promise(resolve => setTimeout(resolve, 20000));
-
+#
 #                 // ── 7. Dừng observer + interval, chạy hide lần cuối ─────────────────────
 #                 clearInterval(hideInterval);
 #                 observer.disconnect();
 #                 hideOverlayElements();
-
+#
 #                 console.log('[CENTER]', {{ lat: {lat}, lng: {lng} }});
-
+#
 #                 // ── 8. Vẽ scan box đúng bằng vùng TILE (SCREENSHOT_W × SCREENSHOT_H, căn giữa viewport) ───
 #                 const tileW    = {SCREENSHOT_W};
 #                 const tileH    = {SCREENSHOT_H};
@@ -883,18 +885,18 @@
 #                     `z-index:99999999`,
 #                     `box-sizing:border-box`
 #                 ].join('!important;') + '!important';
-
+#
 #                 return null;  // Full viewport, không crop
 #             }}""")
 #         except Exception as exc:
 #             logger.debug("Could not remove OSM elements or draw scan box via JS: %s", exc)
-
+#
 #         try:
 #             await self._page.wait_for_load_state("networkidle", timeout=4000)
 #         except Exception:
 #             pass
 #         await self._page.wait_for_timeout(PAGE_SETTLE_MS)
-        
+#
 #         # Get actual viewport size dynamically via Javascript since page.viewport_size is None when no_viewport=True
 #         w_viewport = SCREENSHOT_W + 2 * SCREENSHOT_OVERLAP_PX
 #         h_viewport = SCREENSHOT_H + 2 * SCREENSHOT_OVERLAP_PX
@@ -905,19 +907,19 @@
 #                 h_viewport = int(v_size["height"])
 #         except Exception as eval_exc:
 #             logger.debug("Failed to evaluate viewport size via JS: %s", eval_exc)
-
+#
 #         screenshot_bytes = await self._page.screenshot(type="png")
-
+#
 #         # 3. Tính toán thông tin ảnh mà không co dãn (no downscale) để giữ nguyên độ phân giải và nét chữ
 #         try:
 #             from PIL import Image
 #             import io
-
+#
 #             img = Image.open(io.BytesIO(screenshot_bytes))
 #             w_orig, h_orig = img.size
 #             scale = w_orig / w_viewport  # device scale factor (tỷ lệ điểm ảnh vật lý / CSS)
 #             w, h = w_orig, h_orig
-
+#
 #             # Tính toán tọa độ 4 góc của ảnh qua pixel_to_gps chính xác Web Mercator
 #             # Lưu ý: pixel_to_gps cần các tham số width, height, pixel_x, pixel_y ở kích thước CSS
 #             center_lat = lat
@@ -958,7 +960,7 @@
 #                 pixel_x=w_viewport,
 #                 pixel_y=h_viewport
 #             )
-
+#
 #             logger.info(
 #                 "  [Capture Screenshot] Keep original resolution %dx%d px (DPI scale = %.2fx)",
 #                 w, h, scale
@@ -971,7 +973,7 @@
 #                 "    Bottom-Right: (%.6f, %.6f)",
 #                 tl_lat, tl_lng, tr_lat, tr_lng, bl_lat, bl_lng, br_lat, br_lng
 #             )
-
+#
 #             # Crop ảnh lưu về đúng kích thước tile (SCREENSHOT_W × SCREENSHOT_H)
 #             # để ảnh chụp = đúng y chang vùng hiển thị trên trình duyệt
 #             target_w = int(SCREENSHOT_W * scale)
@@ -982,7 +984,7 @@
 #             crop_t = max(0, cy_phys - target_h // 2)
 #             crop_r = min(w_orig, crop_l + target_w)
 #             crop_b = min(h_orig, crop_t + target_h)
-
+#
 #             img_metadata = {
 #                 "width": w,
 #                 "height": h,
@@ -1000,7 +1002,7 @@
 #                 "bottom_right_lat": br_lat,
 #                 "bottom_right_lng": br_lng,
 #             }
-
+#
 #             img_tile = img.crop((crop_l, crop_t, crop_r, crop_b))
 #             buf_tile = io.BytesIO()
 #             img_tile.save(buf_tile, format="PNG")
@@ -1010,11 +1012,11 @@
 #                 w_orig, h_orig, crop_r - crop_l, crop_b - crop_t,
 #                 crop_l, crop_t, crop_r, crop_b
 #             )
-
+#
 #             return screenshot_bytes, compressed_screenshot, img_metadata
 #         except Exception as crop_err:
 #             logger.warning("Could not process screenshot metadata: %s", crop_err)
-
+#
 #         # Fallback: trả ảnh PNG gốc
 #         try:
 #             from PIL import Image
@@ -1025,7 +1027,7 @@
 #         except Exception:
 #             w_orig, h_orig = w_viewport * 2, h_viewport * 2
 #             scale = 2.0
-
+#
 #         center_lat = lat
 #         center_lng = lng
 #         tl_lat, tl_lng = pixel_to_gps(
@@ -1064,7 +1066,7 @@
 #             pixel_x=w_viewport,
 #             pixel_y=h_viewport
 #         )
-
+#
 #         img_metadata = {
 #             "width": w_orig,
 #             "height": h_orig,
@@ -1083,7 +1085,7 @@
 #             "bottom_right_lng": br_lng,
 #         }
 #         return screenshot_bytes, screenshot_bytes, img_metadata
-
+#
 #     async def _save_screenshot(self, data: bytes, tx: int, ty: int) -> None:
 #         """Lưu screenshot ra disk (chỉ dùng khi debug)."""
 #         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
