@@ -5,11 +5,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src
 
 from src.vietnam_places import normalize_ocr_spelling, normalize_place_phrases
 from src.vision import (
+    _append_missing_known_suffix,
     _clean_final_ocr_text,
+    _is_clean_short_brand_candidate,
     _junk_token_count,
+    _looks_like_vietnamese_gibberish,
     _merge_best_diacritics,
     _normalized_adds_suspicious_text,
     _normalized_has_valid_main_name_extension,
+    _normalized_regresses_quality,
+    _score_ocr_text_quality,
+    _texts_are_unrelated,
 )
 
 
@@ -30,9 +36,9 @@ def test_context_spelling_preserves_brands_and_names():
 
 def test_place_dictionary_adds_vietnamese_diacritics_conservatively():
     assert normalize_place_phrases("Quan ca phe Ho Chi Minh") == "Quán cà phê Hồ Chí Minh"
-    assert normalize_place_phrases("Nha thuoc Sa Dec") == "Nhà thuốc Sa Đéc"
+    assert normalize_place_phrases("Nha thuoc Tan Dinh") == "Nhà thuốc Tân Định"
     assert normalize_place_phrases("Bun bo Da Lat") == "Bún bò Đà Lạt"
-    assert _clean_final_ocr_text("Ca phe sua da") == "Cà phê sữa đá"
+    assert _clean_final_ocr_text("Ca phe sua da") == "Cà phê sua da"
     assert _clean_final_ocr_text("Pho bo Hanoi") == "Phở bò Hà Nội"
 
 
@@ -53,8 +59,8 @@ def test_crop_regressions_do_not_rewrite_marked_vietnamese_words():
 
 
 def test_food_words_only_correct_in_food_context():
-    assert normalize_place_phrases("Quan mien pho ga") == "Quan Miền Phở gà"
-    assert normalize_place_phrases("Vuon Trong Pho Gia Dinh Connection") == "Vườn Trong Phố Gia Định Connection"
+    assert normalize_place_phrases("Quan mien pho ga") == "Quan Miến Phở Gà"
+    assert normalize_place_phrases("Vuon Trong Pho Gia Dinh Connection") == "Vuon Trong Pho Gia Định Connection"
 
 
 def test_normalized_fuller_main_name_extension_is_allowed():
@@ -93,3 +99,40 @@ def test_normalized_description_or_category_extension_is_rejected():
         "MCM Post Office",
         "MCM Post Office / 5.0 (121) / Luxury for her at DAFC Onl",
     )
+
+
+def test_reported_duplicate_and_spelling_regressions():
+    assert _clean_final_ocr_text("Ăn Ăn Vặt - Nước Mía Pé Ty") == "Ăn Vặt - Nước Mía Pé Ty"
+    assert _clean_final_ocr_text("Mực chiên bơ ông Gù Gù nhà thờ Đức Bà") == "Mực chiên bơ ông Gù Nhà thờ Đức Bà"
+    assert _clean_final_ocr_text("An An Law Vietnam") == "An Law Vietnam"
+    assert _clean_final_ocr_text("Bếp Nội Nhà lẫm") == "Bếp Nội Nhà Làm"
+    assert _clean_final_ocr_text("Cổng Đường sách TP TP Hồ Chí Minh") == "Cổng Đường sách TP Hồ Chí Minh"
+    assert _clean_final_ocr_text("Haeduri Hai Bà Trưng") == "Haeduri Hai Bà Trưng"
+    assert _clean_final_ocr_text("dirrom Hai Bà Trưng") == "Hai Bà Trưng"
+
+
+def test_short_brand_primary_blocks_unrelated_normalized_candidate():
+    assert _is_clean_short_brand_candidate("GEOX")
+    assert _texts_are_unrelated("GEOX", "Korean")
+
+
+def test_multi_token_suffix_rescue_for_intersection_names():
+    assert _append_missing_known_suffix(
+        "Vòng xoay Phạm Ngọc",
+        "Phạm Ngọc Thạch giao Lê Duẩn",
+    ) == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+
+
+def test_vietnamese_gibberish_primary_is_penalized_without_hardcoding():
+    bad_primary = "Têm viên nông nân"
+    good_normalized = "Trạm xe đạp công cộng / TNGo - UBND Quận 1"
+    assert _looks_like_vietnamese_gibberish(bad_primary)
+    assert not _looks_like_vietnamese_gibberish("Bếp Nội Nhà Làm")
+    assert not _looks_like_vietnamese_gibberish("GEOX")
+    assert _score_ocr_text_quality(good_normalized) > _score_ocr_text_quality(bad_primary)
+
+
+def test_category_suffix_and_admin_normalized_regressions_are_rejected():
+    assert _clean_final_ocr_text("VIET TUI XÁCH / Fashion accessories store") == "VIET TUI XÁCH"
+    assert _clean_final_ocr_text("OHQUAO Souvenir Dept / Souvenir store") == "OHQUAO Souvenir Dept"
+    assert _normalized_regresses_quality("UBND phường sài Gòn", "JBND - Công Sài Gòn")

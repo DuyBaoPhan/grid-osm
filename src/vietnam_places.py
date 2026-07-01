@@ -110,8 +110,8 @@ def _load_osm_words() -> Dict[str, str]:
     """
     Load OSM-derived word dictionary từ data/osm_words.json.
     Format: {"base_không_dấu": "Canonical_có_dấu"}
-    
-    Dictionary này được xây dựng từ tên POI/đường phố trên OSM trong khu vực TP.HCM.
+
+    Dictionary này được xây dựng từ cache OSM nationwide trong repo.
     Mục đích: sửa dấu OCR cho các từ/cụm phổ biến trong tên địa điểm.
     KHÔNG dùng để map đến địa điểm cụ thể.
     """
@@ -122,7 +122,20 @@ def _load_osm_words() -> Dict[str, str]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
-            return data
+            cleaned: Dict[str, str] = {}
+            for key, value in data.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    continue
+                key = key.strip().lower()
+                value = value.strip()
+                if not key or not value:
+                    continue
+                if key.replace(" ", "").isdigit():
+                    continue
+                if not _TOKEN_RE.search(value):
+                    continue
+                cleaned[key] = value
+            return cleaned
     except Exception:
         pass
     return {}
@@ -202,133 +215,158 @@ def _best_fuzzy_match(norm_phrase: str, token_count: int) -> Optional[Tuple[Tupl
     return lookup[matched_key], float(score)
 
 
-def _apply_osm_word_corrections(
+@lru_cache(maxsize=1)
+def _load_curated_phrase_corrections() -> Dict[str, str]:
+    """Load explicit curated phrase corrections from data/ocr_language_corrections.json."""
+    path = _project_root() / "data" / "ocr_language_corrections.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    phrases: Dict[str, str] = {}
+    for item in data.get("contextual_phrase_corrections", []):
+        if not isinstance(item, dict):
+            continue
+        source = item.get("source")
+        target = item.get("target")
+        if not isinstance(source, list) or not isinstance(target, list):
+            continue
+        source_tokens = [str(tok).strip() for tok in source if str(tok).strip()]
+        target_tokens = [str(tok).strip() for tok in target if str(tok).strip()]
+        if 2 <= len(source_tokens) <= 5 and len(source_tokens) == len(target_tokens):
+            key = " ".join(strip_vietnamese_accents(tok) for tok in source_tokens)
+            phrases[key] = " ".join(target_tokens)
+    return phrases
+
+
+@lru_cache(maxsize=1)
+def _load_strict_phrase_dictionary() -> Dict[str, Tuple[str, ...]]:
+    """
+    Build strict 2–5 token dictionary for OCR spelling.
+
+    Sources are already curated/generated dictionaries, but matching is deliberately
+    exact on accent-stripped token phrases. This prevents hallucinated corrections,
+    word insertion/deletion, and ambiguous single-token guesses.
+    """
+    phrase_dict: Dict[str, Tuple[str, ...]] = {}
+
+    def add_phrase(phrase: str) -> None:
+        canonical_tokens = tuple(m.group(0) for m in _TOKEN_RE.finditer(phrase or ""))
+        if not (2 <= len(canonical_tokens) <= 5):
+            return
+        if any(any(ch.isdigit() for ch in tok) for tok in canonical_tokens):
+            return
+        if not any(_has_vietnamese_mark(tok) for tok in canonical_tokens):
+            return
+        key = " ".join(strip_vietnamese_accents(tok) for tok in canonical_tokens)
+        if key:
+            phrase_dict[key] = canonical_tokens
+
+    exact, _, _ = _load_places()
+    for canonical_tokens in exact.values():
+        add_phrase(" ".join(canonical_tokens))
+
+    for canonical in _load_osm_words().values():
+        add_phrase(canonical)
+
+    for canonical in _load_curated_phrase_corrections().values():
+        add_phrase(canonical)
+
+    return phrase_dict
+
+
+def _is_strict_phrase_blocked(raw_tokens: Tuple[str, ...], canonical_tokens: Tuple[str, ...]) -> bool:
+    """Block brand/ALLCAPS/English-like phrases from dictionary rewrite."""
+    if len(raw_tokens) != len(canonical_tokens):
+        return True
+    if len(raw_tokens) < 2 or len(raw_tokens) > 5:
+        return True
+    if any(any(ch.isdigit() for ch in tok) for tok in raw_tokens):
+        return True
+    if any(tok.isupper() and len(tok) >= 2 and tok not in {"TP"} for tok in raw_tokens):
+        return True
+    if any(
+        _has_vietnamese_mark(rt)
+        and rt != ct
+        and strip_vietnamese_accents(rt) != strip_vietnamese_accents(ct)
+        for rt, ct in zip(raw_tokens, canonical_tokens)
+    ):
+        return True
+
+    # Do not rewrite pure English-looking Title Case phrases unless dictionary
+    # gives Vietnamese marks in at least one token and source is not all Title Case
+    # brand-like words.
+    if all(re.fullmatch(r"[A-Za-z]+", tok or "") for tok in raw_tokens):
+        long_title_tokens = [tok for tok in raw_tokens if tok[:1].isupper() and len(tok) > 5]
+        if long_title_tokens and not any(tok.lower() in {"nguyen", "duong", "buu", "dien", "trung", "tam", "nha", "sach", "pho"} for tok in raw_tokens):
+            return True
+    return False
+
+
+def _apply_strict_phrase_corrections(
     original_tokens: List[str],
     stripped_tokens: List[str],
     occupied: Set[int],
 ) -> Dict[int, str]:
-    """
-    Áp dụng OSM word dictionary để sửa dấu tiếng Việt cho các token chưa được
-    xử lý bởi normalize_place_phrases.
-    
-    Chiến lược bảo thủ:
-    - Chỉ sửa token không có dấu tiếng Việt (hoặc có dấu nhưng sai nhẹ)
-    - KHÔNG sửa: ALLCAPS dài, brand names, token đã có đủ dấu VN đặc trưng
-    - Ưu tiên n-grams dài hơn đơn token (chính xác hơn khi có ngữ cảnh)
-    - Thêm guard: chỉ thay khi canonical có dấu VN đặc trưng (ăm â ê ô ơ ư đ)
-      → tránh thay "ba" → "Bà" khi "ba" trong văn cảnh brand/tên riêng
-    """
-    osm_dict = _load_osm_words()
-    if not osm_dict:
+    """Apply only exact accent-stripped 2–5 token phrase corrections."""
+    phrase_dict = _load_strict_phrase_dictionary()
+    if not phrase_dict:
         return {}
 
     replacements: Dict[int, str] = {}
     n_tokens = len(original_tokens)
-
-    # Quét n-grams từ dài đến ngắn
-    for n in range(_OSM_MAX_NGRAM, 0, -1):
+    for n in range(5, 1, -1):
         for start in range(0, n_tokens - n + 1):
             indexes = list(range(start, start + n))
-            # Bỏ qua vị trí đã được xử lý (bởi place gazette hoặc n-gram dài hơn)
             if any(idx in occupied for idx in indexes):
                 continue
-
-            raw_toks = [original_tokens[i] for i in indexes]
-            stripped_toks = [stripped_tokens[i] for i in indexes]
-
-            # Tạo key tra cứu
-            lookup_key = " ".join(stripped_toks)
-            canonical_str = osm_dict.get(lookup_key)
-            if not canonical_str:
+            lookup_key = " ".join(stripped_tokens[start:start + n])
+            canonical = phrase_dict.get(lookup_key)
+            if canonical is None:
                 continue
-
-            # Special case: only correct "so" -> "Số" if it is followed by a number/digit
-            if lookup_key == "so":
-                if start + 1 < n_tokens:
-                    next_tok = original_tokens[start + 1]
-                    if not any(ch.isdigit() for ch in next_tok):
-                        continue
-                else:
-                    continue
-
-            # Ambiguous: "quan" can be "Quán" (eatery) or "Quận" (district).
-            # Only allow administrative "Quận" in clear admin context, including OSM n-grams.
-            if "quan" in stripped_toks and re.search(r'(?i)\bquận\b', canonical_str):
-                prev_key = stripped_tokens[start - 1] if start > 0 else ""
-                next_tok = original_tokens[start + n] if start + n < n_tokens else ""
-                has_admin_context = (
-                    prev_key in {"phuong", "ubnd", "quan", "huyen", "tp", "thanh", "pho"}
-                    or any(ch.isdigit() for ch in next_tok)
-                    or any(any(ch.isdigit() for ch in tok) for tok in raw_toks)
-                )
-                if not has_admin_context:
-                    continue
-
-            # Parse canonical thành tokens
-            canonical_tokens = _TOKEN_RE.findall(canonical_str)
-            if len(canonical_tokens) != n:
+            raw_tokens = tuple(original_tokens[start:start + n])
+            if _is_strict_phrase_blocked(raw_tokens, canonical):
                 continue
-
-            # Guard 1: Không sửa token nào trông như brand
-            if any(_is_token_brand_like(raw_toks[i]) for i in range(n)):
-                continue
-
-            # Guard 2: Phải có cải thiện thực sự (canonical phải có dấu VN đặc trưng)
-            # → Tránh thay các từ không dấu sang dạng cũng không dấu
-            if not any(_has_shaped_vowel(ct) or _has_vietnamese_mark(ct) for ct in canonical_tokens):
-                continue
-
-            # Guard 3: Đối với đơn token — chỉ sửa nếu raw token chưa có dấu đặc trưng
-            # (Nếu raw đã có đủ dấu VN đặc trưng thì không cần sửa)
-            if n == 1:
-                raw_tok = raw_toks[0]
-                canonical_tok = canonical_tokens[0]
-                # Token đã có dấu Việt là tín hiệu mạnh từ ảnh crop; không đổi sang từ khác.
-                if _has_vietnamese_mark(raw_tok):
-                    continue
-                if _has_shaped_vowel(raw_tok):
-                    continue
-
-            # Guard 4: Với n-gram, không ghi đè token đã có dấu Việt bằng token khác.
-            if n > 1:
-                if any(
-                    _has_vietnamese_mark(rt) and rt != ct
-                    for rt, ct in zip(raw_toks, canonical_tokens)
-                ):
-                    continue
-                has_improvement = any(
-                    not _has_shaped_vowel(rt) and _has_shaped_vowel(ct)
-                    for rt, ct in zip(raw_toks, canonical_tokens)
-                )
-                if not has_improvement:
-                    continue
-
-            # Guard 5: Một số base tiếng Việt nhập nhằng, chỉ sửa khi có ngữ cảnh loại POI rõ.
-            ambiguous_food = {"pho", "ga", "com", "bun", "bo", "cha", "gia"}
-            if any(st in ambiguous_food for st in stripped_toks):
-                context = set(stripped_tokens[max(0, start - 3):start] + stripped_tokens[start + n:start + n + 3])
-                food_context = {"quan", "nha", "hang", "mon", "mien", "nuong", "an", "cafe", "tiem"}
-                if not (context & food_context):
-                    continue
-            if lookup_key == "trai" and canonical_str.lower() == "trãi":
-                continue
-
-            # Áp dụng thay thế
-            for off, ct in enumerate(canonical_tokens):
-                replacements[start + off] = ct
+            for off, repl in enumerate(canonical):
+                replacements[start + off] = repl
                 occupied.add(start + off)
-
     return replacements
 
 
-_CONTEXTUAL_TOKEN_CORRECTIONS = (
-    # wrong_base, canonical, required context tokens near it
-    ("xe", "Xe", {"may", "moto", "gan", "sua", "cuu", "ho"}),
-    ("tho", "Thợ", {"sua", "xe", "cuu", "ho", "hello"}),
-    ("vat", "Vặt", {"an", "quan", "mon"}),
-    ("mia", "Mía", {"nuoc", "ep", "mia"}),
-    ("cung", "Cúng", {"do", "dich", "vu", "tron", "goi"}),
-)
+@lru_cache(maxsize=1)
+def _load_contextual_token_corrections() -> List[Tuple[str, str, Set[str]]]:
+    """Load contextual token corrections dynamically from ocr_language_corrections.json."""
+    default_corrections = [
+        ("xe", "Xe", {"may", "moto", "gan", "sua", "cuu", "ho"}),
+        ("tho", "Thợ", {"sua", "xe", "cuu", "ho", "hello"}),
+        ("vat", "Vặt", {"an", "quan", "mon"}),
+        ("mia", "Mía", {"nuoc", "ep", "mia"}),
+        ("cung", "Cúng", {"do", "dich", "vu", "tron", "goi"}),
+        ("lam", "Làm", {"nha", "noi", "bep", "handmade"}),
+    ]
+    path = _project_root() / "data" / "ocr_language_corrections.json"
+    if not path.exists():
+        return default_corrections
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        json_corr = data.get("contextual_token_corrections", [])
+        if json_corr:
+            loaded = []
+            for item in json_corr:
+                wb = item.get("wrong_base")
+                can = item.get("canonical")
+                ctx = item.get("context")
+                if wb and can and isinstance(ctx, list):
+                    loaded.append((wb.strip().lower(), can.strip(), set(str(c).strip().lower() for c in ctx)))
+            if loaded:
+                return loaded
+    except Exception:
+        pass
+    return default_corrections
+
 
 _CONTEXTUAL_PHRASE_CORRECTIONS = (
     (("ca", "phe"), ("Cà", "phê")),
@@ -353,11 +391,105 @@ def _match_case(source: str, canonical: str) -> str:
     return canonical
 
 
-_SAFE_STANDALONE_ALIASES = {
-    "hanoi": "Hà Nội",
-    "saigon": "Sài Gòn",
-    "hcm": "HCM",
-}
+@lru_cache(maxsize=1)
+def _load_safe_standalone_aliases() -> Dict[str, str]:
+    """Load safe standalone aliases dynamically from ocr_language_corrections.json."""
+    default_aliases = {
+        "hanoi": "Hà Nội",
+        "saigon": "Sài Gòn",
+        "hcm": "HCM",
+    }
+    path = _project_root() / "data" / "ocr_language_corrections.json"
+    if not path.exists():
+        return default_aliases
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        json_aliases = data.get("safe_standalone_aliases", {})
+        if json_aliases and isinstance(json_aliases, dict):
+            return {k.strip().lower(): v.strip() for k, v in json_aliases.items()}
+    except Exception:
+        pass
+    return default_aliases
+
+
+_KNOWN_TOKENS: Set[str] = set()
+
+def _load_known_tokens() -> Set[str]:
+    """Build a comprehensive set of known Vietnamese words/names from gazetteer & OSM words."""
+    global _KNOWN_TOKENS
+    if _KNOWN_TOKENS:
+        return _KNOWN_TOKENS
+
+    tokens = set()
+    try:
+        # 1. Load from vietnam_places.txt
+        exact, _, _ = _load_places()
+        for canonical_tokens in exact.values():
+            for tok in canonical_tokens:
+                tokens.add(strip_vietnamese_accents(tok).lower())
+
+        # 2. Load from osm_words.json
+        osm_words = _load_osm_words()
+        for canonical in osm_words.values():
+            for tok in re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', canonical):
+                tokens.add(strip_vietnamese_accents(tok).lower())
+
+        # 3. Load from ocr_language_corrections.json phrase corrections
+        curated = _load_curated_phrase_corrections()
+        for canonical in curated.values():
+            for tok in re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', canonical):
+                tokens.add(strip_vietnamese_accents(tok).lower())
+
+        # 4. Load from contextual token corrections
+        for _, canonical, _ in _load_contextual_token_corrections():
+            for tok in re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', canonical):
+                tokens.add(strip_vietnamese_accents(tok).lower())
+
+        # 5. Load from osm_raw_cache_nationwide.json and osm_raw_cache.json if they exist
+        for filename in ("osm_raw_cache_nationwide.json", "osm_raw_cache.json"):
+            path = _project_root() / "data" / filename
+            if path.exists():
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        cache_data = json.load(f)
+                    if isinstance(cache_data, list):
+                        for item in cache_data:
+                            if isinstance(item, str):
+                                for tok in re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', item):
+                                    tokens.add(strip_vietnamese_accents(tok).lower())
+                except Exception:
+                    pass
+
+    except Exception:
+        pass
+
+    # Add very common Vietnamese particles and English/brand map words as safety fallback
+    extra_common = {
+        "va", "co", "la", "den", "di", "cho", "quan", "bo", "pho", "bun", "com",
+        "circle", "arabica", "coffee", "tea", "spa", "gym", "hotel", "restaurant", "cafe", 
+        "bar", "pub", "lounge", "shop", "store", "mart", "clinic", "studio", "bank", "atm", 
+        "residence", "station", "office", "post", "school", "park", "garden", "center", 
+        "plaza", "tower", "building", "mall", "market", "highlands", "starbucks", "passio", 
+        "phuc", "long", "cheese", "kfc", "lotteria", "jollibee", "mcdonald", "domino", 
+        "pizza", "hut", "subway", "tous", "les", "jours", "paris", "baguette", "givral", 
+        "brodard", "abc", "winmart", "coopmart", "lotte", "aeon", "satra", "emart", 
+        "seven", "eleven", "gs25", "ministop", "vietcombank", "vietinbank", "bidv", 
+        "agribank", "sacombank", "techcombank", "acb", "mbbank", "vpbank", "shb", "vib", 
+        "tpb", "ocb", "scb", "hdbank", "eximbank", "nxb"
+    }
+    tokens.update(extra_common)
+
+    _KNOWN_TOKENS = tokens
+    return _KNOWN_TOKENS
+
+
+def is_known_token(token: str) -> bool:
+    """True if token is a standard/known Vietnamese word or place name component."""
+    if not token:
+        return False
+    clean = strip_vietnamese_accents(token).lower()
+    return clean in _load_known_tokens()
+
 
 
 def normalize_ocr_spelling(text: str) -> str:
@@ -406,15 +538,15 @@ def normalize_ocr_spelling(text: str) -> str:
         left = max(0, idx - context_window)
         right = min(len(stripped_tokens), idx + context_window + 1)
         context = set(stripped_tokens[left:idx] + stripped_tokens[idx + 1:right])
-        for wrong_base, canonical, required_context in _CONTEXTUAL_TOKEN_CORRECTIONS:
+        for wrong_base, canonical, required_context in _load_contextual_token_corrections():
             if key != wrong_base:
                 continue
             if not (context & required_context):
                 continue
-            # Nếu raw đã có nguyên âm Việt đặc trưng khác base canonical, không đoán.
-            if _has_shaped_vowel(raw) and strip_vietnamese_accents(raw) != strip_vietnamese_accents(canonical):
-                continue
-            replacements[idx] = _match_case(raw, canonical)
+            if raw[:1].islower() and idx > 0 and original_tokens[idx - 1][:1].isupper():
+                replacements[idx] = canonical
+            else:
+                replacements[idx] = _match_case(raw, canonical)
             occupied.add(idx)
             break
 
@@ -423,7 +555,7 @@ def normalize_ocr_spelling(text: str) -> str:
     for idx, (raw, key) in enumerate(zip(original_tokens, stripped_tokens)):
         if idx in occupied or _is_token_brand_like(raw):
             continue
-        alias = _SAFE_STANDALONE_ALIASES.get(key)
+        alias = _load_safe_standalone_aliases().get(key)
         if not alias:
             continue
         has_vietnamese_context = any(_has_vietnamese_mark(tok) for tok in original_tokens) or len(original_tokens) <= 3
@@ -446,19 +578,9 @@ def normalize_ocr_spelling(text: str) -> str:
 
 
 def normalize_place_phrases(text: str) -> str:
-    """Normalize Vietnamese place phrases in OCR text conservatively.
-
-    The function scans token n-grams, longest first, and replaces only complete
-    place phrases. Exact accent-stripped matches are preferred; fuzzy matching is
-    used only for 2+ token phrases with strong score.
-    
-    After place-phrase normalization, applies OSM word dictionary corrections
-    for remaining tokens that have missing Vietnamese accents.
-    """
+    """Normalize OCR text using strict exact 2–5 token phrase dictionary matches only."""
     if not text:
         return text
-
-    exact, _, _ = _load_places()
 
     matches = list(_TOKEN_RE.finditer(text))
     if not matches:
@@ -469,54 +591,12 @@ def normalize_place_phrases(text: str) -> str:
     replacements: Dict[int, str] = {}
     occupied: Set[int] = set()
 
-    # === Guard: If text is predominantly ALLCAPS, skip OSM corrections ===
-    # This protects brand names like "AO DAI AND AO BA BA RENTALS"
     alpha_tokens = [t for t in original_tokens if t.isalpha()]
     allcaps_count = sum(1 for t in alpha_tokens if t.isupper() and len(t) >= 2)
-    _is_allcaps_text = len(alpha_tokens) > 0 and (allcaps_count / len(alpha_tokens)) >= 0.5
+    is_allcaps_text = len(alpha_tokens) > 0 and (allcaps_count / len(alpha_tokens)) >= 0.5
 
-    # === Phase 1: Place phrase gazetteer (vietnam_places.txt) ===
-    if exact:
-        max_len = min(_MAX_NGRAM, len(matches))
-        for n in range(max_len, 0, -1):
-            for start in range(0, len(matches) - n + 1):
-                indexes = range(start, start + n)
-                if any(idx in occupied for idx in indexes):
-                    continue
-
-                raw_tokens = tuple(original_tokens[start:start + n])
-                if _is_brand_like(raw_tokens):
-                    continue
-
-                key = tuple(stripped_tokens[start:start + n])
-                canonical = exact.get(key)
-
-                # Single-token fuzzy is too risky for brands; exact only.
-                # Nếu OCR đã có dấu Việt, coi đó là tín hiệu mạnh từ ảnh crop; không fuzzy đổi nghĩa.
-                if canonical is None and n >= 2 and not any(_has_vietnamese_mark(tok) for tok in raw_tokens):
-                    norm_phrase = " ".join(key)
-                    fuzzy_match = _best_fuzzy_match(norm_phrase, n)
-                    if fuzzy_match:
-                        canonical, _ = fuzzy_match
-
-                if canonical is None:
-                    continue
-
-                for off, repl in enumerate(canonical):
-                    replacements[start + off] = repl
-                    occupied.add(start + off)
-
-    # === Phase 2: OSM word dictionary corrections ===
-    # Skip for ALLCAPS-dominant text (brand names)
-    if not _is_allcaps_text:
-        osm_replacements = _apply_osm_word_corrections(
-            original_tokens, stripped_tokens, set(occupied)  # pass copy
-        )
-        # Merge: phase 1 has priority (don't override place gazetteer matches)
-        for idx, repl in osm_replacements.items():
-            if idx not in occupied:
-                replacements[idx] = repl
-                occupied.add(idx)
+    if not is_allcaps_text:
+        replacements.update(_apply_strict_phrase_corrections(original_tokens, stripped_tokens, occupied))
 
     if not replacements:
         return text

@@ -1,142 +1,313 @@
-# 🗺️ OSM POI Scraper — Local AI Edition
+# Google Maps POI Scraper — Local AI OCR Edition
 
-**OSM POI Scraper** là hệ thống khai thác địa điểm (POI - Point of Interest) tự động trên phạm vi hành chính cấp quận/huyện bằng cách kết hợp sức mạnh của **Playwright (Browser Automation)** và mô hình đa phương thức cục bộ **Qwen2.5-VL (Local AI Vision)** chạy qua **Ollama**. 
+Hệ thống quét POI từ Google Maps theo lưới địa lý, dùng Playwright để chụp bản đồ, YOLOv8 để phát hiện nhãn POI, VietOCR/PaddleOCR để đọc chữ, và các lớp hậu xử lý tiếng Việt để chuẩn hóa tên địa điểm.
 
-Dự án này được thiết kế để hoạt động **hoàn toàn ngoại tuyến (100% Local)**, không tốn bất kỳ chi phí API nào, có khả năng tự động vượt qua các rào cản cào dữ liệu thông thường của OpenStreetMap bằng cách "đọc" trực quan từ bản đồ thực tế.
+Dự án hiện tập trung vào bài toán: **tự động thu thập tên POI trong ranh giới hành chính**, lưu crop kiểm tra, định vị gần đúng từ pixel về tọa độ, khử trùng lặp và hiển thị tiến độ trên bản đồ local.
 
----
-
-## 🎨 Giao diện Bản đồ Real-time Dashboard
-Hệ thống tự động đồng bộ hóa tiến trình và tạo bản đồ tương tác `map_viewer.html` trực quan:
-*   **Xanh lá (Done):** Các ô lưới đã quét xong và tìm thấy POI.
-*   **Xanh neon (Captured):** Các ô lưới đang được robot chụp ảnh và chuyển AI Vision phân tích.
-*   **Sọc chéo (Discarded):** Các ô nằm ngoài ranh giới hành chính thực tế của Quận (Geofenced).
-*   **Tự động Reload (Smart Auto-Reload):** Bản đồ tự nhận diện thay đổi trên đĩa và tải lại trang tự động tức thời nhờ cơ chế đồng bộ hóa mốc thời gian mili-giây (Mili-second Precision Timestamping), tương thích hoàn hảo cả khi mở bằng HTTP Server lẫn double-click trực tiếp file cục bộ (`file://` protocol) nhờ cơ chế bypass CORS động.
+> Lưu ý: README cũ có nhắc Qwen/Ollama/OSM vision. Pipeline hiện tại đã chuyển sang Google Maps + YOLOv8 + VietOCR/PaddleOCR.
 
 ---
 
-## 🚀 Tính năng nổi bật
+## Tính năng chính
 
-### 1. Thuật toán Lưới dịch chuyển (Shifted Grid Math)
-*   **Khớp tâm tuyệt đối (Epicenter Alignment):** Thay vì sử dụng lưới gạch OpenStreetMap tiêu chuẩn (thường bị lệch tọa độ tâm quét về một góc ngẫu nhiên), hệ thống tính toán sai số dịch vị (offset) vĩ độ/kinh độ so với lưới chuẩn:
-    $$\Delta Lat = Lat_{Center} - Lat_{Tile\_Center}$$
-    $$\Delta Lng = Lng_{Center} - Lng_{Tile\_Center}$$
-*   **Đồng nhất bức chụp:** Tất cả các điểm quét được dịch chuyển đồng bộ, đảm bảo tâm quét của quận luôn trùng khớp **hoàn hảo 100%** với tâm của ô gạch trung tâm. Bức ảnh chụp bản đồ luôn cân đối, sắc nét.
+### 1. Quét Google Maps theo lưới địa lý
 
-### 2. Định vị Ranh giới thông minh (Geofencing & Ray Casting)
-*   **Tự động tải boundary:** Nhập tên Quận (ví dụ: `Quận 1`), hệ thống tự tải ranh giới đa giác (Polygon/MultiPolygon) từ Nominatim API và lưu cache cục bộ dạng ASCII-safe để đảm bảo tốc độ cao nhất.
-*   **Kiểm thử 5 điểm (5-Point Validation):** Để phủ kín hoàn hảo các ô lưới sát rìa quận, hệ thống sử dụng thuật toán **Ray Casting (Point-in-Polygon)** kiểm tra đồng thời tâm và 4 đỉnh góc của từng ô gạch. Chỉ cần 1 trong 5 điểm thuộc địa giới quận, ô đó sẽ được đưa vào danh sách quét.
-*   **Lọc POI ngoại quận:** Tọa độ POI do AI Vision phân tích được đối chiếu với ranh giới quận để lọc bỏ ngay lập tức các kết quả bị "ảo tưởng" (hallucination) hoặc lấn sang địa giới quận lân cận.
+- Sinh tile theo ranh giới quận/huyện.
+- Dùng tâm cấu hình và zoom Google Maps (`ZOOM_LEVEL=21`).
+- Chụp màn hình qua Playwright với viewport cố định.
+- Crop vùng tile lõi từ screenshot lớn để tránh UI browser và mép bản đồ.
+- Có checkpoint để tiếp tục sau khi dừng.
 
-### 3. Công cụ cào AI Vision mạnh mẽ (Vision & Playwright)
-*   **Chất lượng ảnh độ nét cao:** Chụp màn hình bản đồ ở mật độ điểm ảnh cao (High-DPI Viewport), áp dụng bộ lọc tăng cường độ tương phản và sắc nét (**SHARPEN & Contrast**) giúp các nhãn văn bản nhỏ trên bản đồ trở nên cực kỳ dễ đọc đối với AI.
-*   **Đa tiến trình song song (Multi-Worker Execution):** Hỗ trợ tối đa **4 worker song song** giả lập cào dữ liệu tốc độ cao. Cơ chế thay thế file an toàn (`_robust_replace`) triệt tiêu hoàn toàn lỗi khóa file trên hệ điều hành Windows (`[WinError 5] Access is denied`).
-*   **Chống rò rỉ bộ nhớ (Memory Leak Protection):** Tự động khởi động lại trình duyệt Chromium ẩn (Headless) sau mỗi `100` ô quét nhằm giải phóng triệt để dung lượng RAM.
-*   **Lưu Checkpoint nguyên tử:** Ghi checkpoint định kỳ thông qua cơ chế ghi file tạm rồi đổi tên (atomic rename), loại bỏ hoàn toàn khả năng hư hỏng tệp dữ liệu khi bị tắt đột ngột (Ctrl+C).
+### 2. Phát hiện POI bằng YOLOv8
+
+- Model: [model/bestv3.pt](file:///d:/grid-osm/model/bestv3.pt)
+- Detect icon/label POI trên ảnh tile.
+- Merge bbox gần/chồng nhau để không tách icon và text thành nhiều POI.
+- Lọc bbox ngoài core tile để giảm POI trùng giữa các tile.
+
+### 3. OCR local bằng VietOCR + PaddleOCR fallback
+
+Pipeline chính trong [vision.py](file:///d:/grid-osm/src/vision.py):
+
+- VietOCR đọc text chính.
+- Chạy nhiều biến thể crop:
+  - masked icon
+  - unmasked icon
+  - normalized background
+  - line split
+  - scale `1x/2x/3x`
+- PaddleOCR dùng làm detector/recognition fallback khi VietOCR ra text rác.
+- Lưu crop POI vào [crops](file:///d:/grid-osm/crops) để audit thủ công.
+
+### 4. Hậu xử lý OCR tiếng Việt
+
+Logic chính:
+
+- [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py)
+- [ocr_language_corrections.json](file:///d:/grid-osm/data/ocr_language_corrections.json)
+- [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
+- [osm_words.json](file:///d:/grid-osm/data/osm_words.json)
+
+Các nhóm xử lý:
+
+- Chuẩn hóa địa danh Việt Nam theo gazetteer.
+- Sửa dấu/chính tả bằng dictionary có context.
+- Không sửa bừa brand/acronym như `GEOX`, `MCM`, `DAFC`.
+- Xóa duplicate OCR:
+  - `Ăn Ăn Vặt` → `Ăn Vặt`
+  - `TP TP Hồ Chí Minh` → `TP Hồ Chí Minh`
+- Cứu prefix/suffix khi OCR bị cắt:
+  - giữ brand đầu như `Haeduri Hai Bà Trưng`
+  - nối phần cuối tên khi alternate OCR có overlap hợp lệ
+- Phát hiện chuỗi tiếng Việt giả để kích hoạt fallback:
+  - ví dụ `Têm viên nông nân`
+
+### 5. Dashboard bản đồ local
+
+Các file liên quan:
+
+- [map_viewer.html](file:///d:/grid-osm/map_viewer.html)
+- [map_data.json](file:///d:/grid-osm/map_data.json)
+- [map_status.json](file:///d:/grid-osm/map_status.json)
+- [src/map_viewer.py](file:///d:/grid-osm/src/map_viewer.py)
+
+Chức năng:
+
+- Hiển thị tile đã quét.
+- Hiển thị POI thu được.
+- Tự reload khi dữ liệu thay đổi.
+- Theo dõi tiến độ khi chạy [main.py](file:///d:/grid-osm/main.py).
 
 ---
 
-## 🛠️ Kiến trúc Hệ thống
+## Kiến trúc thư mục
 
+```text
+grid-osm/
+├─ main.py                         # Entry point
+├─ requirements.txt                # Python dependencies
+├─ checkpoint.json                  # Trạng thái quét hiện tại
+├─ results.json                     # POI raw output
+├─ map_data.json                    # Data cho map viewer
+├─ map_viewer.html                  # Dashboard local
+├─ scraper.log                      # Log runtime
+├─ crops/                           # Crop POI OCR audit
+├─ screenshots/                     # Screenshot tile/debug
+├─ model/
+│  └─ bestv3.pt                     # YOLOv8 model
+├─ data/
+│  ├─ vietnam_places.txt            # Gazetteer địa danh
+│  ├─ osm_words.json                # Dictionary từ OSM
+│  ├─ osm_raw_cache*.json           # Cache OSM raw
+│  ├─ ocr_language_corrections.json # Rule sửa OCR có context
+│  └─ ocr_ground_truth.json         # Ground truth/audit OCR
+├─ src/
+│  ├─ config.py                     # Cấu hình chính
+│  ├─ coordinator.py                # Queue, checkpoint, dedupe, output
+│  ├─ worker.py                     # Playwright worker
+│  ├─ grid.py                       # Tile grid + boundary polygon
+│  ├─ vision.py                     # YOLO + OCR + cleanup pipeline
+│  ├─ vietnam_places.py             # Vietnamese normalization
+│  ├─ canonical_matcher.py          # Match/normalize tên chuẩn
+│  └─ map_viewer.py                 # Local map data/server helper
+└─ tests/
+   └─ test_ocr_cleanup.py           # Regression tests OCR cleanup
 ```
-main.py (Entry point)
-  └── Coordinator (Quản lý queue, checkpoint, results)
-        └── Worker(s) [1-4 workers song song]
-              ├── grid.py       ← Xử lý toán học lưới và đa giác ranh giới
-              ├── vision.py     ← Kết nối Ollama API & xử lý prompt đa phương thức
-              └── config.py     ← Cấu hình hệ thống (tâm, bán kính, thông số quét)
-```
 
 ---
 
-## 💻 Yêu cầu Hệ thống
+## Yêu cầu hệ thống
 
 | Thành phần | Khuyến nghị |
-|------------|-------------|
-| **Hệ điều hành** | Windows 10/11, macOS, Linux |
-| **Python** | Version 3.10 trở lên |
-| **Ollama** | Phiên bản mới nhất (chạy nền) |
-| **RAM** | $\ge$ 16 GB |
-| **GPU/VRAM** | $\ge$ 6 GB VRAM để tăng tốc AI Vision (Ollama) |
+|---|---|
+| OS | Windows 10/11 |
+| Python | 3.10+ |
+| RAM | >= 16 GB |
+| GPU | Tùy chọn, OCR hiện cấu hình CPU |
+| Browser | Chromium qua Playwright |
+| Model | YOLOv8 weights trong `model/bestv3.pt` |
 
 ---
 
-## ⚙️ Cài đặt
+## Cài đặt
 
-```bash
-# 1. Tải dự án về máy
+```powershell
 git clone https://github.com/DuyBaoPhan/grid-osm.git
 cd grid-osm
 
-# 2. Tạo virtual environment & kích hoạt
 python -m venv venv
-# Trên Windows:
-venv\Scripts\activate
-# Trên macOS/Linux:
-source venv/bin/activate
+.\venv\Scripts\activate
 
-# 3. Cài đặt các thư viện cần thiết
 pip install -r requirements.txt
 playwright install chromium
-
-# 4. Tải và chạy mô hình AI Vision qua Ollama
-ollama run qwen2.5-vl
 ```
+
+Nếu dùng GPU cho torch/VietOCR, cài đúng bản PyTorch CUDA theo máy trước hoặc sau bước requirements.
 
 ---
 
-## 📖 Hướng dẫn sử dụng
+## Cấu hình
 
-### Bước 1: Cấu hình mục tiêu quét (`config.py`)
-Mở file `config.py` để tùy chỉnh thông tin địa lý:
+Sửa [src/config.py](file:///d:/grid-osm/src/config.py).
+
+Các cấu hình quan trọng:
+
 ```python
-# Tên quận để tải polygon ranh giới vẽ lên bản đồ và geofence
+NUM_WORKERS = 1
+HEADLESS = False
+
+ZOOM_LEVEL = 21
+SCREENSHOT_ZOOM = 21
+CENTER_LAT = 10.779855797443227
+CENTER_LNG = 106.69984398140998
+RADIUS_KM = 3.0
 TARGET_DISTRICT = "Quận 1"
 
-# Tọa độ tâm quét khởi điểm
-CENTER_LAT = 10.7769
-CENTER_LNG = 106.7009
+SCREENSHOT_W = 1920
+SCREENSHOT_H = 1080
+SCREENSHOT_OVERLAP_PX = 100
 
-# Bán kính quét (chỉ dùng làm fallback khi không tìm thấy polygon quận)
-RADIUS_KM = 1.0
+SAVE_SCREENSHOTS = True
+SAVE_POI_CROPS = True
 
-# Mức độ zoom (OSM Tile Zoom)
-ZOOM_LEVEL = 18
+VIETOCR_MODEL = "vgg_transformer"
+VIETOCR_DEVICE = "cpu"
+PADDLE_TEXT_DET_ENABLED = True
 
-# Số luồng chạy song song (1 luồng cho cào thực tế, tối đa 4 luồng cho giả lập)
-NUM_WORKERS = 4
+YOLO_MODEL_PATH = str(BASE_DIR / "model" / "bestv3.pt")
 ```
 
-### Bước 2: Bắt đầu quét dữ liệu
-Chạy tệp điều phối chính để khởi động quá trình:
-```bash
+Khuyến nghị hiện tại:
+
+- `NUM_WORKERS = 1` để ổn định khi mở Google Maps thật.
+- `HEADLESS = False` để dễ quan sát browser.
+- Giữ `SAVE_POI_CROPS = True` khi đang audit OCR.
+
+---
+
+## Chạy scraper
+
+```powershell
 python main.py
 ```
-*Hệ thống sẽ tự động vẽ lưới đa giác quận, phân chia hàng đợi, khởi động Playwright cào dữ liệu và cập nhật trực tiếp tiến trình trên màn hình console cũng như bản đồ.*
 
-### Bước 3: Xem bản đồ tương tác
-Double-click trực tiếp file `map_viewer.html` trong thư mục dự án hoặc mở thông qua server local tại `http://127.0.0.1:8765/map_viewer.html`. Bản đồ sẽ **tự động tải lại** mỗi khi có tiến triển mới trên màn hình quét mà không cần bạn bấm F5 thủ công!
+Hoặc nếu đang dùng Windows launcher:
 
-### Bước 4: Hậu xử lý & Kết xuất dữ liệu
-Khi hoàn tất quét hoặc muốn trích xuất dữ liệu thô:
-```bash
+```powershell
+py main.py
+```
+
+Runtime tạo/cập nhật:
+
+- [checkpoint.json](file:///d:/grid-osm/checkpoint.json)
+- [results.json](file:///d:/grid-osm/results.json)
+- [map_data.json](file:///d:/grid-osm/map_data.json)
+- [scraper.log](file:///d:/grid-osm/scraper.log)
+- [crops](file:///d:/grid-osm/crops)
+
+---
+
+## Xem dashboard
+
+Mở:
+
+```text
+http://127.0.0.1:8765/map_viewer.html
+```
+
+Hoặc mở trực tiếp [map_viewer.html](file:///d:/grid-osm/map_viewer.html).
+
+---
+
+## Test
+
+Chạy regression OCR cleanup:
+
+```powershell
+python -m pytest tests/test_ocr_cleanup.py
+```
+
+Test này bảo vệ các lỗi đã gặp:
+
+- lặp từ: `Ăn Ăn`, `Gù Gù`, `TP TP`
+- sai dấu/chính tả có context: `Nhà lẫm` → `Nhà Làm`
+- brand/acronym không bị sửa sai: `GEOX`, `MCM`
+- không xóa brand đầu dòng: `Haeduri Hai Bà Trưng`
+- phát hiện OCR tiếng Việt giả: `Têm viên nông nân`
+- cứu suffix/continuation tên địa điểm
+
+Nên chạy test này trước khi sửa [vision.py](file:///d:/grid-osm/src/vision.py) hoặc [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py).
+
+---
+
+## Quy tắc sửa OCR trong dự án
+
+Bắt buộc:
+
+1. Không hardcode riêng cho một ảnh, một POI, một quận.
+2. Tìm root cause trước khi sửa.
+3. Mỗi bug OCR phải có regression test.
+4. Không làm lỗi cũ xuất hiện lại.
+5. Rule phải tổng quát cho dữ liệu Việt Nam.
+6. Brand/acronym phải được bảo vệ.
+7. Dictionary correction phải có context.
+
+Nơi thêm rule:
+
+- Rule ngôn ngữ có context: [ocr_language_corrections.json](file:///d:/grid-osm/data/ocr_language_corrections.json)
+- Gazetteer địa danh: [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
+- Logic cleanup/selection: [vision.py](file:///d:/grid-osm/src/vision.py)
+- Normalize từ/phrase: [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py)
+
+---
+
+## Hậu xử lý dữ liệu
+
+Nếu cần làm sạch kết quả sau khi quét:
+
+```powershell
 python clean_data.py
 ```
-Kết quả được xuất ra 2 tệp sạch sẽ đã được khử trùng lặp (deduplicate) trong bán kính lân cận:
-*   `clean_results.json`: Định dạng JSON lưu đầy đủ thông tin chi tiết.
-*   `clean_results.csv`: Định dạng CSV sẵn sàng nạp vào Excel hoặc GIS software (QGIS, ArcGIS).
+
+Các output có thể gồm:
+
+- `clean_results.json`
+- `clean_results.csv`
+
+Tùy script hiện tại và cấu hình output.
 
 ---
 
-## 📊 Bảng Thống kê dự kiến (Quận 1, Zoom 18)
+## Debug nhanh
 
-| Vùng quét | Số lượng ô lưới (Tiles) | Thời gian ước tính | Trạng thái |
-|-----------|------------------------|--------------------|------------|
-| **Quận 1 (Ranh giới)** | ~1.511 tiles | ~1.5 - 2 giờ (GPU) | Đầy đủ |
-| **Thử nghiệm (1 km)** | ~138 tiles | ~10 - 15 phút | Test nhanh |
-| **Bán kính 25 km** | ~87.000 tiles | ~3 - 5 ngày | Quy mô lớn |
+### Xem log OCR
+
+```powershell
+Select-String -Path scraper.log -Pattern "OCR"
+```
+
+### Chạy lại test OCR
+
+```powershell
+python -m pytest tests/test_ocr_cleanup.py -q
+```
+
+### Audit crop
+
+Mở thư mục:
+
+```text
+crops/
+```
+
+Tên file crop thường chứa text OCR cuối, ví dụ:
+
+```text
+tile_0_0_poi_8_Cổng_Đường_sách__TP_TP_Hồ_Chí_Minh.png
+```
 
 ---
 
-## 📜 Giấy phép
-Dự án được phân phối dưới giấy phép **MIT License**. Bạn được tự do tùy biến và sử dụng cho mục đích cá nhân và thương mại.
+## License
+
+MIT License.

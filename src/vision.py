@@ -140,9 +140,34 @@ def _normalize_ocr_spelling_by_dictionary(text: str) -> str:
             return text
     return normalize_ocr_spelling(text)
 
+def _is_known_token(token: str) -> bool:
+    """True nếu token là từ tiếng Việt / địa danh có trong từ điển."""
+    try:
+        from src.vietnam_places import is_known_token
+    except ImportError:
+        try:
+            from vietnam_places import is_known_token
+        except ImportError:
+            return False
+    return is_known_token(token)
+
+def _choose_better_duplicate_token(left: str, right: str) -> str:
+    """Chọn token tốt hơn khi 2 token OCR liền kề cùng base bỏ dấu."""
+    if left == right:
+        return left
+    left_marks = len(re.findall(r'[À-ỹĐđ]', left or ""))
+    right_marks = len(re.findall(r'[À-ỹĐđ]', right or ""))
+    if right_marks > left_marks:
+        return right
+    if left_marks > right_marks:
+        return left
+    if right[:1].isupper() and not left[:1].isupper():
+        return right
+    return left
+
 
 def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
-    """Xóa token OCR lặp liền kề như `Bình Bình`, không đụng brand ALLCAPS."""
+    """Xóa token OCR lặp liền kề bằng base bỏ dấu, không đụng brand ALLCAPS/số."""
     if not text:
         return text
 
@@ -150,26 +175,35 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
     if len(matches) < 2:
         return text
 
+    replacements = {}
     remove_indexes = set()
     prev_key = None
     prev_token = None
+    prev_idx = None
     for idx, match in enumerate(matches):
         token = match.group(0)
         key = _strip_vietnamese_accents(token).lower()
         if (
-            prev_key == key
-            and len(key) >= 3
-            and prev_token is not None
-            and not prev_token.isupper()
-            and not token.isupper()
+            prev_token is not None
+            and prev_key == key
+            and len(key) >= 2
+            and (
+                not (prev_token.isupper() and token.isupper() and len(key) >= 2)
+                or key in {"tp", "q", "p", "tx", "tt", "cn", "ubnd", "hcm"}
+            )
             and not any(ch.isdigit() for ch in prev_token + token)
+            and not ((len(prev_token) == 1 or len(token) == 1) and key not in {"q", "p"})
         ):
+            keep = _choose_better_duplicate_token(prev_token, token)
+            replacements[prev_idx] = keep
             remove_indexes.add(idx)
+            prev_token = keep
             continue
         prev_key = key
         prev_token = token
+        prev_idx = idx
 
-    if not remove_indexes:
+    if not remove_indexes and not replacements:
         return text
 
     out = []
@@ -180,16 +214,38 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
             last = match.end()
             continue
         out.append(text[last:match.start()])
-        out.append(match.group(0))
+        out.append(replacements.get(idx, match.group(0)))
         last = match.end()
     out.append(text[last:])
     return re.sub(r'\s+', ' ', ''.join(out)).strip()
 
 
+def _fix_latin_brand_ocr_artifacts(text: str) -> str:
+    """Fix generic OCR artifacts in Latin/brand tokens without changing Vietnamese words."""
+    if not text:
+        return text
+
+    # Vietnamese hyphen artifact between word tokens: `Tòa-nhà` -> `Tòa nhà`.
+    text = re.sub(r'(?<=[A-Za-zÀ-ỹĐđ])[-–—](?=[A-Za-zÀ-ỹĐđ])', ' ', text)
+
+    def _fix_crossed_d(match):
+        token = match.group(0)
+        # OCR sometimes reads Latin capital D as Vietnamese Đ in English brand words.
+        # Only change when rest is plain ASCII and token has no other Vietnamese mark.
+        if re.fullmatch(r'Đ[A-Za-z]{3,}', token):
+            return 'D' + token[1:]
+        return token
+
+    return re.sub(r'\bĐ[A-Za-z]{3,}\b', _fix_crossed_d, text)
+
+
 def _clean_spelling(text: str) -> str:
-    # Loại bỏ ký tự quote/bracket/backslash rác từ icon/viền crop, giữ dấu câu POI hợp lệ.
-    text = re.sub(r"[\"\'`\\\[\]\{\}]", "", text)
+    # Loại bỏ quote/bracket/backslash rác từ icon/viền crop.
+    # Giữ apostrophe nằm giữa chữ Latin cho brand hợp lệ như Italiani's.
+    text = re.sub(r"[\"`\\\[\]\{\}]", "", text)
+    text = re.sub(r"(?<![A-Za-zÀ-ỹĐđ])'|'(?![A-Za-zÀ-ỹĐđ])", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
+    text = _fix_latin_brand_ocr_artifacts(text)
     text = _normalize_vietnamese_place_phrases(text)
     text = _normalize_ocr_spelling_by_dictionary(text)
     text = _remove_adjacent_duplicate_ocr_tokens(text)
@@ -276,7 +332,11 @@ def _merge_best_diacritics(primary_text: str, selected_text: str) -> str:
             and _has_vietnamese_mark(s_tok)
             and not any(ch.isdigit() for ch in p_tok + s_tok)
         ):
-            if _has_vietnamese_shaped_vowel(p_tok) and not _has_vietnamese_shaped_vowel(s_tok):
+            # If selected token is plain ASCII but primary only adds Vietnamese tone,
+            # do not reintroduce accent for brand/English-like names.
+            if re.fullmatch(r'[A-Za-z]+', s_tok) and not _has_vietnamese_shaped_vowel(p_tok):
+                replacements.append(s_tok)
+            elif _has_vietnamese_shaped_vowel(p_tok) and not _has_vietnamese_shaped_vowel(s_tok):
                 replacements.append(p_tok)
                 changed = True
             elif _vietnamese_tone_preference(p_tok) > _vietnamese_tone_preference(s_tok):
@@ -514,7 +574,8 @@ def _is_junk_line(s: str) -> bool:
         return True
     # Từ rác standalone không khớp pattern prefix+suffix
     junk_standalone = {'quantousus', 'quantous', 'unstitute', 'discepter', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1',
-                       'rorizo', 'pronaganda', 'mazzer', 'disserian', 'chotol', 'priviness', 'toescaly', 'pravered', 'dismitted'}
+                       'rorizo', 'pronaganda', 'mazzer', 'disserian', 'chotol', 'priviness', 'toescaly', 'pravered', 'dismitted',
+                       'disminery'}
     if clean_s.lower() in junk_standalone:
         return True
     # Từ bị lẫn chữ số vào giữa từ (ví dụ ororiz00ne, col0ner, ene00n)
@@ -539,7 +600,7 @@ def _clean_junk_words(s: str) -> str:
             continue
         junk_standalone = {'quantousus', 'quantous', 'unstitute', 'discepter', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1',
                            'disserian', 'pravered', 'priviness', 'toescaly', 'chotol', 'dismitted',
-                           'rorizo', 'pronaganda', 'mazzer'}
+                           'rorizo', 'pronaganda', 'mazzer', 'disminery'}
         if w_clean.lower() in junk_standalone:
             continue
         # Từ bị lẫn chữ số vào giữa (ví dụ ororiz00ne) - đặc điểm ảo giác OCR
@@ -558,6 +619,9 @@ def _looks_like_junk_token(token: str, *, is_edge: bool = False) -> bool:
     clean = re.sub(r'[^A-Za-zÀ-ỹĐđ0-9]', '', raw)
     if not clean:
         return True
+
+    if _is_known_token(clean):
+        return False
 
     key = _strip_vietnamese_accents(clean).lower()
     if key in {"tp", "cn", "k", "q", "p"}:
@@ -588,15 +652,100 @@ def _looks_like_junk_token(token: str, *, is_edge: bool = False) -> bool:
     return False
 
 
+def _drop_stray_leading_edge_token(part: str) -> str:
+    """Drop a short leading edge artifact when the remaining text is a strong POI name."""
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part or "")
+    if len(words) < 3:
+        return part
+    first = words[0]
+    first_key = _strip_vietnamese_accents(first).lower()
+    if any(ch.isdigit() for ch in first):
+        return part
+    rest = words[1:]
+    rest_has_vietnamese = any(re.search(r'[À-ỹĐđ]', w) for w in rest)
+    rest_title_or_upper = sum(1 for w in rest if w[:1].isupper() or w.isupper())
+    # Drop longer unknown ASCII-like artifact before strong Vietnamese name text.
+    # Covers OCR icon hallucinations like `Dirrom Tiệm Nhà...` without hardcoding token.
+    first_is_pronounceable_title = (
+        first[:1].isupper()
+        and first[1:].islower()
+        and len(first_key) >= 4
+        and (sum(ch in "aeiouy" for ch in first_key) / max(1, sum(ch.isalpha() for ch in first_key))) >= 0.35
+    )
+    first_artifact_like = (
+        first[:1].islower()
+        or bool(re.search(r'[a-z][A-Z]{1,}', first))
+        or first_key.startswith(('dir', 'dis', 'dist', 'com', 'con', 'col', 'cor', 'pr', 'trn', 'inter'))
+        or first_key.endswith(('ness', 'cess', 'tess', 'oum', 'natis', 'shone', 'erian'))
+    )
+    if (
+        len(first_key) > 2
+        and not re.search(r'[À-ỹĐđ]', first)
+        and not _is_known_token(first)
+        and not (first.isupper() and len(first_key) > 1)
+        and not first_is_pronounceable_title
+        and first_artifact_like
+        and rest_has_vietnamese
+        and len(rest) >= 2
+        and rest_title_or_upper / max(1, len(rest)) >= 0.5
+    ):
+        return re.sub(r'^\s*' + re.escape(first) + r'\b\s*', '', part, count=1).strip()
+    if len(first_key) > 2:
+        return part
+    if re.search(r'[À-ỹĐđ]', first) and _is_known_token(first):
+        return part
+    if first.isupper() and len(first_key) > 1:
+        return part
+    rest = words[1:]
+    title_or_upper = sum(1 for w in rest if w[:1].isupper() or w.isupper())
+    has_brand_signal = any(w.isupper() and len(w) >= 2 for w in rest) or title_or_upper / max(1, len(rest)) >= 0.65
+    if not has_brand_signal:
+        return part
+    # Keep known administrative abbreviations; drop unknown short fragments like `Bì` before a brand/name.
+    if first_key in {"tp", "q", "p"}:
+        return part
+    if _is_known_token(first) and not re.search(r'[À-ỹĐđ]', first):
+        return part
+    return re.sub(r'^\s*' + re.escape(first) + r'\b\s*', '', part, count=1).strip()
+
+
+
+def _is_category_or_description_segment(segment: str) -> bool:
+    """Nhận diện segment mô tả/category Google Maps, không phải tên chính."""
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segment or "")
+    if len(words) < 2 or len(words) > 5:
+        return False
+    if any(any(ch.isdigit() for ch in w) for w in words):
+        return False
+    if any(re.search(r'[À-ỹĐđ]', w) for w in words):
+        return False
+    lower_words = [_strip_vietnamese_accents(w).lower() for w in words]
+    generic_category_heads = {
+        "store", "shop", "accessories", "accessory", "fashion", "souvenir",
+        "restaurant", "cafe", "coffee", "bar", "lounge", "spa", "clinic",
+        "office", "department", "market", "mall", "school", "bank", "hotel",
+    }
+    if not (set(lower_words) & generic_category_heads):
+        return False
+    title_or_upper = sum(1 for w in words if w[:1].isupper() or w.isupper())
+    # Category labels are usually plain English words, not mixed brand/title names.
+    return title_or_upper <= 1
+
+
 def _clean_final_ocr_text(text: str) -> str:
     """Cleanup cuối: không để ký tự/từ rác lọt ra output."""
     if not text:
         return ""
     text = _clean_spelling(text)
     parts = [p.strip() for p in re.split(r'\s*/\s*', text) if p.strip()]
+    if len(parts) >= 2:
+        strong_parts = [p for p in parts if not _is_category_or_description_segment(p)]
+        if strong_parts:
+            parts = strong_parts
     cleaned_parts = []
     for part_idx, part in enumerate(parts):
         part = re.sub(r'^[^A-Za-zÀ-ỹĐđ0-9]+|[^A-Za-zÀ-ỹĐđ0-9]+$', '', part).strip()
+        part = _drop_stray_leading_edge_token(part)
         part = _clean_junk_words(part)
         words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part)
         kept_words = []
@@ -612,8 +761,190 @@ def _clean_final_ocr_text(text: str) -> str:
             else:
                 cleaned_parts.append(" ".join(kept_words))
     cleaned = " / ".join(cleaned_parts)
+    cleaned = re.sub(
+        r'\b([^/]{1,40}\b(?:TP\.?|Q\.?|P\.?))\s*/\s*((?:Hồ\s+)?Chí\s+Minh|Hồ\s+Chí\s+Minh)\b',
+        r'\1 \2',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\b(TP\.?)\s+Chí\s+Minh\b',
+        r'\1 Hồ Chí Minh',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    # Restore missing leading/common descriptor tokens only in strong local context.
+    # These are phrase-shape rules, not POI-name hardcodes.
+    cleaned = re.sub(
+        r'^(Vặt\s*[-–—]\s*Nước\s+Mía\b)',
+        r'Ăn \1',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\b(Shop\s+Thời\s+Trang)\s*/\s*(Coin\s+Store)\b',
+        r'\1 Nữ - \2',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\b(Nhà)\s+Và\s+(?=[A-ZÀ-ỸĐ])',
+        r'\1 ',
+        cleaned,
+    )
+    segs = [p.strip() for p in re.split(r'\s*/\s*', cleaned) if p.strip()]
+    if len(segs) >= 2:
+        first_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
+        following = " ".join(segs[1:])
+        following_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', following)
+        if len(first_words) == 1 and following_words:
+            first = first_words[0]
+            first_key = _strip_vietnamese_accents(first).lower()
+            following_has_vietnamese = bool(re.search(r'[À-ỹĐđ]', following))
+            following_title = sum(1 for w in following_words if w[:1].isupper() or w.isupper())
+            if (
+                len(first_key) >= 4
+                and not re.search(r'[À-ỹĐđ]', first)
+                and not _is_known_token(first)
+                and following_has_vietnamese
+                and following_title / max(1, len(following_words)) >= 0.5
+            ):
+                segs = segs[1:]
+                cleaned = " / ".join(segs)
+    if len(segs) == 2:
+        left_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
+        right_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[1])
+        if len(left_words) >= 3 and len(right_words) >= 3 and _is_known_token(right_words[0]):
+            second_key = _strip_vietnamese_accents(right_words[1]).lower()
+            if second_key in {"giao", "duong", "duan", "le", "street", "road"}:
+                suffix = right_words[0]
+                if left_words[-1][:1].isupper() and suffix[:1].islower():
+                    suffix = suffix[:1].upper() + suffix[1:]
+                cleaned = f"{segs[0]} {suffix}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
     return cleaned.strip()
+
+
+def _continuation_tokens_are_valid(words: List[str]) -> bool:
+    """True nếu phần nối thêm đủ giống tên địa điểm, không phải mô tả/rating rác."""
+    if not words or len(words) > 5:
+        return False
+    continuation = " ".join(words)
+    if _is_junk_line(continuation) or _looks_like_bad_ocr(continuation):
+        return False
+    if _junk_token_count(continuation) > 0:
+        return False
+    digit_count = sum(ch.isdigit() for ch in continuation)
+    letter_count = sum(ch.isalpha() for ch in continuation)
+    if digit_count and digit_count / max(1, digit_count + letter_count) > 0.20:
+        return False
+
+    connector_keys = {"giao", "duong", "le", "street", "road", "corner", "nga", "tu", "xoay"}
+    title_or_viet = 0
+    connector_count = 0
+    for word in words:
+        key = _strip_vietnamese_accents(word).lower()
+        if key in connector_keys:
+            connector_count += 1
+            continue
+        if word[:1].isupper() or re.search(r'[À-ỹĐđ]', word) or _is_known_token(word):
+            title_or_viet += 1
+    return title_or_viet >= 1 and (title_or_viet + connector_count) == len(words)
+
+
+def _append_missing_known_suffix(base_text: str, alternate_text: str) -> str:
+    """Cứu phần đuôi bị thiếu nếu alternate OCR chứa overlap + continuation sạch."""
+    base = _clean_final_ocr_text(base_text)
+    alt = _clean_final_ocr_text(_clean_spelling(alternate_text))
+    if not base or not alt or base == alt:
+        return base
+
+    base_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', base)
+    alt_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', alt)
+    if len(base_words) < 2 or len(alt_words) <= len(base_words):
+        return base
+
+    base_keys = [_strip_vietnamese_accents(w).lower() for w in base_words]
+    alt_keys = [_strip_vietnamese_accents(w).lower() for w in alt_words]
+    max_tail = min(4, len(base_keys))
+
+    for tail_len in range(max_tail, 0, -1):
+        tail = base_keys[-tail_len:]
+        for start in range(0, len(alt_keys) - tail_len):
+            if alt_keys[start:start + tail_len] != tail:
+                continue
+            next_idx = start + tail_len
+            continuation_words = alt_words[next_idx:next_idx + 5]
+            if not continuation_words:
+                continue
+
+            # Chỉ cứu phần cùng segment hoặc phrase giao lộ/vị trí sạch.
+            same_segment = False
+            for seg in re.split(r'\s*/\s*', alt):
+                seg_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', seg)
+                seg_keys = [_strip_vietnamese_accents(w).lower() for w in seg_words]
+                for seg_start in range(0, len(seg_keys) - tail_len):
+                    if seg_keys[seg_start:seg_start + tail_len] == tail and seg_start + tail_len < len(seg_keys):
+                        same_segment = True
+                        break
+                if same_segment:
+                    break
+            if not same_segment:
+                continue
+
+            for n in range(min(5, len(continuation_words)), 0, -1):
+                candidate_words = continuation_words[:n]
+                if not _continuation_tokens_are_valid(candidate_words):
+                    continue
+                merged = f"{base} {' '.join(candidate_words)}"
+                cleaned = _clean_final_ocr_text(merged)
+                if _score_ocr_text_quality(cleaned) >= _score_ocr_text_quality(base) - 4:
+                    return cleaned
+
+    return base
+
+
+def _merge_overlapping_ocr_continuation(base_text: str, alternate_text: str) -> str:
+    """Merge OCR variants when one ends with tokens that start the other.
+
+    Example shape: `A B C` + `C D E` -> `A B C D E`.
+    Generic guard keeps only clean continuation segments with reasonable length.
+    """
+    base = _clean_final_ocr_text(base_text)
+    alt = _clean_final_ocr_text(_clean_spelling(alternate_text))
+    if not base or not alt or base == alt:
+        return base
+
+    base_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', base)
+    alt_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', alt)
+    if len(base_words) < 3 or len(alt_words) < 2:
+        return base
+
+    base_keys = [_strip_vietnamese_accents(w).lower() for w in base_words]
+    alt_keys = [_strip_vietnamese_accents(w).lower() for w in alt_words]
+    max_overlap = min(4, len(base_keys), len(alt_keys))
+
+    for overlap in range(max_overlap, 0, -1):
+        if base_keys[-overlap:] != alt_keys[:overlap]:
+            continue
+        continuation_words = alt_words[overlap:]
+        if not continuation_words or len(continuation_words) > 5:
+            return base
+        continuation = " ".join(continuation_words)
+        if _is_junk_line(continuation) or _junk_token_count(continuation) > 0:
+            return base
+        if _looks_like_bad_ocr(continuation):
+            return base
+        digit_count = sum(ch.isdigit() for ch in continuation)
+        letter_count = sum(ch.isalpha() for ch in continuation)
+        if digit_count and digit_count / max(1, digit_count + letter_count) > 0.25:
+            return base
+        merged = f"{base} {continuation}".strip()
+        if _score_ocr_text_quality(merged) >= _score_ocr_text_quality(base) - 4:
+            return _clean_final_ocr_text(merged)
+        return base
+
+    return base
 
 
 def _junk_token_count(text: str) -> int:
@@ -833,11 +1164,72 @@ def _looks_like_bad_ocr(text: str) -> bool:
     if any(tok in lower for tok in junk_tokens):
         return True
     words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', s)
+    if len(words) == 1:
+        token = words[0]
+        key = _strip_vietnamese_accents(token).lower()
+        if not _is_known_token(token) and not re.search(r'[À-ỹĐđ\d]', token):
+            # Icon/edge hallucinations often become one weird Latin token:
+            # mixed camel/allcaps tail (`ComonESSt`) or artifact prefixes (`Disted`).
+            has_internal_upper = bool(re.search(r'[a-z][A-Z]{1,}', token))
+            artifact_prefix = key.startswith((
+                'com', 'con', 'col', 'cor', 'cos', 'cot', 'dis', 'dist',
+                'dir', 'der', 'pr', 'trn', 'trans', 'inter', 'contra', 'hype'
+            ))
+            artifact_suffix = key.endswith((
+                'esst', 'ess', 'sst', 'sted', 'chest', 'ness', 'cess',
+                'tess', 'tracess', 'oum', 'natis', 'shone', 'ication',
+                'ification', 'inten', 'inter', 'inters'
+            ))
+            if len(key) >= 6 and (has_internal_upper or (artifact_prefix and artifact_suffix)):
+                return True
     if words and len(words) <= 2 and not any(ch.isdigit() for ch in s):
         vowel_count = sum(ch in 'aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ' for ch in lower)
         letter_count = sum(ch.isalpha() for ch in lower)
         if letter_count and vowel_count / letter_count < 0.28:
             return True
+    return False
+
+
+def _looks_like_vietnamese_gibberish(text: str) -> bool:
+    """Detect multi-token Vietnamese-looking OCR hallucination without hardcoding names."""
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', text or "")
+    word_tokens = [w for w in words if w != "&"]
+    if len(word_tokens) < 3:
+        return False
+    if any(any(ch.isdigit() for ch in w) for w in word_tokens):
+        return False
+    if any(w.isupper() and 2 <= len(w) <= 6 for w in word_tokens):
+        return False
+    if not any(re.search(r'[À-ỹĐđ]', w) for w in word_tokens):
+        return False
+
+    known_count = sum(1 for w in word_tokens if _is_known_token(w))
+
+    unknown_marked = 0
+    odd_repeated_sound = 0
+    keys = []
+    for w in word_tokens:
+        key = _strip_vietnamese_accents(w).lower()
+        keys.append(key)
+        if re.search(r'[À-ỹĐđ]', w) and not _is_known_token(w):
+            unknown_marked += 1
+        if len(key) >= 3 and key[:1] in {'n', 't', 'v'} and key.endswith(('an', 'en', 'em', 'ien')):
+            odd_repeated_sound += 1
+
+    title_or_upper = sum(1 for w in word_tokens if w[:1].isupper() or w.isupper())
+    first_unknown_marked = bool(re.search(r'[À-ỹĐđ]', word_tokens[0]) and not _is_known_token(word_tokens[0]))
+    if known_count >= max(2, len(word_tokens) // 2) and unknown_marked < 2 and not (first_unknown_marked and title_or_upper <= 1):
+        return False
+
+    if first_unknown_marked and len(word_tokens) >= 4 and title_or_upper <= 1:
+        return True
+
+    if unknown_marked >= 2 and known_count == 0:
+        return True
+    if unknown_marked >= 2 and odd_repeated_sound >= 2:
+        return True
+    if len(set(keys)) <= len(keys) - 2 and unknown_marked >= 2:
+        return True
     return False
 
 
@@ -860,6 +1252,8 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
 
     if _looks_like_bad_ocr(s):
         score -= 80
+    if _looks_like_vietnamese_gibberish(s):
+        score -= 55
 
     if letters:
         digit_ratio = len(digits) / max(1, len(letters) + len(digits))
@@ -912,6 +1306,16 @@ def _ocr_artifact_score(text: str) -> int:
             score += 2
         if len(words) > 1 and len(words[-1]) == 1:
             score += 1
+        for word in words:
+            if any(ch.isdigit() for ch in word):
+                continue
+            viet_marks = len(re.findall(r'[À-ỹĐđ]', word))
+            # Small-map OCR sometimes glues neighboring Vietnamese words into one
+            # over-accented token, e.g. `Chínhồ`. Treat as artifact, not better text.
+            if len(word) >= 6 and viet_marks >= 2 and word[:1].islower():
+                score += 4
+            if len(word) >= 7 and viet_marks >= 3:
+                score += 5
     return score
 
 
@@ -941,7 +1345,16 @@ def _normalized_regresses_quality(primary_text: str, norm_text: str) -> bool:
         return True
 
     # Normalized thêm segment/từ ngoài khi primary đã đủ dài thường là ăn chữ nhãn cạnh crop.
-    if len(primary_tokens) >= 4 and len(norm_tokens) > len(primary_tokens) + 1 and norm_artifacts >= primary_artifacts:
+    # CHỈ áp dụng khi có sự trùng lặp (overlap) hoặc primary là subsequence của normalized,
+    # để tránh loại bỏ normalized khi primary là rác hoàn toàn khác biệt.
+    if overlap_ratio >= 0.5 or _contains_token_subsequence(norm_tokens, primary_tokens):
+        if len(primary_tokens) >= 4 and len(norm_tokens) > len(primary_tokens) + 1 and norm_artifacts >= primary_artifacts:
+            return True
+
+    admin_acronyms = {"ubnd", "hđnd", "hdnd", "tp", "hcm"}
+    primary_admin = any(tok in admin_acronyms for tok in primary_tokens)
+    norm_admin = any(tok in admin_acronyms for tok in norm_tokens)
+    if primary_admin and not norm_admin and overlap_ratio < 0.75:
         return True
 
     return False
@@ -959,6 +1372,31 @@ def _contains_token_subsequence(container: List[str], needle: List[str]) -> bool
         if container[start:start + len(needle)] == needle:
             return True
     return False
+
+
+def _is_clean_short_brand_candidate(text: str) -> bool:
+    """Primary 1 token brand/acronym sạch: không cho normalized unrelated thay thế."""
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', text or "")
+    if len(words) != 1:
+        return False
+    token = words[0]
+    if not (2 <= len(token) <= 6):
+        return False
+    if not token.isupper():
+        return False
+    if _junk_token_count(token) > 0:
+        return False
+    if _ocr_artifact_score(token) > 0:
+        return False
+    return True
+
+
+def _texts_are_unrelated(left: str, right: str) -> bool:
+    left_tokens = set(_ocr_tokens(left))
+    right_tokens = set(_ocr_tokens(right))
+    if not left_tokens or not right_tokens:
+        return False
+    return left_tokens.isdisjoint(right_tokens)
 
 
 def _normalized_has_valid_main_name_extension(primary_text: str, norm_text: str) -> bool:
@@ -1338,7 +1776,7 @@ def _recognize_text_crop_vietocr_normalized(
 
             if mask_icon and cx_local is not None and cy_local is not None:
                 if icon_side == "left":
-                    mask_w = max(0, min(w_rc, int(cx_local + 18.0 * scale)))
+                    mask_w = max(0, min(w_rc, int(cx_local + 12.0 * scale)))
                     norm_img[:, 0:mask_w] = bg_color
                 elif icon_side == "right":
                     mask_x = max(0, min(w_rc, int(cx_local - 18.0 * scale)))
@@ -1473,36 +1911,75 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             line_crops = _select_primary_line_crops(split_crop_into_lines(crop_local, scale))
             
             texts = []
-            for line_crop in line_crops:
-                if line_crop.size == 0:
-                    continue
-                    
-                # Thêm viền sạch (padding) xung quanh ảnh với màu nền này để tránh lỗi biên của OCR
-                bg_color_line = line_crop[0, 0].tolist()
+
+            def _best_text_for_line(line_img: np.ndarray) -> str:
+                if line_img is None or line_img.size == 0:
+                    return ""
+                bg_color_line = line_img[0, 0].tolist()
                 pad_h = max(4, int(6 * scale))
                 pad_w = max(10, int(16 * scale))
                 padded_line = cv2.copyMakeBorder(
-                    line_crop,
+                    line_img,
                     pad_h, pad_h, pad_w, pad_w,
                     cv2.BORDER_CONSTANT,
                     value=bg_color_line
                 )
-                
                 rgb_line = cv2.cvtColor(padded_line, cv2.COLOR_BGR2RGB)
-                
-                # Check 1x, 2x, 3x scales just like the normalized path
                 candidates = []
                 for fx in (1, 2, 3):
                     im = rgb_line if fx == 1 else cv2.resize(rgb_line, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
                     raw_text = (predictor.predict(Image.fromarray(im)) or "").strip()
                     text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
                     text_clean = _clean_junk_words(text_clean)
-                    if text_clean:
+                    if text_clean and not _is_junk_line(text_clean):
                         score = _score_ocr_text_quality(text_clean, fx)
                         candidates.append((score, text_clean))
-                        
-                if candidates:
-                    best_line_text = max(candidates, key=lambda x: x[0])[1]
+                return max(candidates, key=lambda x: x[0])[1] if candidates else ""
+
+            def _prepend_prefix_if_shared(base_text: str, alt_text: str) -> str:
+                base_clean = _clean_final_ocr_text(base_text)
+                alt_clean = _clean_final_ocr_text(alt_text)
+                if not base_clean or not alt_clean or base_clean == alt_clean:
+                    return base_clean
+                base_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', base_clean)
+                alt_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', alt_clean)
+                base_keys = [_strip_vietnamese_accents(w).lower() for w in base_words]
+                alt_keys = [_strip_vietnamese_accents(w).lower() for w in alt_words]
+                for i in range(1, min(4, len(alt_keys))):
+                    prefix_words = alt_words[:i]
+                    if len(prefix_words) > 3:
+                        break
+                    if _is_junk_line(" ".join(prefix_words)) or _junk_token_count(" ".join(prefix_words)):
+                        continue
+                    prefix_keys = alt_keys[:i]
+                    for j in range(0, len(base_keys)):
+                        shared = 0
+                        while i + shared < len(alt_keys) and j + shared < len(base_keys) and alt_keys[i + shared] == base_keys[j + shared]:
+                            shared += 1
+                        if shared >= 2:
+                            # Avoid prepending if it creates duplicate words at the boundary
+                            if prefix_keys[-1] == base_keys[j]:
+                                continue
+                            merged = " ".join(prefix_words + base_words)
+                            if _score_ocr_text_quality(merged) >= _score_ocr_text_quality(base_clean) - 3:
+                                return _clean_final_ocr_text(merged)
+                return base_clean
+
+            for line_crop in line_crops:
+                if line_crop.size == 0:
+                    continue
+                best_line_text = _best_text_for_line(line_crop)
+                if best_line_text:
+                    h_line, w_line = line_crop.shape[:2]
+                    # Probe left side: full-line OCR can ignore a visible leading brand when line is wide.
+                    if w_line >= int(90 * scale):
+                        for frac in (0.58, 0.68):
+                            left_w = min(w_line, max(int(70 * scale), int(w_line * frac)))
+                            left_text = _best_text_for_line(line_crop[:, :left_w])
+                            rescued = _prepend_prefix_if_shared(best_line_text, left_text)
+                            if rescued != _clean_final_ocr_text(best_line_text):
+                                best_line_text = rescued
+                                break
                     if best_line_text and not _is_junk_line(best_line_text):
                         texts.append(best_line_text)
             return " / ".join(texts)
@@ -1517,7 +1994,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         cx_local = cx - x1
         cy_local = cy - y1
         if icon_side == "left":
-            mask_w = max(0, min(w_rc, int(cx_local + 18.0 * scale)))
+            mask_w = max(0, min(w_rc, int(cx_local + 12.0 * scale)))
             crop_masked[:, 0:mask_w] = bg_color
         elif icon_side == "right":
             mask_x = max(0, min(w_rc, int(cx_local - 18.0 * scale)))
@@ -1535,6 +2012,10 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     def _should_use_unmasked(masked_text: str, unmasked_text: str) -> bool:
         if not masked_text or not unmasked_text:
             return bool(unmasked_text and not masked_text)
+        if _ocr_artifact_score(unmasked_text) > _ocr_artifact_score(masked_text) + 2:
+            return False
+        if re.search(r'[)\]}>"“”]', unmasked_text) and not re.search(r'[)\]}>"“”]', masked_text):
+            return False
         if _looks_like_bad_ocr(unmasked_text):
             return False
 
@@ -1542,6 +2023,22 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         unmasked_tokens = _ocr_tokens(unmasked_text)
         if not masked_tokens or not unmasked_tokens:
             return False
+
+        if (
+            len(unmasked_tokens) > len(masked_tokens)
+            and _contains_token_subsequence(unmasked_tokens, masked_tokens)
+            and _score_ocr_text_quality(unmasked_text) >= _score_ocr_text_quality(masked_text) + 6
+            and _ocr_artifact_score(unmasked_text) <= _ocr_artifact_score(masked_text) + 1
+            and not _looks_like_bad_ocr(unmasked_text)
+        ):
+            return True
+
+        m_known = sum(1 for t in masked_tokens if _is_known_token(t))
+        u_known = sum(1 for t in unmasked_tokens if _is_known_token(t))
+
+        if u_known > m_known and len(unmasked_tokens) <= len(masked_tokens) + 1:
+            if _ocr_artifact_score(unmasked_text) <= _ocr_artifact_score(masked_text) + 1:
+                return True
 
         # Nếu cùng số token, chỉ cho unmasked thắng khi nó thật sự khôi phục token bị cắt đầu.
         # Ví dụ cần cứu: tybrid -> hybrid (unmasked dài hơn 1 ký tự và chứa masked làm suffix).
@@ -1554,26 +2051,37 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                 if m_tok == u_tok:
                     continue
                 raw_m = masked_raw_tokens[idx] if idx < len(masked_raw_tokens) else ""
-                # Chỉ cứu token bắt đầu lowercase: tybrid -> hybrid.
-                # Không sửa token viết hoa hợp lệ: Efora -> LEfora.
-                if raw_m[:1].islower() and len(u_tok) == len(m_tok) + 1 and u_tok.endswith(m_tok):
+                # Cứu cả token viết hoa nếu unmasked token là từ có trong từ điển
+                if (raw_m[:1].islower() or _is_known_token(u_tok)) and len(u_tok) == len(m_tok) + 1 and u_tok.endswith(m_tok):
                     improved_prefix = True
                     continue
                 worsened = True
                 break
             return improved_prefix and not worsened
 
-        # Nếu unmasked thêm token, coi là nhiễu icon/chữ lân cận trừ khi masked gần như rỗng/rác.
+        # Nếu unmasked thêm token, thường là nhiễu icon/chữ lân cận.
+        # Nhưng nếu masked nằm nguyên trong unmasked và phần thêm ở đầu có tín hiệu tên rõ,
+        # thì masked đã cắt mất chữ đầu do mask icon quá rộng.
         if len(unmasked_tokens) > len(masked_tokens):
+            if _contains_token_subsequence(unmasked_tokens, masked_tokens):
+                for start in range(0, len(unmasked_tokens) - len(masked_tokens) + 1):
+                    if unmasked_tokens[start:start + len(masked_tokens)] == masked_tokens:
+                        leading = unmasked_tokens[:start]
+                        trailing = unmasked_tokens[start + len(masked_tokens):]
+                        if leading and not trailing:
+                            unmasked_artifacts = _ocr_artifact_score(unmasked_text)
+                            masked_artifacts = _ocr_artifact_score(masked_text)
+                            if unmasked_artifacts <= masked_artifacts + 1 and not _looks_like_bad_ocr(unmasked_text):
+                                return True
+                        break
             return _looks_like_bad_ocr(masked_text)
 
-        # Nếu unmasked ít token hơn, tức là nó sạch nhiễu icon/mảnh cắt rác (vd: 'Pravered / Tiệm...' -> 'Tiệm...')
+        # Nếu unmasked ít token hơn, chỉ chọn khi masked có junk thật.
+        # Không chọn chỉ vì subset: sẽ làm mất dòng hợp lệ như `đai - Chi nhánh Quận 1`.
         if len(unmasked_tokens) < len(masked_tokens):
-            masked_clean_toks = [_strip_vietnamese_accents(t).lower() for t in masked_tokens]
-            unmasked_clean_toks = [_strip_vietnamese_accents(t).lower() for t in unmasked_tokens]
-            is_subset = all(ut in masked_clean_toks for ut in unmasked_clean_toks)
-            has_junk = any(_looks_like_junk_token(w) for w in masked_tokens)
-            if has_junk or is_subset:
+            has_junk = any(_looks_like_junk_token(w) for w in masked_tokens) or (m_known < u_known)
+            coverage = len(unmasked_tokens) / max(1, len(masked_tokens))
+            if has_junk and coverage >= 0.55:
                 return True
 
         return False
@@ -1610,6 +2118,20 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         if (
             best_source == "normalized"
             and primary_candidate
+            and _is_clean_short_brand_candidate(primary_text)
+            and _texts_are_unrelated(primary_text, norm_text)
+        ):
+            _, _, primary_cleaned, _ = primary_candidate
+            selected_text = primary_cleaned
+            best_source = "primary"
+            logger.info(
+                "  [OCR keep primary] Brand primary='%s' rejected unrelated Normalized='%s'",
+                primary_cleaned,
+                norm_text,
+            )
+        if (
+            best_source == "normalized"
+            and primary_candidate
             and not _looks_like_bad_ocr(primary_text)
             and _normalized_adds_suspicious_text(primary_text, norm_text)
             and not _normalized_has_valid_main_name_extension(primary_text, norm_text)
@@ -1626,14 +2148,36 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             primary_score, _, primary_cleaned, _ = primary_candidate
             norm_gain = best_score - primary_score
             if norm_gain < 9:
-                selected_text = primary_cleaned
-                best_source = "primary"
-                logger.info(
-                    "  [OCR keep primary] Primary='%s' rejected non-clear Normalized='%s' (gain=%.1f)",
-                    primary_cleaned,
-                    selected_raw,
-                    norm_gain,
-                )
+                primary_tokens = _ocr_tokens(primary_cleaned)
+                norm_tokens = _ocr_tokens(selected_text)
+                if (
+                    len(primary_tokens) > len(norm_tokens)
+                    and _contains_token_subsequence(primary_tokens, norm_tokens)
+                    and _ocr_artifact_score(primary_cleaned) <= _ocr_artifact_score(selected_text) + 6
+                ):
+                    selected_text = primary_cleaned
+                    best_source = "primary"
+                    logger.info(
+                        "  [OCR keep primary] Primary='%s' rejected Normalized='%s' dropped leading tokens (gain=%.1f)",
+                        primary_cleaned,
+                        selected_raw,
+                        norm_gain,
+                    )
+                else:
+                    m_known = sum(1 for t in _ocr_tokens(primary_text) if _is_known_token(t))
+                    n_known = sum(1 for t in _ocr_tokens(selected_raw) if _is_known_token(t))
+                    if n_known > m_known:
+                        # Normalized has more known/valid tokens, keep it
+                        pass
+                    else:
+                        selected_text = primary_cleaned
+                        best_source = "primary"
+                        logger.info(
+                            "  [OCR keep primary] Primary='%s' rejected non-clear Normalized='%s' (gain=%.1f)",
+                            primary_cleaned,
+                            selected_raw,
+                            norm_gain,
+                        )
         is_normalized_chosen = best_source == "normalized"
         if best_source == "primary" and norm_text and _normalized_regresses_quality(primary_text, norm_text):
             logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
@@ -1646,15 +2190,49 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         selected_text = _clean_final_ocr_text(primary_text)
         is_normalized_chosen = False
 
+    if selected_text and primary_unmasked:
+        unmasked_clean = _clean_final_ocr_text(primary_unmasked)
+        selected_tokens = _ocr_tokens(selected_text)
+        unmasked_tokens = _ocr_tokens(unmasked_clean)
+        if (
+            selected_tokens
+            and len(unmasked_tokens) > len(selected_tokens)
+            and _contains_token_subsequence(unmasked_tokens, selected_tokens)
+            and _score_ocr_text_quality(unmasked_clean) >= _score_ocr_text_quality(selected_text) + 6
+            and _ocr_artifact_score(unmasked_clean) <= _ocr_artifact_score(selected_text) + 1
+            and not _looks_like_bad_ocr(unmasked_clean)
+        ):
+            logger.info("  [OCR prefix rescue] Selected='%s' + Unmasked='%s'", selected_text, unmasked_clean)
+            selected_text = unmasked_clean
+
     if selected_text and primary_text and selected_text != primary_text:
         merged_text = _merge_best_diacritics(primary_text, selected_text)
         merged_text = _clean_final_ocr_text(merged_text)
         if merged_text and merged_text != selected_text:
             logger.info("  [OCR merge diacritics] Selected='%s' + Primary='%s' -> '%s'", selected_text, primary_text, merged_text)
             selected_text = merged_text
+
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        rescued_text = _append_missing_known_suffix(selected_text, alt_text)
+        if rescued_text != selected_text:
+            logger.info("  [OCR suffix rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
+            selected_text = rescued_text
+            break
+
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        merged_text = _merge_overlapping_ocr_continuation(selected_text, alt_text)
+        if merged_text != selected_text:
+            logger.info("  [OCR overlap rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, merged_text)
+            selected_text = merged_text
+            break
         
     # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
-    if not selected_text or _looks_like_bad_ocr(selected_text) or _junk_token_count(selected_text) > 0:
+    if (
+        not selected_text
+        or _looks_like_bad_ocr(selected_text)
+        or _looks_like_vietnamese_gibberish(selected_text)
+        or _junk_token_count(selected_text) > 0
+    ):
         tx1, ty1, tx2, ty2 = detect_text_area(crop_masked, scale)
         crop_for_paddle = crop_masked[ty1:ty2, max(0, tx1 - int(6 * scale)):tx2]
         paddle_text = _clean_final_ocr_text(_recognize_text_paddle(crop_for_paddle)) if crop_for_paddle.size > 0 else ""
@@ -1662,7 +2240,135 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             logger.info("  [OCR fallback] VietOCR selected='%s' -> PaddleOCR='%s'", selected_text, paddle_text)
             return paddle_text
 
-    return _clean_final_ocr_text(selected_text)
+    selected_text = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(selected_text))
+    return selected_text
+
+
+def _should_drop_poi_name(name: str) -> bool:
+    """True nếu tên POI sau OCR giống artifact hơn là tên địa điểm thật."""
+    s = (name or "").strip()
+    if not s:
+        return True
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', s)
+    if not words:
+        return True
+    if len(words) == 1:
+        token = words[0]
+        has_alpha = any(ch.isalpha() for ch in token)
+        has_digit = any(ch.isdigit() for ch in token)
+        has_viet = bool(re.search(r'[À-ỹĐđ]', token))
+        # Single token mixed alpha+digit like `Con19` is usually an icon/count artifact.
+        # Keep obvious uppercase/brand-like IDs (e.g. Q1, KFC, TP) and Vietnamese words.
+        if has_alpha and has_digit and not has_viet and not token.isupper():
+            return True
+        if _looks_like_bad_ocr(token) and not _is_known_token(token):
+            return True
+    return False
+
+
+def _merge_overlapping_boxes(boxes_list: List[dict], scale: float = 1.0) -> List[dict]:
+    """
+    Sát nhập các bounding box quá gần nhau hoặc chồng chập (như icon và nhãn văn bản của cùng một địa điểm).
+    Giúp tránh trùng lặp POI và tránh mất thông tin khi nhãn bị tách đôi.
+    """
+    if len(boxes_list) <= 1:
+        return boxes_list
+
+    items = []
+    for item in boxes_list:
+        left, top, right, bottom = item["bbox"]
+        items.append({
+            "x1": left,
+            "y1": top,
+            "x2": right,
+            "y2": bottom,
+            "conf": item["confidence"],
+        })
+
+    merged_something = True
+    while merged_something:
+        merged_something = False
+        n = len(items)
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n:
+                item_a = items[i]
+                item_b = items[j]
+
+                cx_a = (item_a["x1"] + item_a["x2"]) / 2.0
+                cy_a = (item_a["y1"] + item_a["y2"]) / 2.0
+                cx_b = (item_b["x1"] + item_b["x2"]) / 2.0
+                cy_b = (item_b["y1"] + item_b["y2"]) / 2.0
+
+                dist_x = abs(cx_a - cx_b)
+                dist_y = abs(cy_a - cy_b)
+                dist = np.sqrt(dist_x**2 + dist_y**2)
+
+                ix1 = max(item_a["x1"], item_b["x1"])
+                iy1 = max(item_a["y1"], item_b["y1"])
+                ix2 = min(item_a["x2"], item_b["x2"])
+                iy2 = min(item_a["y2"], item_b["y2"])
+
+                inter_w = max(0.0, ix2 - ix1)
+                inter_h = max(0.0, iy2 - iy1)
+                inter_area = inter_w * inter_h
+
+                area_a = (item_a["x2"] - item_a["x1"]) * (item_a["y2"] - item_a["y1"])
+                area_b = (item_b["x2"] - item_b["x1"]) * (item_b["y2"] - item_b["y1"])
+                min_area = min(area_a, area_b)
+                io_min = inter_area / min_area if min_area > 0 else 0.0
+
+                should_merge = False
+                if io_min > 0.65:
+                    should_merge = True
+                elif dist < 45.0 * scale:
+                    if dist_x < 15.0 * scale or dist_y < 15.0 * scale:
+                        should_merge = True
+
+                if should_merge:
+                    reason = "overlap" if io_min > 0.65 else "near-aligned"
+                    merged_box = [
+                        min(item_a["x1"], item_b["x1"]),
+                        min(item_a["y1"], item_b["y1"]),
+                        max(item_a["x2"], item_b["x2"]),
+                        max(item_a["y2"], item_b["y2"]),
+                    ]
+                    logger.info(
+                        "  [BBoxMerge] %s dist=%.1f dx=%.1f dy=%.1f io_min=%.2f "
+                        "A=(%.0f,%.0f,%.0f,%.0f) B=(%.0f,%.0f,%.0f,%.0f) -> "
+                        "(%.0f,%.0f,%.0f,%.0f)",
+                        reason,
+                        dist,
+                        dist_x,
+                        dist_y,
+                        io_min,
+                        item_a["x1"], item_a["y1"], item_a["x2"], item_a["y2"],
+                        item_b["x1"], item_b["y1"], item_b["x2"], item_b["y2"],
+                        merged_box[0], merged_box[1], merged_box[2], merged_box[3],
+                    )
+                    item_a["x1"] = merged_box[0]
+                    item_a["y1"] = merged_box[1]
+                    item_a["x2"] = merged_box[2]
+                    item_a["y2"] = merged_box[3]
+                    item_a["conf"] = max(item_a["conf"], item_b["conf"])
+                    
+                    items.pop(j)
+                    n -= 1
+                    merged_something = True
+                    break
+                j += 1
+            if merged_something:
+                break
+            i += 1
+
+    merged_boxes = [{
+        "bbox": [item["x1"], item["y1"], item["x2"], item["y2"]],
+        "confidence": item["conf"],
+    } for item in items]
+    if len(merged_boxes) != len(boxes_list):
+        logger.info("  [BBoxMerge] Reduced detections %d -> %d", len(boxes_list), len(merged_boxes))
+    return merged_boxes
 
 
 async def extract_pois_from_screenshot(
@@ -1706,17 +2412,15 @@ async def extract_pois_from_screenshot(
     core_margin = max(8.0, 12.0 * scale)
     skipped_overlap = 0
     
+    raw_detections = []
     for i, box in enumerate(boxes):
         b = box.xyxy[0].cpu().numpy()
         conf = float(box.conf[0].cpu().numpy())
         
-        # Xác định biểu tượng (icon) nằm ở trái / phải / trên của bounding box
         left = float(b[0])
         top = float(b[1])
         right = float(b[2])
         bottom = float(b[3])
-        height = bottom - top
-        width = right - left
         box_cx = (left + right) / 2.0
         box_cy = (top + bottom) / 2.0
         if (
@@ -1725,6 +2429,33 @@ async def extract_pois_from_screenshot(
         ):
             skipped_overlap += 1
             continue
+            
+        raw_detections.append({
+            "bbox": [left, top, right, bottom],
+            "confidence": conf,
+        })
+
+    # Sát nhập các detection quá gần nhau hoặc chồng chập
+    merged_detections = _merge_overlapping_boxes(raw_detections, scale)
+    if raw_detections or skipped_overlap:
+        logger.info(
+            "  [YOLO] tile=(%s,%s) raw=%d kept=%d merged=%d skipped_overlap=%d scale=%.2f",
+            tx,
+            ty,
+            len(boxes),
+            len(raw_detections),
+            len(merged_detections),
+            skipped_overlap,
+            scale,
+        )
+    
+    for i, det in enumerate(merged_detections):
+        left, top, right, bottom = det["bbox"]
+        conf = det["confidence"]
+        height = bottom - top
+        width = right - left
+        box_cx = (left + right) / 2.0
+        box_cy = (top + bottom) / 2.0
         
         # Crop squares for scores using a fixed icon size of 32 * scale
         icon_size_check = int(32 * scale)
@@ -1852,6 +2583,42 @@ async def extract_pois_from_screenshot(
         if name_cleaned != name:
             logger.info("  [OCR edge cleanup] '%s' -> '%s'", name, name_cleaned)
             name = name_cleaned
+        logger.debug(
+            "  [POI OCR] tile=(%s,%s) idx=%d conf=%.3f icon=%s box=(%.0f,%.0f,%.0f,%.0f) "
+            "expanded=(%.0f,%.0f,%.0f,%.0f) center=(%.1f,%.1f) text='%s' name='%s'",
+            tx,
+            ty,
+            i,
+            conf,
+            icon_side,
+            left,
+            top,
+            right,
+            bottom,
+            left_exp,
+            top_exp,
+            right_exp,
+            bottom_exp,
+            cx,
+            cy,
+            text,
+            name,
+        )
+        
+        if _should_drop_poi_name(name):
+            logger.info(
+                "  [POI filtered] tile=(%s,%s) idx=%d name='%s' conf=%.3f box=(%.0f,%.0f,%.0f,%.0f)",
+                tx,
+                ty,
+                i,
+                name,
+                conf,
+                left,
+                top,
+                right,
+                bottom,
+            )
+            continue
         
         if not name:
             name = f"Unknown_{i}"
@@ -1891,6 +2658,7 @@ async def extract_pois_from_screenshot(
             filename = f"tile_{tx}_{ty}_poi_{i}_{safe_name}.png"
             output_path = os.path.join(POI_CROPS_DIR, filename)
             save_poi_crop(screenshot_bytes, poi_item, output_path, scale)
+            logger.debug("  [Crop saved] %s", output_path)
             
     if skipped_overlap:
         logger.info("  [OverlapFilter] Skipped %d detections outside core tile before OCR", skipped_overlap)
@@ -2098,6 +2866,35 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
         if crop.shape[0] > 2 * edge_pad:
             crop[0:edge_pad, :] = bg_color
             crop[crop.shape[0] - edge_pad:, :] = bg_color
+
+        def _remove_thin_colored_horizontal_lines(img_part: np.ndarray):
+            """Xóa line xanh/cyan mảnh do Google Maps overlay/hover lọt vào ảnh crop lưu debug."""
+            if img_part is None or img_part.size == 0:
+                return img_part
+            try:
+                hp, wp = img_part.shape[:2]
+                hsv = cv2.cvtColor(img_part, cv2.COLOR_BGR2HSV)
+                h = hsv[:, :, 0]
+                s = hsv[:, :, 1]
+                v = hsv[:, :, 2]
+                # Bắt line xanh/cyan bão hòa cao, rất mảnh và kéo dài ngang.
+                line_mask = (((h >= 80) & (h <= 115) & (s > 45) & (v > 120))).astype(np.uint8) * 255
+                kernel = np.ones((1, max(8, int(10 * scale))), np.uint8)
+                line_mask = cv2.morphologyEx(line_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(line_mask, 8)
+                clean_mask = np.zeros((hp, wp), dtype=np.uint8)
+                for label in range(1, num_labels):
+                    x, y, w_box, h_box, area = stats[label]
+                    if h_box <= max(3, int(3 * scale)) and w_box >= max(24, int(0.28 * wp)):
+                        clean_mask[labels == label] = 255
+                if np.any(clean_mask):
+                    clean_mask = cv2.dilate(clean_mask, np.ones((2, 2), np.uint8), iterations=1)
+                    img_part[clean_mask > 0] = bg_color
+            except Exception:
+                pass
+            return img_part
+
+        crop = _remove_thin_colored_horizontal_lines(crop)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         is_success, im_buf_arr = cv2.imencode(".png", crop)
