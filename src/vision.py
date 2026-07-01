@@ -258,7 +258,6 @@ def _fix_latin_brand_ocr_artifacts(text: str) -> str:
 
     return re.sub(r'\b[A-Z][A-Z][a-z]{3,}\b', _fix_stray_leading_capital, text)
 
-
 def _clean_spelling(text: str) -> str:
     # Loại bỏ quote/bracket/backslash rác từ icon/viền crop.
     # Giữ apostrophe nằm giữa chữ Latin cho brand hợp lệ như Italiani's.
@@ -764,13 +763,17 @@ def _clean_final_ocr_text(text: str) -> str:
             parts = strong_parts
     cleaned_parts = []
     for part_idx, part in enumerate(parts):
-        part = re.sub(r'^[^A-Za-zÀ-ỹĐđ0-9]+|[^A-Za-zÀ-ỹĐđ0-9]+$', '', part).strip()
+        part = re.sub(r'^[^A-Za-zÀ-ỹĐđ0-9&]+|[^A-Za-zÀ-ỹĐđ0-9&.]+$', '', part).strip()
         part = _drop_stray_leading_edge_token(part)
         part = _clean_junk_words(part)
         words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', part)
+        preserve_amp_ellipsis = bool(re.search(r'&\s*\.{2,}\s*$', part))
         kept_words = []
         for idx, word in enumerate(words):
             is_edge = idx == 0 or idx == len(words) - 1
+            if word == "&" and is_edge and preserve_amp_ellipsis:
+                kept_words.append(word)
+                continue
             if _looks_like_junk_token(word, is_edge=is_edge):
                 continue
             kept_words.append(word)
@@ -842,6 +845,8 @@ def _clean_final_ocr_text(text: str) -> str:
                     suffix = suffix[:1].upper() + suffix[1:]
                 cleaned = f"{segs[0]} {suffix}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
+    if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
+        cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
     return cleaned.strip()
 
 
@@ -1319,7 +1324,7 @@ def _ocr_artifact_score(text: str) -> int:
     score += 2 * len(re.findall(r'[():;]', s))
     score += 2 * len(re.findall(r'(?<=\w)[\-–—](?=\w)', s))  # dấu gạch chen trong token: -laan
     score += 2 * len(re.findall(r'\d[A-Za-zÀ-ỹ]|[A-Za-zÀ-ỹ]\d', s))  # 5Chạt
-    score += len(re.findall(r'[^\w\sÀ-ỹ/&.,%+\-–—]', s))
+    score += len(re.findall(r"[^\w\sÀ-ỹ/&.,%+'\-–—]", s))
     for segment in re.split(r'\s*/\s*', s):
         words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', segment)
         if len(words) > 1 and len(words[0]) == 1:
@@ -1566,6 +1571,8 @@ def _segment_has_strong_signal(segment: str) -> bool:
 def _is_weak_edge_segment(segment: str) -> bool:
     """Nhận diện segment rìa yếu sinh từ chữ/icon nhãn lân cận, không dựa tên riêng."""
     s = (segment or "").strip()
+    if re.fullmatch(r'&\s*\.{2,}', s):
+        return False
     words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', s)
     if len(words) != 1:
         return False

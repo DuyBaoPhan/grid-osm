@@ -143,3 +143,22 @@ def test_stray_leading_capital_artifacts_are_removed_safely():
     assert _clean_final_ocr_text("LEfora") == "Efora"
     assert _clean_final_ocr_text("LEfola") == "Efora"
     assert _clean_final_ocr_text("LPBank PGD Bưu điện") == "LPBank PGD Bưu điện"
+
+
+def test_punctuation_precision_regressions_are_preserved():
+    assert not _normalized_regresses_quality("Olivia s Prime Steakhouse", "Olivia's Prime Steakhouse")
+    assert _clean_final_ocr_text("Olivia's Prime Steakhouse") == "Olivia's Prime Steakhouse"
+    assert _clean_final_ocr_text("Capi Studio DIY Souvenirs 8") == "Capi Studio DIY Souvenirs &..."
+    assert _clean_final_ocr_text("Capi Studio DIY Souvenirs &...") == "Capi Studio DIY Souvenirs &..."
+    assert _clean_final_ocr_text("125 Hai Bà Trưng") == "125 Hai Bà Trưng"
+
+
+def test_vietnamese_branch_separator_hyphen_is_restored_generically():
+    assert (
+        _clean_final_ocr_text("Văn phòng đăng ký đất đai Chi nhánh Quận 1")
+        == "Văn phòng đăng ký đất đai - Chi nhánh Quận 1"
+    )
+    assert (
+        _clean_final_ocr_text("Ngân hàng Chính sách xã hội Chi nhánh Hà Nội")
+        == "Ngân hàng Chính sách xã hội - Chi nhánh Hà Nội"
+    )
