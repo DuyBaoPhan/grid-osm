@@ -28,6 +28,7 @@ from .text_cleaning import (
     _looks_like_junk_token,
     _looks_like_vietnamese_gibberish,
     _merge_best_diacritics,
+    _merge_missing_middle_tokens,
     _merge_overlapping_ocr_continuation,
     _merge_primary_diacritics,
     _normalized_adds_suspicious_text,
@@ -566,6 +567,13 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         rescued_text = _append_missing_known_suffix(selected_text, alt_text)
         if rescued_text != selected_text:
             logger.info("  [OCR suffix rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
+            selected_text = rescued_text
+            break
+
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        rescued_text = _merge_missing_middle_tokens(selected_text, alt_text)
+        if rescued_text != selected_text:
+            logger.info("  [OCR missing-middle rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
             selected_text = rescued_text
             break
 

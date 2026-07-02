@@ -51,6 +51,10 @@ def _is_junk_line(s: str) -> bool:
     )
     if re.match(junk_pattern, clean_s):
         return True
+    if re.match(r'(?i)^dis[a-z]{3,}(?:ness|tess|cess|erian|minery)$', clean_s):
+        return True
+    if re.match(r'(?i)^[a-z]{5,}(?:ness|tess|cess)$', clean_s) and clean_s.lower() not in {"business", "fitness", "wellness"}:
+        return True
     # Từ rác standalone không khớp pattern prefix+suffix
     junk_standalone = {'quantousus', 'quantous', 'unstitute', 'discepter', 'collo', 'coliner', 'communs', 'co1', 'derrigermin1',
                        'rorizo', 'pronaganda', 'mazzer', 'disserian', 'chotol', 'priviness', 'toescaly', 'pravered', 'dismitted',
@@ -139,7 +143,7 @@ def _drop_stray_leading_edge_token(part: str) -> str:
         return part
     first = words[0]
     first_key = _strip_vietnamese_accents(first).lower()
-    if any(ch.isdigit() for ch in first):
+    if any(ch.isdigit() for ch in first) and not any(ch.isalpha() for ch in first):
         return part
     rest = words[1:]
     rest_has_vietnamese = any(re.search(r'[À-ỹĐđ]', w) for w in rest)
@@ -167,7 +171,10 @@ def _drop_stray_leading_edge_token(part: str) -> str:
         and first_artifact_like
         and rest_has_vietnamese
         and len(rest) >= 2
-        and rest_title_or_upper / max(1, len(rest)) >= 0.5
+        and (
+            rest_title_or_upper / max(1, len(rest)) >= 0.5
+            or (len(rest) >= 4 and first_key.startswith(('dir', 'dis', 'dist', 'pr', 'col', 'com', 'con')))
+        )
     ):
         return re.sub(r'^\s*' + re.escape(first) + r'\b\s*', '', part, count=1).strip()
     if len(first_key) > 2:
@@ -192,7 +199,7 @@ def _drop_stray_leading_edge_token(part: str) -> str:
 def _is_category_or_description_segment(segment: str) -> bool:
     """Nhận diện segment mô tả/category Google Maps, không phải tên chính."""
     words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segment or "")
-    if len(words) < 2 or len(words) > 5:
+    if len(words) > 5:
         return False
     if any(any(ch.isdigit() for ch in w) for w in words):
         return False
@@ -203,6 +210,9 @@ def _is_category_or_description_segment(segment: str) -> bool:
         "store", "shop", "accessories", "accessory", "fashion", "souvenir",
         "restaurant", "cafe", "coffee", "bar", "lounge", "spa", "clinic",
         "office", "department", "market", "mall", "school", "bank", "hotel",
+        "attraction", "tourist", "vietnamese", "food", "meal", "takeaway",
+        "pharmacy", "drugstore", "hospital", "station", "terminal", "airport",
+        "museum", "gallery", "library", "parking", "lot",
     }
     if not (set(lower_words) & generic_category_heads):
         return False

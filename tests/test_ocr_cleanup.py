@@ -162,3 +162,26 @@ def test_vietnamese_branch_separator_hyphen_is_restored_generically():
         _clean_final_ocr_text("Ngân hàng Chính sách xã hội Chi nhánh Hà Nội")
         == "Ngân hàng Chính sách xã hội - Chi nhánh Hà Nội"
     )
+
+
+def test_foreign_script_wrappers_keep_only_latin_vietnamese_payload():
+    assert _clean_final_ocr_text("237 (HWA PUNG / JEONG) 24]") == "HWA PUNG JEONG"
+    assert _clean_final_ocr_text("서울 (THE COFFEE SHOP) 24") == "THE COFFEE SHOP"
+    assert _clean_final_ocr_text("東京 Quán Cà Phê Sữa Đá 12") == "Quán cà phê Sữa Đá"
+
+
+def test_english_and_vietnamese_suffix_rescue_keeps_valid_continuation():
+    assert _append_missing_known_suffix(
+        "Nice Weathers",
+        "Nice Weathers The coffee shop",
+    ) == "Nice Weathers The coffee shop"
+    assert _append_missing_known_suffix(
+        "Vòng xoay Phạm Ngọc",
+        "Phạm Ngọc Thạch giao Lê Duẩn",
+    ) == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+
+
+def test_suffix_rescue_rejects_ratings_categories_and_unrelated_noise():
+    assert _append_missing_known_suffix("Nice Weathers", "Nice Weathers 4.8 (120)") == "Nice Weathers"
+    assert _append_missing_known_suffix("Nice Weathers", "Nice Weathers coffee shop store") == "Nice Weathers"
+    assert _append_missing_known_suffix("Nice Weathers", "Other Label Nice Weathers") == "Nice Weathers"

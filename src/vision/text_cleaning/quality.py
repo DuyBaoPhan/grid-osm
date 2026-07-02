@@ -138,6 +138,21 @@ def _score_ocr_text_quality(text: str, fx: float = 1.0) -> float:
             score -= 28
         if len(seg_words) > 1 and len(seg_words[-1]) == 1:
             score -= 16
+        leading_short_run = 0
+        for word in seg_words[:4]:
+            if (
+                len(word) <= 3
+                and not re.search(r'[À-ỹĐđ]', word)
+                and not any(ch.isdigit() for ch in word)
+                and (word[:1].isupper() or word.isupper())
+            ):
+                leading_short_run += 1
+            else:
+                break
+        if leading_short_run >= 3 and len(seg_words) >= 5:
+            score -= 120
+        elif leading_short_run >= 2 and len(seg_words) >= 6:
+            score -= 120
         # Ending ngắn sau token dài thường là chữ bị cụt/nối dòng sai: "Steakhous / Ste".
         if len(seg_words) == 1 and len(seg_words[0]) <= 3 and segment == s.split('/')[-1].strip():
             previous_words = re.findall(r'[A-Za-zÀ-ỹ0-9]+', ' / '.join(re.split(r'\s*/\s*', s)[:-1]))
@@ -195,6 +210,19 @@ def _normalized_regresses_quality(primary_text: str, norm_text: str) -> bool:
     overlap_ratio = overlap / max(1, min(len(primary_tokens), len(norm_tokens)))
     token_delta = abs(len(norm_tokens) - len(primary_tokens))
 
+    token_short_artifact_prefix = 0
+    for tok in norm_tokens[:4]:
+        if len(tok) <= 3 and re.fullmatch(r'[a-z]+', tok or ""):
+            token_short_artifact_prefix += 1
+        else:
+            break
+    if (
+        len(primary_tokens) >= 4
+        and token_short_artifact_prefix >= 2
+        and ("/" in (norm_text or "") or len(norm_tokens) > len(primary_tokens))
+    ):
+        return True
+
     # Normalized cùng nội dung gần như Primary nhưng nhiều artifact hơn: giữ Primary.
     if overlap_ratio >= 0.70 and norm_artifacts > primary_artifacts:
         return True
@@ -210,6 +238,15 @@ def _normalized_regresses_quality(primary_text: str, norm_text: str) -> bool:
     if overlap_ratio >= 0.5 or _contains_token_subsequence(norm_tokens, primary_tokens):
         if len(primary_tokens) >= 4 and len(norm_tokens) > len(primary_tokens) + 1 and norm_artifacts >= primary_artifacts:
             return True
+
+    short_artifact_tokens = sum(1 for tok in norm_tokens[:4] if len(tok) <= 3)
+    if (
+        len(primary_tokens) >= 4
+        and overlap >= 2
+        and short_artifact_tokens >= 3
+        and len(norm_tokens) >= len(primary_tokens)
+    ):
+        return True
 
     admin_acronyms = {"ubnd", "hđnd", "hdnd", "tp", "hcm"}
     primary_admin = any(tok in admin_acronyms for tok in primary_tokens)
@@ -308,12 +345,16 @@ def _normalized_has_valid_main_name_extension(primary_text: str, norm_text: str)
         meaningful_part = " ".join(word_tokens)
         if _junk_token_count(meaningful_part) > 0:
             return False
+        if _is_category_or_description_segment(part):
+            return False
 
         # Dòng mô tả/rating/category thường có nhiều dấu câu/số hoặc là câu dài viết thường.
         # Không dùng keyword riêng theo ngành/tỉnh để tránh hardcode theo trường hợp.
         if re.search(r'\d+(?:[.,]\d+)?\s*(?:\(|★|\*)', part):
             return False
         if re.search(r'\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:AM|PM|am|pm)\b', part):
+            return False
+        if re.search(r'\b\d+(?:st|nd|rd|th)\b', part, flags=re.IGNORECASE):
             return False
         digit_count = sum(ch.isdigit() for ch in part)
         letter_count = sum(ch.isalpha() for ch in part)
@@ -327,6 +368,14 @@ def _normalized_has_valid_main_name_extension(primary_text: str, norm_text: str)
         has_acronym = any(t.isupper() and 2 <= len(t) <= 6 for t in word_tokens)
         has_name_separator = bool(re.search(r'[&+\-/]', part))
         mostly_lower = title_or_upper == 0
+        descriptor_keys = {
+            "tour", "group", "english", "chinese", "luxury", "online", "book",
+            "near", "best", "city", "store", "shop", "restaurant", "coffee",
+            "museum", "parking", "attraction", "fashion", "accessories",
+        }
+        part_keys = {_strip_vietnamese_accents(t).lower() for t in word_tokens}
+        if not has_vietnamese and word_count >= 3 and (part_keys & descriptor_keys):
+            return False
 
         if word_count > 7:
             return False
@@ -360,6 +409,22 @@ def _normalized_adds_suspicious_text(primary_text: str, norm_text: str) -> bool:
             break
 
     if match_start < 0:
+        shared_prefix = 0
+        for p_tok, n_tok in zip(primary_tokens, norm_tokens):
+            if p_tok != n_tok:
+                break
+            shared_prefix += 1
+        if shared_prefix >= max(3, int(0.6 * min(len(primary_tokens), len(norm_tokens)))):
+            remainder_text = " ".join(norm_tokens[shared_prefix:])
+            norm_remainder = " ".join(re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', norm_text or "")[shared_prefix:])
+            if (
+                len(norm_tokens) > len(primary_tokens)
+                or any(ch.isdigit() for ch in remainder_text)
+                or _ocr_artifact_score(norm_remainder) > 0
+                or _junk_token_count(norm_remainder) > 0
+                or any(_is_category_or_description_segment(seg) for seg in re.split(r'\s*/\s*', norm_text or "")[1:])
+            ):
+                return True
         return False
 
     leading_extra = norm_tokens[:match_start]

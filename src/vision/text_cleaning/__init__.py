@@ -28,6 +28,7 @@ from .final_cleanup import _clean_final_ocr_text
 from .rescue import (
     _continuation_tokens_are_valid,
     _append_missing_known_suffix,
+    _merge_missing_middle_tokens,
     _merge_overlapping_ocr_continuation,
 )
 from .quality import (
@@ -70,6 +71,7 @@ __all__ = [
     _clean_final_ocr_text,
     _continuation_tokens_are_valid,
     _append_missing_known_suffix,
+    _merge_missing_middle_tokens,
     _merge_overlapping_ocr_continuation,
     _junk_token_count,
     _junk_token_count,
