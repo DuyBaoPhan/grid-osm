@@ -11,12 +11,15 @@ from src.vision import (
     _junk_token_count,
     _looks_like_vietnamese_gibberish,
     _merge_best_diacritics,
+    _merge_missing_middle_tokens,
+    _merge_overlapping_ocr_continuation,
     _normalized_adds_suspicious_text,
     _normalized_has_valid_main_name_extension,
     _normalized_regresses_quality,
     _score_ocr_text_quality,
     _texts_are_unrelated,
 )
+from src.vision.crop_processing import split_crop_into_lines
 
 
 def test_context_spelling_fixes_common_ocr_errors():
@@ -132,6 +135,40 @@ def test_vietnamese_gibberish_primary_is_penalized_without_hardcoding():
     assert _score_ocr_text_quality(good_normalized) > _score_ocr_text_quality(bad_primary)
 
 
+def test_public_infrastructure_duplicate_phrase_is_preserved():
+    assert (
+        _clean_final_ocr_text("Trạm xe đạp công cộng / TNGo - UBND Quận 1")
+        == "Trạm xe đạp công cộng / TNGo - UBND Quận 1"
+    )
+    assert (
+        _merge_missing_middle_tokens(
+            "Trạm xe đạp công / TNGo - UBND Quận 1",
+            "Trạm xe đạp công cộng / TNGo - UBND Quận 1",
+        )
+        == "Trạm xe đạp công cộng / TNGo - UBND Quận 1"
+    )
+
+
+def test_overlap_rescue_does_not_regress_cleaner_public_infrastructure_text():
+    assert (
+        _merge_overlapping_ocr_continuation(
+            "Trạm xe đạp công cộng / TNGo - UBND Quận 1",
+            "Tramva văn nân nân",
+        )
+        == "Trạm xe đạp công cộng / TNGo - UBND Quận 1"
+    )
+
+
+def test_intersection_continuation_rescue_uses_valid_longer_alternate():
+    assert (
+        _merge_overlapping_ocr_continuation(
+            "Vòng xoay Phạm Ngọc",
+            "Phạm Ngọc Thạch giao Lê Duẩn",
+        )
+        == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+    )
+
+
 def test_category_suffix_and_admin_normalized_regressions_are_rejected():
     assert _clean_final_ocr_text("VIET TUI XÁCH / Fashion accessories store") == "VIET TUI XÁCH"
     assert _clean_final_ocr_text("OHQUAO Souvenir Dept / Souvenir store") == "OHQUAO Souvenir Dept"
@@ -161,4 +198,71 @@ def test_vietnamese_branch_separator_hyphen_is_restored_generically():
     assert (
         _clean_final_ocr_text("Ngân hàng Chính sách xã hội Chi nhánh Hà Nội")
         == "Ngân hàng Chính sách xã hội - Chi nhánh Hà Nội"
+    )
+
+
+def test_foreign_script_wrappers_keep_only_latin_vietnamese_payload():
+    assert _clean_final_ocr_text("237 (HWA PUNG / JEONG) 24]") == "HWA PUNG JEONG"
+    assert _clean_final_ocr_text("서울 (THE COFFEE SHOP) 24") == "THE COFFEE SHOP"
+    assert _clean_final_ocr_text("東京 Quán Cà Phê Sữa Đá 12") == "Quán cà phê Sữa Đá"
+
+
+def test_english_and_vietnamese_suffix_rescue_keeps_valid_continuation():
+    assert _append_missing_known_suffix(
+        "Nice Weathers",
+        "Nice Weathers The coffee shop",
+    ) == "Nice Weathers The coffee shop"
+    assert _append_missing_known_suffix(
+        "Vòng xoay Phạm Ngọc",
+        "Phạm Ngọc Thạch giao Lê Duẩn",
+    ) == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+
+
+def test_suffix_rescue_rejects_ratings_categories_and_unrelated_noise():
+    assert _append_missing_known_suffix("Nice Weathers", "Nice Weathers 4.8 (120)") == "Nice Weathers"
+    assert _append_missing_known_suffix("Nice Weathers", "Nice Weathers coffee shop store") == "Nice Weathers"
+    assert _append_missing_known_suffix("Nice Weathers", "Other Label Nice Weathers") == "Nice Weathers"
+
+
+def test_reported_intersection_slash_cleanup_keeps_full_continuation():
+    assert (
+        _clean_final_ocr_text("Vòng xoay Phạm Ngọc / Thạch giáo Lê Duẩn")
+        == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+    )
+    assert (
+        _clean_final_ocr_text("Vòng xoay Phạm Ngọc / Thạch giao Lê Duẩn")
+        == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
+    )
+
+
+def test_reported_vietnamese_gibberish_is_rejected_generically():
+    bad = "Tram vin nông nân"
+    good = "Trạm xe đạp công cộng / TNGo - UBND Quận 1"
+    assert _looks_like_vietnamese_gibberish(bad)
+    assert _score_ocr_text_quality(good) > _score_ocr_text_quality(bad) + 40
+    assert not _looks_like_vietnamese_gibberish("Công viên Hàn Thuyên")
+    assert not _looks_like_vietnamese_gibberish("Trung tâm y khoa Diag")
+
+
+def test_reported_intersection_saved_crop_splits_into_two_ocr_lines():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    crop_paths = glob.glob(os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "crops",
+        "tile_-1_-1_poi_9_*.png",
+    ))
+    assert crop_paths, "missing saved regression crop for tile -1,-1 poi 9"
+    img = cv2.imdecode(np.fromfile(crop_paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img is not None and img.size > 0
+    line_crops = split_crop_into_lines(img, 1.0)
+    assert len(line_crops) >= 2
+    assert all(line.shape[0] >= 10 for line in line_crops[:2])
+    # Regression payload from this crop's two lines; avoids requiring OCR model in unit tests.
+    assert (
+        _clean_final_ocr_text("Vòng xoay Phạm Ngọc / Thạch giao Lê Duấn")
+        == "Vòng xoay Phạm Ngọc Thạch giao Lê Duẩn"
     )

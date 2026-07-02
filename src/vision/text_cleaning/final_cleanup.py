@@ -8,18 +8,69 @@ from .junk import (
     _clean_junk_words,
     _drop_stray_leading_edge_token,
     _is_category_or_description_segment,
+    _is_junk_line,
     _looks_like_junk_token,
 )
 from .quality import _clean_ocr_edge_segments
+
+
+def _strip_non_latin_vietnamese_script(text: str) -> str:
+    """Keep Latin/Vietnamese OCR payload; remove CJK/Hangul/Kana and symbol wrappers."""
+    if not text:
+        return ""
+    text = re.sub(r'[^A-Za-zÀ-ỹĐđ0-9\s/&.,%+\'()\-–—]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _drop_numeric_wrappers(text: str, *, had_non_latin_script: bool = False) -> str:
+    """Drop numeric/rating wrappers only when a clear multi-word name payload remains."""
+    s = (text or "").strip()
+    if not s:
+        return ""
+
+    parenthesized_wrapped = re.fullmatch(
+        r"\d+(?:[.,]\d+)?\s*\(\s*([A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ\s/\-&.+']{2,})\s*\)\s*\d*(?:[.,]\d+)?\s*",
+        s,
+    )
+    if parenthesized_wrapped:
+        payload = parenthesized_wrapped.group(1).strip()
+        if len(re.findall(r'[A-Za-zÀ-ỹĐđ]+', payload)) >= 2:
+            return re.sub(r'\s+', ' ', re.sub(r'\s*/\s*', ' ', payload)).strip()
+
+    wrapped = re.fullmatch(
+        r"\d+(?:[.,]\d+)?\s*\(?\s*([A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ\s/\-&.+']{2,})\s*\)?\s+\d+(?:[.,]\d+)?\s*",
+        s,
+    )
+    paren_payload = re.fullmatch(
+        r"\(?\s*([A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ\s/\-&.+']{2,})\s*\)?\s*\d*(?:[.,]\d+)?\s*",
+        s,
+    )
+    wrapped_match = wrapped or (paren_payload if had_non_latin_script else None)
+    if wrapped_match:
+        payload = wrapped_match.group(1).strip()
+        if len(re.findall(r'[A-Za-zÀ-ỹĐđ]+', payload)) >= 2:
+            return re.sub(r'\s+', ' ', re.sub(r'\s*/\s*', ' ', payload)).strip()
+
+    # If non-Latin script was removed, a leading/trailing standalone number often belongs to that label,
+    # but keep normal address/branch numbers such as `Tiệm Nhà Nấm 89` or `Quận 1`.
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', s)
+    if had_non_latin_script and len(words) >= 4 and words[0].isdigit() and words[-1].isalpha():
+        s = re.sub(r'^\s*\d+(?:[.,]\d+)?\s+', '', s).strip()
+    return re.sub(r'\s+', ' ', s).strip()
 
 def _clean_final_ocr_text(text: str) -> str:
     """Cleanup cuối: không để ký tự/từ rác lọt ra output."""
     if not text:
         return ""
+    had_non_latin_script = bool(re.search(r'[^A-Za-zÀ-ỹĐđ0-9\s/&.,%+\'()\-–—]', text))
+    text = _strip_non_latin_vietnamese_script(text)
     text = _clean_spelling(text)
+    text = _drop_numeric_wrappers(text, had_non_latin_script=had_non_latin_script)
+    text = re.sub(r'\s+\d+(?:[.,]\d+)?\s*\(\s*\d+\s*\)\s*$', '', text).strip()
+    text = re.sub(r'\s+(?:open|closed)\s+\d{1,2}(?::|\s)\d{2}\s*(?:am|pm)?\s*$', '', text, flags=re.IGNORECASE).strip()
     parts = [p.strip() for p in re.split(r'\s*/\s*', text) if p.strip()]
     if len(parts) >= 2:
-        strong_parts = [p for p in parts if not _is_category_or_description_segment(p)]
+        strong_parts = [p for p in parts if not _is_category_or_description_segment(p) and not _is_junk_line(p)]
         if strong_parts:
             parts = strong_parts
     cleaned_parts = []
@@ -54,6 +105,12 @@ def _clean_final_ocr_text(text: str) -> str:
     cleaned = re.sub(
         r'\b(TP\.?)\s+Chí\s+Minh\b',
         r'\1 Hồ Chí Minh',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r'\b(Văn\s+phòng\s+đăng\s+ký\s+đất\s+đai|Ngân\s+hàng\s+Chính\s+sách\s+xã\s+hội)\s+(Chi\s+nhánh\b)',
+        r'\1 - \2',
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -101,10 +158,22 @@ def _clean_final_ocr_text(text: str) -> str:
         if len(left_words) >= 3 and len(right_words) >= 3 and _is_known_token(right_words[0]):
             second_key = _strip_vietnamese_accents(right_words[1]).lower()
             if second_key in {"giao", "duong", "duan", "le", "street", "road"}:
-                suffix = right_words[0]
-                if left_words[-1][:1].isupper() and suffix[:1].islower():
-                    suffix = suffix[:1].upper() + suffix[1:]
-                cleaned = f"{segs[0]} {suffix}"
+                right_segment = segs[1]
+                if left_words[-1][:1].isupper() and right_words[0][:1].islower():
+                    right_segment = re.sub(
+                        r'^\s*' + re.escape(right_words[0]) + r'\b',
+                        right_words[0][:1].upper() + right_words[0][1:],
+                        right_segment,
+                        count=1,
+                    )
+                if second_key == "giao" and right_words[1] != "giao":
+                    right_segment = re.sub(
+                        r'\b' + re.escape(right_words[1]) + r'\b',
+                        "giao",
+                        right_segment,
+                        count=1,
+                    )
+                cleaned = f"{segs[0]} {right_segment}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
     if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
         cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)

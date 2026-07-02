@@ -27,8 +27,14 @@ Dự án hiện tập trung vào bài toán: **tự động thu thập tên POI 
 
 ### 3. OCR local bằng VietOCR + PaddleOCR fallback
 
-Pipeline chính trong [vision.py](file:///d:/grid-osm/src/vision.py):
+Pipeline chính nằm trong package [src/vision](file:///d:/grid-osm/src/vision):
 
+- [detection.py](file:///d:/grid-osm/src/vision/detection.py): detect POI và điều phối OCR.
+- [recognizers.py](file:///d:/grid-osm/src/vision/recognizers.py): VietOCR/PaddleOCR recognition.
+- [geometry.py](file:///d:/grid-osm/src/vision/geometry.py): bbox expansion và text area detection.
+- [crop_processing.py](file:///d:/grid-osm/src/vision/crop_processing.py): normalize crop, split line.
+- [models.py](file:///d:/grid-osm/src/vision/models.py): lazy-load YOLO/VietOCR/PaddleOCR.
+- [rendering.py](file:///d:/grid-osm/src/vision/rendering.py): debug draw và crop save.
 - VietOCR đọc text chính.
 - Chạy nhiều biến thể crop:
   - masked icon
@@ -48,7 +54,16 @@ Logic chính:
 - [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
 - [osm_words.json](file:///d:/grid-osm/data/osm_words.json)
 
-Các nhóm xử lý:
+Các nhóm xử lý nằm trong [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning):
+
+- [dictionary.py](file:///d:/grid-osm/src/vision/text_cleaning/dictionary.py): accent/gazetteer/dictionary helpers.
+- [spelling.py](file:///d:/grid-osm/src/vision/text_cleaning/spelling.py): spelling, duplicate token, diacritics merge.
+- [junk.py](file:///d:/grid-osm/src/vision/text_cleaning/junk.py): junk/category filtering.
+- [final_cleanup.py](file:///d:/grid-osm/src/vision/text_cleaning/final_cleanup.py): final OCR cleanup.
+- [rescue.py](file:///d:/grid-osm/src/vision/text_cleaning/rescue.py): suffix/continuation rescue.
+- [quality.py](file:///d:/grid-osm/src/vision/text_cleaning/quality.py): OCR quality, token checks, edge segment cleanup.
+
+Nhóm xử lý chính:
 
 - Chuẩn hóa địa danh Việt Nam theo gazetteer.
 - Sửa dấu/chính tả bằng dictionary có context.
@@ -104,9 +119,37 @@ grid-osm/
 ├─ src/
 │  ├─ config.py                     # Cấu hình chính
 │  ├─ coordinator.py                # Queue, checkpoint, dedupe, output
-│  ├─ worker.py                     # Playwright worker
+│  ├─ worker.py                     # Bản gốc đã comment để tham chiếu
+│  ├─ worker/                       # Package Playwright worker runtime
+│  │  ├─ __init__.py                 # Re-export Worker
+│  │  ├─ worker.py                   # Class Worker + __init__
+│  │  ├─ browser.py                  # Browser/page lifecycle
+│  │  ├─ runner.py                   # Main worker loop
+│  │  ├─ processing.py               # Tile processing + geo resolve
+│  │  ├─ dom.py                      # DOM POI coordinate extraction
+│  │  ├─ capture.py                  # Screenshot capture/save
+│  │  └─ _original_worker_commented.py # Archive comment bản gốc
 │  ├─ grid.py                       # Tile grid + boundary polygon
-│  ├─ vision.py                     # YOLO + OCR + cleanup pipeline
+│  ├─ vision.py                     # Bản gốc đã comment để tham chiếu
+│  ├─ vision/                       # Package YOLO + OCR runtime
+│  │  ├─ __init__.py                 # API tương thích `from src.vision import ...`
+│  │  ├─ models.py                   # Lazy-load model YOLO/VietOCR/PaddleOCR
+│  │  ├─ detection.py                # Extract POI từ screenshot
+│  │  ├─ recognizers.py              # VietOCR/PaddleOCR recognition
+│  │  ├─ geometry.py                 # Bbox/text-area geometry
+│  │  ├─ crop_processing.py          # Normalize/split OCR crop
+│  │  ├─ rendering.py                # Draw detection + save crop
+│  │  ├─ ocr_quality.py              # Quality helper re-export
+│  │  ├─ text_cleaning/              # OCR cleanup package
+│  │  │  ├─ __init__.py
+│  │  │  ├─ dictionary.py
+│  │  │  ├─ spelling.py
+│  │  │  ├─ junk.py
+│  │  │  ├─ final_cleanup.py
+│  │  │  ├─ rescue.py
+│  │  │  ├─ quality.py
+│  │  │  └─ _original_text_cleaning_commented.py
+│  │  └─ _original_vision_commented.py # Archive comment bản gốc
 │  ├─ vietnam_places.py             # Vietnamese normalization
 │  ├─ canonical_matcher.py          # Match/normalize tên chuẩn
 │  └─ map_viewer.py                 # Local map data/server helper
@@ -236,7 +279,7 @@ Test này bảo vệ các lỗi đã gặp:
 - phát hiện OCR tiếng Việt giả: `Têm viên nông nân`
 - cứu suffix/continuation tên địa điểm
 
-Nên chạy test này trước khi sửa [vision.py](file:///d:/grid-osm/src/vision.py) hoặc [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py).
+Nên chạy test này trước khi sửa [src/vision](file:///d:/grid-osm/src/vision), [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning), hoặc [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py).
 
 ---
 
@@ -256,7 +299,8 @@ Nơi thêm rule:
 
 - Rule ngôn ngữ có context: [ocr_language_corrections.json](file:///d:/grid-osm/data/ocr_language_corrections.json)
 - Gazetteer địa danh: [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
-- Logic cleanup/selection: [vision.py](file:///d:/grid-osm/src/vision.py)
+- Logic detect/OCR: [src/vision](file:///d:/grid-osm/src/vision)
+- Logic cleanup/selection OCR: [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning)
 - Normalize từ/phrase: [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py)
 
 ---

@@ -67,18 +67,52 @@ def split_crop_into_lines(crop_img: np.ndarray, scale: float = 1.0) -> List[np.n
         if in_band:
             if h_sz - start_y >= int(6 * scale):
                 bands.append((start_y, h_sz))
-                
-        if len(bands) <= 1:
-            return [crop_img]
-            
-        line_crops = []
-        pad_y = max(4, int(4 * scale))
-        for sy, ey in bands:
-            y1 = max(0, sy - pad_y)
-            y2 = min(h_sz, ey + pad_y)
-            line_crops.append(crop_img[y1:y2, :])
-            
-        return line_crops
+
+        def _line_crops_from_bands(found_bands: List[tuple]) -> List[np.ndarray]:
+            line_crops = []
+            pad_y = max(4, int(4 * scale))
+            for sy, ey in found_bands:
+                y1 = max(0, sy - pad_y)
+                y2 = min(h_sz, ey + pad_y)
+                line_crops.append(crop_img[y1:y2, :])
+            return line_crops
+
+        if len(bands) > 1:
+            return _line_crops_from_bands(bands)
+
+        # Fallback cho nhãn Google Maps nền ngà/đường: hàng giữa hai dòng không đủ "nền"
+        # theo HSV vì còn màu icon/đường, nhưng mật độ nét chữ vẫn tạo valley rõ.
+        text_mask = (((v < 210) & (s > 20)) | (v < 180)).astype(np.uint8)
+        kernel = np.ones((1, max(2, int(2 * scale))), np.uint8)
+        text_mask = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        row_ink = text_mask.mean(axis=1)
+        smooth_k = max(3, int(5 * scale))
+        kernel_1d = np.ones(smooth_k, dtype=np.float32) / smooth_k
+        smooth = np.convolve(row_ink, kernel_1d, mode="same")
+        active_thresh = max(0.12, float(np.max(smooth)) * 0.40)
+        active = smooth > active_thresh
+
+        proj_bands = []
+        in_band = False
+        start_y = 0
+        for y, is_active in enumerate(active):
+            if is_active:
+                if not in_band:
+                    start_y = y
+                    in_band = True
+            else:
+                if in_band:
+                    end_y = y
+                    if end_y - start_y >= int(5 * scale):
+                        proj_bands.append((start_y, end_y))
+                    in_band = False
+        if in_band and h_sz - start_y >= int(5 * scale):
+            proj_bands.append((start_y, h_sz))
+
+        if len(proj_bands) > 1:
+            return _line_crops_from_bands(proj_bands)
+
+        return [crop_img]
         
     except Exception as e:
         logger.debug("Lỗi khi chia dòng OCR: %s", e)
