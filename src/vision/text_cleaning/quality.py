@@ -67,18 +67,47 @@ def _looks_like_vietnamese_gibberish(text: str) -> bool:
 
     unknown_marked = 0
     odd_repeated_sound = 0
+    repeated_unknown_endings = 0
     keys = []
+    unknown_marked_keys = []
+    marked_keys = []
     for w in word_tokens:
         key = _strip_vietnamese_accents(w).lower()
         keys.append(key)
-        if re.search(r'[À-ỹĐđ]', w) and not _is_known_token(w):
-            unknown_marked += 1
+        if re.search(r'[À-ỹĐđ]', w):
+            marked_keys.append(key)
+            if not _is_known_token(w):
+                unknown_marked += 1
+                unknown_marked_keys.append(key)
         if len(key) >= 3 and key[:1] in {'n', 't', 'v'} and key.endswith(('an', 'en', 'em', 'ien')):
             odd_repeated_sound += 1
 
+    endings = [k[-2:] for k in (unknown_marked_keys or marked_keys) if len(k) >= 3]
+    if len(endings) >= 2:
+        repeated_unknown_endings = len(endings) - len(set(endings))
+        if any(endings.count(e) >= 2 for e in endings):
+            repeated_unknown_endings += 1
+
     title_or_upper = sum(1 for w in word_tokens if w[:1].isupper() or w.isupper())
     first_unknown_marked = bool(re.search(r'[À-ỹĐđ]', word_tokens[0]) and not _is_known_token(word_tokens[0]))
-    if known_count >= max(2, len(word_tokens) // 2) and unknown_marked < 2 and not (first_unknown_marked and title_or_upper <= 1):
+    unknown_ratio = unknown_marked / max(1, len(word_tokens))
+    known_ratio = known_count / max(1, len(word_tokens))
+    ascii_unknown = sum(
+        1
+        for w in word_tokens
+        if not re.search(r'[À-ỹĐđ]', w) and not _is_known_token(w) and not (w[:1].isupper() and len(w) >= 4)
+    )
+
+    tail_marked_count = sum(1 for w in word_tokens[-2:] if re.search(r'[À-ỹĐđ]', w))
+    repeated_marked_vietnamese_syllables = (
+        len(word_tokens) >= 4
+        and len([w for w in word_tokens if re.search(r'[À-ỹĐđ]', w)]) >= 2
+        and repeated_unknown_endings >= 1
+        and title_or_upper <= 1
+    )
+    tail_marked_low_title_signal = len(word_tokens) >= 4 and tail_marked_count == 2 and title_or_upper <= 1
+
+    if known_count >= max(2, len(word_tokens) // 2) and not repeated_marked_vietnamese_syllables and not tail_marked_low_title_signal and unknown_marked < 2 and not (first_unknown_marked and title_or_upper <= 1):
         return False
 
     if first_unknown_marked and len(word_tokens) >= 4 and title_or_upper <= 1:
@@ -87,6 +116,12 @@ def _looks_like_vietnamese_gibberish(text: str) -> bool:
     if unknown_marked >= 2 and known_count == 0:
         return True
     if unknown_marked >= 2 and odd_repeated_sound >= 2:
+        return True
+    if unknown_marked >= 2 and repeated_unknown_endings >= 1 and known_ratio < 0.5:
+        return True
+    if len(word_tokens) >= 4 and tail_marked_count == 2 and title_or_upper <= 1:
+        return True
+    if len(word_tokens) >= 4 and unknown_ratio >= 0.5 and ascii_unknown >= 1 and known_ratio < 0.5:
         return True
     if len(set(keys)) <= len(keys) - 2 and unknown_marked >= 2:
         return True

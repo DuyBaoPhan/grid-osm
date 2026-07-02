@@ -158,10 +158,22 @@ def _clean_final_ocr_text(text: str) -> str:
         if len(left_words) >= 3 and len(right_words) >= 3 and _is_known_token(right_words[0]):
             second_key = _strip_vietnamese_accents(right_words[1]).lower()
             if second_key in {"giao", "duong", "duan", "le", "street", "road"}:
-                suffix = right_words[0]
-                if left_words[-1][:1].isupper() and suffix[:1].islower():
-                    suffix = suffix[:1].upper() + suffix[1:]
-                cleaned = f"{segs[0]} {suffix}"
+                right_segment = segs[1]
+                if left_words[-1][:1].isupper() and right_words[0][:1].islower():
+                    right_segment = re.sub(
+                        r'^\s*' + re.escape(right_words[0]) + r'\b',
+                        right_words[0][:1].upper() + right_words[0][1:],
+                        right_segment,
+                        count=1,
+                    )
+                if second_key == "giao" and right_words[1] != "giao":
+                    right_segment = re.sub(
+                        r'\b' + re.escape(right_words[1]) + r'\b',
+                        "giao",
+                        right_segment,
+                        count=1,
+                    )
+                cleaned = f"{segs[0]} {right_segment}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
     if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
         cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
