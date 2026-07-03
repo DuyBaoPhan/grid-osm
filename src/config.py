@@ -50,10 +50,13 @@ PAGE_SETTLE_MS     = 1_500            # ms — chờ sau networkidle
 EXPAND_EMPTY = False                   # True = expand cả tile trống
 
 # ── File I/O ─────────────────────────────────────────────────
-CHECKPOINT_FILE = str(BASE_DIR / "checkpoint.json")
-RESULTS_FILE    = str(BASE_DIR / "results.json")
+RUNTIME_DIR = BASE_DIR / "runtime"
+RUNTIME_DIR.mkdir(exist_ok=True)
+CHECKPOINT_FILE = str(RUNTIME_DIR / "checkpoint.json")
+RESULTS_FILE    = str(RUNTIME_DIR / "results.json")
 LOG_FILE        = str(BASE_DIR / "scraper.log")
-STATUS_FILE     = str(BASE_DIR / "map_status.json")   # Dùng để HTML auto-reload khi có cập nhật
+STATUS_FILE     = str(RUNTIME_DIR / "map_status.json")   # Dùng để HTML auto-reload khi có cập nhật
+MAP_VIEWER_FILE = str(RUNTIME_DIR / "map_viewer.html")
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING

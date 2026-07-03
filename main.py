@@ -25,7 +25,7 @@ else:
 
 from playwright.async_api import async_playwright
 
-from config import LOG_FILE, LOG_LEVEL, NUM_WORKERS
+from config import LOG_FILE, LOG_LEVEL, MAP_VIEWER_FILE, NUM_WORKERS, RESULTS_FILE
 from src.coordinator import Coordinator
 from src.map_viewer import build_and_save as _build_map
 from src.worker import Worker
@@ -84,17 +84,17 @@ async def main() -> None:
 
     if coord.is_done:
         logger.info("Queue is empty — nothing to do. "
-                    "Delete checkpoint.json to restart.")
+                    "Delete runtime/checkpoint.json to restart.")
         return
 
     # Khởi động HTTP server để phục vụ map_viewer.html qua localhost
-    project_dir = os.path.dirname(os.path.abspath(__file__))
+    runtime_dir = os.path.dirname(MAP_VIEWER_FILE)
     global _http_server
-    _http_server = _start_map_server(project_dir, MAP_SERVER_PORT)
+    _http_server = _start_map_server(runtime_dir, MAP_SERVER_PORT)
 
     # Mở bản đồ trong trình duyệt (qua HTTP → fetch() hoạt động)
     map_path = _build_map(coord._all_tiles, coord._visited, coord._queued, coord._results, coord._discarded, tile_bboxes=coord._tile_bboxes)
-    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/map_viewer.html"
+    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/{os.path.basename(map_path)}"
     logger.info("Map viewer opened: %s", map_url)
     webbrowser.open(map_url)
 
@@ -134,7 +134,7 @@ async def main() -> None:
                 stats["tiles_done"], stats["total_tiles"], stats["pct_done"])
     logger.info("  POIs collected  : %d", stats["pois_found"])
     logger.info("  Queue remaining : %d", stats["queue_size"])
-    logger.info("  Results saved   → results.json")
+    logger.info("  Results saved   → %s", RESULTS_FILE)
     logger.info("=" * 60)
     logger.info("Run `python clean_data.py` to deduplicate and export CSV.")
 

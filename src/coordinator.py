@@ -430,7 +430,7 @@ class Coordinator:
         # Ghi map_status.json → HTML sẽ poll file này để biết khi nào cần reload
         try:
             import time as _time
-            status_path = os.path.join(os.path.dirname(config.__file__), config.STATUS_FILE)
+            status_path = config.STATUS_FILE
             data = {
                 "ts": _time.time(),
                 "done": len(self._visited),

@@ -454,7 +454,7 @@ map.on('zoomend', () => {{
 </html>
 """
 
-_MAP_OUT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "map_viewer.html")
+_MAP_OUT = config.MAP_VIEWER_FILE
 
 
 def build_and_save(
@@ -573,6 +573,7 @@ def build_and_save(
         page_ts=current_ts,
         pois_data=pois_json_str,
     )
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
     return out_path
