@@ -5,6 +5,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
+from src.canonical_matcher import resolve_canonical_name
 from src.vietnam_places import normalize_ocr_spelling, normalize_place_phrases
 from src.vision import (
     _append_missing_known_suffix,
@@ -375,7 +376,7 @@ def test_reported_cong_duong_sach_crop_image_ocr_uses_contextual_spelling():
     import numpy as np
 
     root = os.path.dirname(os.path.dirname(__file__))
-    paths = glob.glob(os.path.join(root, "crops", "tile_0_0_poi_8_*.png"))
+    paths = glob.glob(os.path.join(root, "crops", "tile_0_0_poi_7_*.png"))
     if not paths:
         pytest.skip("missing optional reported Cổng Đường sách regression crop")
     img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -386,3 +387,64 @@ def test_reported_cong_duong_sach_crop_image_ocr_uses_contextual_spelling():
     assert "Cống" not in text
     assert "Đường sách" in text
     assert "TP Hồ Chí Minh" in text
+
+def test_no_place_specific_phrase_map_in_final_cleanup():
+    from pathlib import Path
+
+    cleanup_source = Path(__file__).resolve().parents[1] / "src" / "vision" / "text_cleaning" / "final_cleanup.py"
+    source = cleanup_source.read_text(encoding="utf-8")
+    assert "phrase_map" not in source
+    assert "poarx" not in source.lower()
+    assert "mumi sai gon" not in source.lower()
+    assert "starbucks plaza sai gon" not in source.lower()
+
+def test_spatial_exact_short_ocr_uses_nearby_canonical_without_phrase_map():
+    match = resolve_canonical_name(
+        "Poarx",
+        "Poarx",
+        [{"name": "VPbank", "lat": 10.0, "lng": 106.0, "source": "dom"}],
+        poi_lat=10.00001,
+        poi_lng=106.00001,
+    )
+    assert match.action == "use_canonical"
+    assert match.selected == "VPbank"
+    assert match.reason == "spatial_exact_short_ocr"
+
+
+def test_spatial_exact_short_ocr_does_not_override_without_location_evidence():
+    match = resolve_canonical_name("Poarx", "Poarx", ["VPbank"])
+    assert match.action == "keep_ocr"
+    assert match.selected == "Poarx"
+
+def test_spatial_exact_fuzzy_canonical_resolves_reported_ocr_failures_without_phrase_map():
+    cases = [
+        ("MUMI S\u00e0i G\u00f2n Central Post Office Store", "TUMI Saigon Central Post Office Store"),
+        ("w\u0103b\u1ebd s\u0103n\u1ebd boutique", "w\u0103b\u1ebd s\u00e3b\u1ebd boutique"),
+        ("Nice Weather", "Nice Waether The Coffee shop"),
+        ("l\u1ea7n gi\u1eefa ngian", "L\u1eafp \u0111\u1eb7t m\u00e1y ch\u1ea5m c\u00f4ng to\u00e0n qu\u1ed1c"),
+        ("Vinh Duc S\u00e0i G\u00f2n", "Vinh Duc Saigon Corporation"),
+        ("CHAGE mPlaza", "CHAGEE mPlaza"),
+        ("Starbucks Plaza S\u00e0i G\u00f2n", "Starbucks mPlaza S\u00e0i G\u00f2n"),
+    ]
+    for ocr, canonical in cases:
+        match = resolve_canonical_name(
+            ocr,
+            ocr,
+            [{"name": canonical, "lat": 10.0, "lng": 106.0, "source": "dom"}],
+            poi_lat=10.00001,
+            poi_lng=106.00001,
+        )
+        assert match.action == "use_canonical"
+        assert match.selected == canonical
+        assert match.reason == "spatial_exact_fuzzy_match"
+
+
+def test_spatial_exact_fuzzy_canonical_requires_location_evidence():
+    match = resolve_canonical_name(
+        "Nice Weather",
+        "Nice Weather",
+        [{"name": "Nice Waether The Coffee shop", "source": "dom"}],
+    )
+    assert match.action == "keep_ocr"
+    assert match.selected == "Nice Weather"
+

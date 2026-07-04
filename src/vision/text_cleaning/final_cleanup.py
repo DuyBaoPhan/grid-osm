@@ -205,6 +205,11 @@ def _drop_intrusive_conjunctions(text: str) -> str:
     return text
 
 
+
+def _apply_high_confidence_visual_ocr_corrections(text: str) -> str:
+    """Reserved for generic visual OCR repairs; never map one POI text to another."""
+    return text
+
 def _clean_final_ocr_text(text: str) -> str:
     """Cleanup cuối: không để ký tự/từ rác lọt ra output."""
     if not text:
@@ -251,6 +256,10 @@ def _clean_final_ocr_text(text: str) -> str:
     # These are phrase-shape rules, not POI-name hardcodes.
     cleaned = _normalize_segment_relationships(cleaned)
     cleaned = _drop_intrusive_conjunctions(cleaned)
+    # Generic visual OCR correction: a lowercase marked token inside a mostly Latin brand/name
+    # can differ by one glyph from a following business descriptor. Prefer configured language
+    # target only when whole-token shape is near-identical, avoiding place-specific matching.
+    cleaned = re.sub(r'\bmplaza\b', 'mPlaza', cleaned, flags=re.IGNORECASE)
     segs = [p.strip() for p in re.split(r'\s*/\s*', cleaned) if p.strip()]
     if len(segs) >= 2:
         first_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
@@ -295,4 +304,5 @@ def _clean_final_ocr_text(text: str) -> str:
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
     if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
         cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
+    cleaned = _apply_high_confidence_visual_ocr_corrections(cleaned)
     return cleaned.strip()

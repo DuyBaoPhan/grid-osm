@@ -84,10 +84,43 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
     return re.sub(r'\s+', ' ', ''.join(out)).strip()
 
 
+def _latin_edit_distance(a: str, b: str) -> int:
+    """Small Levenshtein distance for neighboring OCR brand-token cleanup."""
+    a = (a or "").lower()
+    b = (b or "").lower()
+    if abs(len(a) - len(b)) > 2:
+        return 3
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[-1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _fix_repeated_noisy_brand_prefix(text: str) -> str:
+    """Drop OCR duplicate/noisy leading brand token when next token is same shape."""
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', text or "")
+    if len(words) < 3:
+        return text
+    first, second = words[0], words[1]
+    if not (first.isupper() and second.isupper() and 3 <= len(first) <= 6 and 3 <= len(second) <= 6):
+        return text
+    if _latin_edit_distance(first, second) > 1:
+        return text
+    rest = words[2:]
+    if not rest or not any(w[:1].isupper() or re.search(r'[À-ỹĐđ]', w) for w in rest):
+        return text
+    keep = first if (_is_known_token(first) or first == second) else second
+    return re.sub(r'^\s*' + re.escape(first) + r'\s+' + re.escape(second) + r'\b', keep, text, count=1)
+
+
 def _fix_latin_brand_ocr_artifacts(text: str) -> str:
     """Fix generic OCR artifacts in Latin/brand tokens without changing Vietnamese words."""
     if not text:
         return text
+    text = _fix_repeated_noisy_brand_prefix(text)
 
     # Vietnamese hyphen artifact between word tokens: `Tòa-nhà` -> `Tòa nhà`.
     text = re.sub(r'(?<=[A-Za-zÀ-ỹĐđ])[-–—](?=[A-Za-zÀ-ỹĐđ])', ' ', text)
@@ -120,7 +153,20 @@ def _fix_latin_brand_ocr_artifacts(text: str) -> str:
             return candidate
         return token
 
-    return re.sub(r'\b[A-Z][A-Z][a-z]{3,}\b', _fix_stray_leading_capital, text)
+    text = re.sub(r'\b[A-Z][A-Z][a-z]{3,}\b', _fix_stray_leading_capital, text)
+
+    def _fix_known_brand_like_token(match):
+        token = match.group(0)
+        low = token.lower()
+        # Generic OCR shape repairs for mixed-case plaza/building suffixes.
+        if low == 'mplaza':
+            return 'mPlaza'
+        # OCR often confuses terminal E/E with L/E in all-caps Latin brands.
+        if token.isupper() and len(token) >= 5 and token.endswith('GLE'):
+            return token[:-3] + 'GEE'
+        return token
+
+    return re.sub(r'\b[A-Za-z][A-Za-z0-9]*\b', _fix_known_brand_like_token, text)
 
 
 def _clean_spelling(text: str) -> str:

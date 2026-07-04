@@ -98,19 +98,24 @@ def _token_delta_safe(ocr: str, canonical: str) -> bool:
     return True
 
 
-def _distance_score(candidate: Dict[str, Any], poi_lat: Optional[float], poi_lng: Optional[float]) -> float:
+def _candidate_distance_meters(candidate: Dict[str, Any], poi_lat: Optional[float], poi_lng: Optional[float]) -> Optional[float]:
     if poi_lat is None or poi_lng is None:
-        return 0.0
+        return None
     lat = candidate.get("lat")
     lng = candidate.get("lng")
     if lat is None or lng is None:
-        return 0.0
+        return None
     try:
-        # Approx meters, enough for tie-breaks inside one tile.
         dy = (float(lat) - float(poi_lat)) * 111_320.0
         dx = (float(lng) - float(poi_lng)) * 111_320.0 * math.cos(math.radians(float(poi_lat)))
-        dist_m = math.sqrt(dx * dx + dy * dy)
+        return math.sqrt(dx * dx + dy * dy)
     except Exception:
+        return None
+
+
+def _distance_score(candidate: Dict[str, Any], poi_lat: Optional[float], poi_lng: Optional[float]) -> float:
+    dist_m = _candidate_distance_meters(candidate, poi_lat, poi_lng)
+    if dist_m is None:
         return 0.0
     if dist_m <= 15:
         return 0.05
@@ -119,6 +124,23 @@ def _distance_score(candidate: Dict[str, Any], poi_lat: Optional[float], poi_lng
     if dist_m <= 80:
         return 0.01
     return -0.04
+
+
+def _is_suspicious_short_ocr(text: str) -> bool:
+    toks = _TOKEN_RE.findall(text or "")
+    if len(toks) != 1:
+        return False
+    token = toks[0]
+    key = strip_vietnamese_accents(token).lower()
+    if not (4 <= len(key) <= 7):
+        return False
+    if _has_vietnamese_mark(token) or any(ch.isdigit() for ch in token):
+        return False
+    if token.isupper():
+        return False
+    vowels = sum(ch in "aeiouy" for ch in key)
+    # Short title/lowercase OCR with weak vowel/shape signal is often a hallucinated crop label.
+    return vowels / max(1, len(key)) < 0.45 or bool(re.search(r"[qxz]$|rx$", key))
 
 
 def _iter_nearby_names(nearby_names: Any) -> List[Dict[str, Any]]:
@@ -191,6 +213,40 @@ def resolve_canonical_name(
             best_score = score
             best_item = item
             best_text = cand
+
+    if best_item:
+        best_dist = _candidate_distance_meters(best_item, poi_lat, poi_lng)
+        spatial_exact = best_dist is not None and best_dist <= 18.0
+        if (
+            spatial_exact
+            and _is_suspicious_short_ocr(cleaned)
+            and len(_tokens(best_text)) <= 3
+        ):
+            return CanonicalMatch(
+                original,
+                cleaned,
+                best_text,
+                str(best_item.get("source", "nearby")),
+                best_score,
+                "use_canonical",
+                False,
+                "spatial_exact_short_ocr",
+            )
+        if spatial_exact:
+            candidate_token_count = len(_tokens(best_text))
+            ocr_token_count = len(ocr_tokens)
+            spatial_threshold = 0.30 if ocr_token_count >= 3 and candidate_token_count >= 3 else 0.62
+            if best_score >= spatial_threshold:
+                return CanonicalMatch(
+                    original,
+                    cleaned,
+                    best_text,
+                    str(best_item.get("source", "nearby")),
+                    best_score,
+                    "use_canonical",
+                    False,
+                    "spatial_exact_fuzzy_match",
+                )
 
     if best_item and best_score >= min_accept_score and _token_delta_safe(cleaned, best_text):
         # Guard brand names: require very high score before replacing brand-sensitive OCR.

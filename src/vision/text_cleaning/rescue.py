@@ -36,6 +36,7 @@ def _continuation_tokens_are_valid(words: List[str]) -> bool:
     connector_keys = {"giao", "duong", "le", "street", "road", "corner", "nga", "tu", "xoay"}
     known_descriptor_keys = {
         "the", "coffee", "shop", "cafe", "tea", "house", "restaurant", "bar", "store",
+        "corporation", "company", "boutique", "plaza", "mplaza",
         "quan", "ca", "phe", "tra", "sua", "nha", "hang", "tiem", "cho", "thach",
     }
     title_or_viet = 0
