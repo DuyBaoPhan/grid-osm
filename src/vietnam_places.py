@@ -176,7 +176,7 @@ def _is_token_brand_like(token: str) -> bool:
     if (
         not _has_vietnamese_mark(token)
         and token[:1].isupper()
-        and len(token) > 5
+        and len(token) > 6
         and re.match(r'^[A-Za-z]+$', token)
     ):
         return True

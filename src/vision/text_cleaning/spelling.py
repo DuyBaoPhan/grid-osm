@@ -52,6 +52,7 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
             )
             and (
                 not (prev_token.isupper() and token.isupper() and len(key) >= 2)
+                or (prev_token == token and _has_vietnamese_mark(token))
                 or key in {"tp", "q", "p", "tx", "tt", "cn", "ubnd", "hcm"}
             )
             and not any(ch.isdigit() for ch in prev_token + token)

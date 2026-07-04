@@ -282,9 +282,10 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                     raw_text = (predictor.predict(Image.fromarray(im)) or "").strip()
                     text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
                     text_clean = _clean_junk_words(text_clean)
-                    if text_clean and not _is_junk_line(text_clean):
+                    if text_clean:
                         score = _score_ocr_text_quality(text_clean, fx)
-                        candidates.append((score, text_clean))
+                        if score > -150:
+                            candidates.append((score, text_clean))
                 return max(candidates, key=lambda x: x[0])[1] if candidates else ""
 
             def _prepend_prefix_if_shared(base_text: str, alt_text: str) -> str:
@@ -296,24 +297,50 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                 alt_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', alt_clean)
                 base_keys = [_strip_vietnamese_accents(w).lower() for w in base_words]
                 alt_keys = [_strip_vietnamese_accents(w).lower() for w in alt_words]
-                for i in range(1, min(4, len(alt_keys))):
+                for i in range(1, min(4, len(alt_keys)) + 1):
                     prefix_words = alt_words[:i]
                     if len(prefix_words) > 3:
                         break
                     if _is_junk_line(" ".join(prefix_words)) or _junk_token_count(" ".join(prefix_words)):
                         continue
                     prefix_keys = alt_keys[:i]
+                    max_overlap = min(len(prefix_keys), len(base_keys))
+                    for overlap in range(max_overlap, 0, -1):
+                        if prefix_keys[-overlap:] != base_keys[:overlap]:
+                            continue
+                        merged_words = prefix_words[:-overlap] + base_words
+                        if not merged_words or merged_words == base_words:
+                            continue
+                        merged = " ".join(merged_words)
+                        merged_clean = _clean_final_ocr_text(merged)
+                        if merged_clean[:1].islower() and base_clean[:1].isupper():
+                            merged_clean = merged_clean[:1].upper() + merged_clean[1:]
+                        if _score_ocr_text_quality(merged_clean) >= _score_ocr_text_quality(base_clean) - 12:
+                            return merged_clean
                     for j in range(0, len(base_keys)):
                         shared = 0
                         while i + shared < len(alt_keys) and j + shared < len(base_keys) and alt_keys[i + shared] == base_keys[j + shared]:
                             shared += 1
-                        if shared >= 2:
-                            # Avoid prepending if it creates duplicate words at the boundary
+                        if shared >= 2 or (
+                            shared >= 1
+                            and j == 0
+                            and prefix_words
+                            and all(len(w) >= 3 for w in prefix_words)
+                            and _score_ocr_text_quality(" ".join(prefix_words + base_words)) >= _score_ocr_text_quality(base_clean) - 12
+                        ):
+                            # If prefix probe overlaps the base at boundary, keep only new leading tokens.
                             if prefix_keys[-1] == base_keys[j]:
+                                merged_words = prefix_words[:-1] + base_words
+                            else:
+                                merged_words = prefix_words + base_words
+                            if not merged_words or merged_words == base_words:
                                 continue
-                            merged = " ".join(prefix_words + base_words)
-                            if _score_ocr_text_quality(merged) >= _score_ocr_text_quality(base_clean) - 3:
-                                return _clean_final_ocr_text(merged)
+                            merged = " ".join(merged_words)
+                            merged_clean = _clean_final_ocr_text(merged)
+                            if merged_clean[:1].islower() and base_clean[:1].isupper():
+                                merged_clean = merged_clean[:1].upper() + merged_clean[1:]
+                            if _score_ocr_text_quality(merged_clean) >= _score_ocr_text_quality(base_clean) - 12:
+                                return merged_clean
                 return base_clean
 
             for line_crop in line_crops:
@@ -324,7 +351,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                     h_line, w_line = line_crop.shape[:2]
                     # Probe left side: full-line OCR can ignore a visible leading brand when line is wide.
                     if w_line >= int(90 * scale):
-                        for frac in (0.58, 0.68):
+                        for frac in (0.45, 0.50, 0.58, 0.68):
                             left_w = min(w_line, max(int(70 * scale), int(w_line * frac)))
                             left_text = _best_text_for_line(line_crop[:, :left_w])
                             rescued = _prepend_prefix_if_shared(best_line_text, left_text)

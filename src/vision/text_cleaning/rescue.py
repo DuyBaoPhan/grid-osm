@@ -145,8 +145,9 @@ def _merge_missing_middle_tokens(base_text: str, alternate_text: str) -> str:
     alt_keys = [_strip_vietnamese_accents(w).lower() for w in alt_words]
 
     if alt_keys == base_keys:
-        # Same token sequence, but alternate may preserve better casing.
-        return raw_alt if raw_alt != base and _score_ocr_text_quality(raw_alt) >= _score_ocr_text_quality(base) - 4 else base
+        # Same token sequence means no missing middle token exists.
+        # Preserve selected/base OCR spelling instead of letting alternate overwrite diacritics.
+        return base
     if len(alt_words) <= len(base_words):
         return base
 
@@ -184,6 +185,20 @@ def _merge_missing_middle_tokens(base_text: str, alternate_text: str) -> str:
     if total_extra < 1 or total_extra > 4:
         return base
 
+    base_segment_count = len([p for p in re.split(r'\s*/\s*', base) if p.strip()])
+    raw_alt_segments = [p.strip() for p in re.split(r'\s*/\s*', raw_alt) if p.strip()]
+    if base_segment_count >= 2 and len(raw_alt_segments) > base_segment_count:
+        alt_word_segment_indexes = []
+        for seg_idx, segment in enumerate(raw_alt_segments):
+            seg_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segment)
+            alt_word_segment_indexes.extend([seg_idx] * len(seg_words))
+        for start, end in extra_spans:
+            if end == len(alt_words) and start < len(alt_word_segment_indexes):
+                first_extra_segment = alt_word_segment_indexes[start]
+                previous_segment = alt_word_segment_indexes[start - 1] if start > 0 else first_extra_segment
+                if first_extra_segment > previous_segment:
+                    return base
+
     for start, end in extra_spans:
         span_words = alt_words[start:end]
         span_text = " ".join(span_words)
@@ -200,7 +215,7 @@ def _merge_missing_middle_tokens(base_text: str, alternate_text: str) -> str:
             return base
 
     if _score_ocr_text_quality(raw_alt) >= _score_ocr_text_quality(base) - 4:
-        return raw_alt
+        return _clean_final_ocr_text(raw_alt)
     return base
 
 

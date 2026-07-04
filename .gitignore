@@ -2,7 +2,6 @@
 __pycache__/
 *.py[codz]
 *$py.class
-model/
 # C extensions
 *.so
 
@@ -39,6 +38,8 @@ scraper.log
 audit_report.json
 audit_crops.html
 test_ocr.log
+runtime/
+model/
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.

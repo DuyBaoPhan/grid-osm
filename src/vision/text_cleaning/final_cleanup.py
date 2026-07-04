@@ -1,9 +1,15 @@
 # Final OCR cleanup extracted from text_cleaning.py.
 
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 
 from .dictionary import _is_known_token, _strip_vietnamese_accents
-from .spelling import _clean_spelling
+from .spelling import (
+    _clean_spelling,
+    _remove_adjacent_duplicate_ocr_tokens,
+)
 from .junk import (
     _clean_junk_words,
     _drop_stray_leading_edge_token,
@@ -58,6 +64,147 @@ def _drop_numeric_wrappers(text: str, *, had_non_latin_script: bool = False) -> 
         s = re.sub(r'^\s*\d+(?:[.,]\d+)?\s+', '', s).strip()
     return re.sub(r'\s+', ' ', s).strip()
 
+
+def _ocr_words(text: str) -> list[str]:
+    """Tokenize OCR text for phrase-shape cleanup."""
+    return re.findall(r'[A-Za-zÀ-ỹĐđ0-9&.]+', text or "")
+
+
+def _ocr_keys(words: list[str]) -> list[str]:
+    """Accent-insensitive token keys."""
+    return [_strip_vietnamese_accents(word).lower().rstrip('.') for word in words]
+
+
+def _normalize_admin_location_segments(text: str) -> str:
+    """Merge admin abbreviations split from a following location segment."""
+    segments = [part.strip() for part in re.split(r'\s*/\s*', text or "") if part.strip()]
+    if len(segments) < 2:
+        return text
+    merged = []
+    idx = 0
+    while idx < len(segments):
+        current = segments[idx]
+        current_keys = _ocr_keys(_ocr_words(current))
+        if idx + 1 < len(segments) and current_keys and current_keys[-1] in {"tp", "q", "p", "tx", "tt"}:
+            next_words = _ocr_words(segments[idx + 1])
+            next_keys = _ocr_keys(next_words)
+            looks_like_location = 1 <= len(next_words) <= 4 and any(word[:1].isupper() for word in next_words)
+            if looks_like_location and not any(key.isdigit() for key in next_keys):
+                merged.append(f"{current} {segments[idx + 1]}")
+                idx += 2
+                continue
+        merged.append(current)
+        idx += 1
+    return " / ".join(merged)
+
+
+@lru_cache(maxsize=1)
+def _load_configured_phrase_targets() -> tuple[tuple[str, ...], ...]:
+    """Load canonical phrase targets used to restore omitted OCR tokens generically."""
+    path = Path(__file__).resolve().parents[3] / "data" / "ocr_language_corrections.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ()
+    phrases = []
+    for item in data.get("contextual_phrase_corrections", []):
+        target = item.get("target")
+        if isinstance(target, list) and 2 <= len(target) <= 5:
+            phrase = tuple(str(token).strip() for token in target if str(token).strip())
+            if len(phrase) == len(target):
+                phrases.append(phrase)
+    return tuple(phrases)
+
+
+def _restore_omitted_tokens_from_configured_phrases(text: str) -> str:
+    """Restore omitted tokens when OCR output is a subsequence of a configured phrase."""
+    words = _ocr_words(text)
+    keys = _ocr_keys(words)
+    if len(keys) < 2:
+        return text
+    for phrase in _load_configured_phrase_targets():
+        phrase_keys = _ocr_keys(list(phrase))
+        if len(keys) >= len(phrase_keys):
+            continue
+        start = 0
+        matched_positions = []
+        for key in keys:
+            try:
+                pos = phrase_keys.index(key, start)
+            except ValueError:
+                matched_positions = []
+                break
+            matched_positions.append(pos)
+            start = pos + 1
+        if not matched_positions:
+            continue
+        coverage = len(matched_positions) / max(1, len(keys))
+        span = matched_positions[-1] - matched_positions[0] + 1
+        if coverage == 1.0 and span <= len(phrase_keys) and len(phrase_keys) - len(keys) <= 2:
+            restored = " ".join(phrase)
+            pattern = r'\b' + r'\s+'.join(re.escape(word) for word in words) + r'\b'
+            return re.sub(pattern, restored, text, count=1)
+    return text
+
+
+def _normalize_branch_separator(text: str) -> str:
+    """Insert separator before generic branch markers in organization-like names."""
+    words = _ocr_words(text)
+    keys = _ocr_keys(words)
+    branch_markers = {("chi", "nhanh"), ("pgd",), ("cn",)}
+    for idx in range(2, len(keys)):
+        marker = None
+        for size in (2, 1):
+            candidate = tuple(keys[idx:idx + size])
+            if candidate in branch_markers:
+                marker = candidate
+                break
+        if not marker or re.search(r'[-–—]\s*' + re.escape(words[idx]) + r'\b', text, flags=re.IGNORECASE):
+            continue
+        marker_text = r'\s+'.join(re.escape(words[idx + off]) for off in range(len(marker)))
+        return re.sub(r'\s+(' + marker_text + r'\b)', r' - \1', text, count=1)
+    return text
+
+
+def _normalize_segment_relationships(text: str) -> str:
+    """Repair OCR slash relationships between adjacent name segments using token continuity."""
+    segments = [part.strip() for part in re.split(r'\s*/\s*', text or "") if part.strip()]
+    if len(segments) != 2:
+        return text
+
+    left_words = _ocr_words(segments[0])
+    right_words = _ocr_words(segments[1])
+    left_keys = _ocr_keys(left_words)
+    right_keys = _ocr_keys(right_words)
+    if not left_keys or not right_keys:
+        return text
+
+    # Generic case: slash splits one continuous name/branch across two OCR lines.
+    max_overlap = min(len(left_keys), len(right_keys))
+    for overlap in range(max_overlap, 0, -1):
+        if left_keys[-overlap:] == right_keys[:overlap]:
+            merged_words = left_words + right_words[overlap:]
+            if len(merged_words) > len(left_words):
+                return " ".join(merged_words)
+
+    return text
+
+
+def _drop_intrusive_conjunctions(text: str) -> str:
+    """Drop OCR-inserted conjunctions when phrase shape shows a title-name continuation."""
+    words = _ocr_words(text)
+    keys = _ocr_keys(words)
+    for idx in range(len(keys) - 2):
+        if keys[idx:idx + 2] == ["nha", "va"] and words[idx + 2][:1].isupper():
+            return re.sub(
+                r'\b' + re.escape(words[idx]) + r'\s+' + re.escape(words[idx + 1]) + r'\s+',
+                words[idx] + ' ',
+                text,
+                count=1,
+            )
+    return text
+
+
 def _clean_final_ocr_text(text: str) -> str:
     """Cleanup cuối: không để ký tự/từ rác lọt ra output."""
     if not text:
@@ -96,43 +243,14 @@ def _clean_final_ocr_text(text: str) -> str:
             else:
                 cleaned_parts.append(" ".join(kept_words))
     cleaned = " / ".join(cleaned_parts)
-    cleaned = re.sub(
-        r'\b([^/]{1,40}\b(?:TP\.?|Q\.?|P\.?))\s*/\s*((?:Hồ\s+)?Chí\s+Minh|Hồ\s+Chí\s+Minh)\b',
-        r'\1 \2',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r'\b(TP\.?)\s+Chí\s+Minh\b',
-        r'\1 Hồ Chí Minh',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r'\b(Văn\s+phòng\s+đăng\s+ký\s+đất\s+đai|Ngân\s+hàng\s+Chính\s+sách\s+xã\s+hội)\s+(Chi\s+nhánh\b)',
-        r'\1 - \2',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
+    cleaned = _normalize_admin_location_segments(cleaned)
+    cleaned = _restore_omitted_tokens_from_configured_phrases(cleaned)
+    cleaned = _normalize_branch_separator(cleaned)
+    cleaned = _remove_adjacent_duplicate_ocr_tokens(cleaned)
     # Restore missing leading/common descriptor tokens only in strong local context.
     # These are phrase-shape rules, not POI-name hardcodes.
-    cleaned = re.sub(
-        r'^(Vặt\s*[-–—]\s*Nước\s+Mía\b)',
-        r'Ăn \1',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r'\b(Shop\s+Thời\s+Trang)\s*/\s*(Coin\s+Store)\b',
-        r'\1 Nữ - \2',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    cleaned = re.sub(
-        r'\b(Nhà)\s+Và\s+(?=[A-ZÀ-ỸĐ])',
-        r'\1 ',
-        cleaned,
-    )
+    cleaned = _normalize_segment_relationships(cleaned)
+    cleaned = _drop_intrusive_conjunctions(cleaned)
     segs = [p.strip() for p in re.split(r'\s*/\s*', cleaned) if p.strip()]
     if len(segs) >= 2:
         first_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
