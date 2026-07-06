@@ -50,6 +50,24 @@ from .crop_processing import (
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_ocr_rescue_stage(selected_text: str, alt_variants, rescue_fn, stage_name: str) -> str:
+    """Apply one OCR rescue function to masked/unmasked/normalized alternates."""
+    for alt_source, alt_text in alt_variants:
+        rescued_text = rescue_fn(selected_text, alt_text)
+        if rescued_text != selected_text:
+            logger.info(
+                "  [OCR %s] Selected='%s' + %s='%s' -> '%s'",
+                stage_name,
+                selected_text,
+                alt_source,
+                alt_text,
+                rescued_text,
+            )
+            return rescued_text
+    return selected_text
+
+
 def _recognize_text_paddle(cv_img: np.ndarray) -> str:
     """Fallback recognition bằng PaddleOCR trên crop đã chọn."""
     detector = _get_paddle_text_detector()
@@ -525,37 +543,72 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         if best_source == "normalized" and primary_candidate and not _looks_like_bad_ocr(primary_text):
             primary_score, _, primary_cleaned, _ = primary_candidate
             norm_gain = best_score - primary_score
-            if norm_gain < 9:
-                primary_tokens = _ocr_tokens(primary_cleaned)
-                norm_tokens = _ocr_tokens(selected_text)
+            norm_cleaned = _clean_final_ocr_text(norm_text)
+            primary_tokens = _ocr_tokens(primary_cleaned)
+            norm_tokens = _ocr_tokens(selected_text)
+            primary_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', primary_cleaned or "")
+            norm_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', norm_cleaned or "")
+
+            keep_primary_reason = ""
+            if len(primary_words) >= 2 and len(primary_words) == len(norm_words):
+                primary_mark_count = len(re.findall(r'[À-ỹĐđ]', primary_cleaned or ""))
+                norm_mark_count = len(re.findall(r'[À-ỹĐđ]', norm_cleaned or ""))
+                base_diffs = sum(
+                    1
+                    for p_word, n_word in zip(primary_words, norm_words)
+                    if _strip_vietnamese_accents(p_word).lower() != _strip_vietnamese_accents(n_word).lower()
+                )
+                same_shape = all(abs(len(p_word) - len(n_word)) <= 1 for p_word, n_word in zip(primary_words, norm_words))
+                if primary_mark_count > norm_mark_count and 1 <= base_diffs <= 2 and same_shape:
+                    keep_primary_reason = "diacritic-regressed"
+
+            if not keep_primary_reason and norm_gain < 9:
                 if (
                     len(primary_tokens) > len(norm_tokens)
                     and _contains_token_subsequence(primary_tokens, norm_tokens)
                     and _ocr_artifact_score(primary_cleaned) <= _ocr_artifact_score(selected_text) + 6
                 ):
-                    selected_text = primary_cleaned
-                    best_source = "primary"
-                    logger.info(
-                        "  [OCR keep primary] Primary='%s' rejected Normalized='%s' dropped leading tokens (gain=%.1f)",
-                        primary_cleaned,
-                        selected_raw,
-                        norm_gain,
-                    )
+                    keep_primary_reason = "dropped leading tokens"
                 else:
                     m_known = sum(1 for t in _ocr_tokens(primary_text) if _is_known_token(t))
                     n_known = sum(1 for t in _ocr_tokens(selected_raw) if _is_known_token(t))
-                    if n_known > m_known:
-                        # Normalized has more known/valid tokens, keep it
-                        pass
-                    else:
-                        selected_text = primary_cleaned
-                        best_source = "primary"
-                        logger.info(
-                            "  [OCR keep primary] Primary='%s' rejected non-clear Normalized='%s' (gain=%.1f)",
-                            primary_cleaned,
-                            selected_raw,
-                            norm_gain,
-                        )
+                    if n_known <= m_known:
+                        keep_primary_reason = "non-clear"
+
+            if keep_primary_reason:
+                selected_text = primary_cleaned
+                best_source = "primary"
+                logger.info(
+                    "  [OCR keep primary] Primary='%s' rejected Normalized='%s' (%s, gain=%.1f)",
+                    primary_cleaned,
+                    selected_raw,
+                    keep_primary_reason,
+                    norm_gain,
+                )
+        if best_source == "primary" and norm_text and primary_candidate:
+            norm_cleaned = _clean_final_ocr_text(norm_text)
+            primary_cleaned = primary_candidate[2]
+            primary_tokens = _ocr_tokens(primary_cleaned)
+            norm_tokens = _ocr_tokens(norm_cleaned)
+            primary_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', primary_cleaned or "")
+            if (
+                len(primary_tokens) >= 3
+                and len(primary_tokens) == len(norm_tokens)
+                and len(primary_tokens[0]) == len(norm_tokens[0]) + 1
+                and primary_tokens[0].endswith(norm_tokens[0])
+                and primary_tokens[1:] == norm_tokens[1:]
+                and re.search(r'[À-ỹĐđ]', primary_tokens[0])
+                and re.search(r'[À-ỹĐđ]', norm_tokens[0])
+                and primary_words
+                and not primary_words[0].isupper()
+            ):
+                selected_text = norm_cleaned
+                best_source = "normalized"
+                logger.info(
+                    "  [OCR normalized chosen] Primary='%s' repaired leading-prefix artifact -> Normalized='%s'",
+                    primary_cleaned,
+                    norm_cleaned,
+                )
         is_normalized_chosen = best_source == "normalized"
         if best_source == "primary" and norm_text and _normalized_regresses_quality(primary_text, norm_text):
             logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
@@ -590,26 +643,25 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             logger.info("  [OCR merge diacritics] Selected='%s' + Primary='%s' -> '%s'", selected_text, primary_text, merged_text)
             selected_text = merged_text
 
-    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
-        rescued_text = _append_missing_known_suffix(selected_text, alt_text)
-        if rescued_text != selected_text:
-            logger.info("  [OCR suffix rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
-            selected_text = rescued_text
-            break
-
-    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
-        rescued_text = _merge_missing_middle_tokens(selected_text, alt_text)
-        if rescued_text != selected_text:
-            logger.info("  [OCR missing-middle rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
-            selected_text = rescued_text
-            break
-
-    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
-        merged_text = _merge_overlapping_ocr_continuation(selected_text, alt_text)
-        if merged_text != selected_text:
-            logger.info("  [OCR overlap rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, merged_text)
-            selected_text = merged_text
-            break
+    alt_variants = (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text))
+    selected_text = _apply_ocr_rescue_stage(
+        selected_text,
+        alt_variants,
+        _append_missing_known_suffix,
+        "suffix rescue",
+    )
+    selected_text = _apply_ocr_rescue_stage(
+        selected_text,
+        alt_variants,
+        _merge_missing_middle_tokens,
+        "missing-middle rescue",
+    )
+    selected_text = _apply_ocr_rescue_stage(
+        selected_text,
+        alt_variants,
+        _merge_overlapping_ocr_continuation,
+        "overlap rescue",
+    )
         
     # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
     if (

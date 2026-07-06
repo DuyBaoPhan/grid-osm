@@ -376,7 +376,7 @@ def test_reported_cong_duong_sach_crop_image_ocr_uses_contextual_spelling():
     import numpy as np
 
     root = os.path.dirname(os.path.dirname(__file__))
-    paths = glob.glob(os.path.join(root, "crops", "tile_0_0_poi_7_*.png"))
+    paths = glob.glob(os.path.join(root, "crops", "tile_0_0_poi_*Cổng_Đường_sách*.png"))
     if not paths:
         pytest.skip("missing optional reported Cổng Đường sách regression crop")
     img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -447,4 +447,55 @@ def test_spatial_exact_fuzzy_canonical_requires_location_evidence():
     )
     assert match.action == "keep_ocr"
     assert match.selected == "Nice Weather"
+
+def test_normalized_repairs_single_leading_prefix_without_hurting_good_labels():
+    from src.vision.text_cleaning.quality import _normalized_regresses_quality
+
+    assert _normalized_regresses_quality(
+        "TÁO DÀI AND ?ÁO / BÀ BA' RENTALS",
+        "\"ÁO DÀI\" AND ÁO / BÀ BA' RENTALS",
+    )
+    assert _normalized_regresses_quality(
+        "Bưu điện trung / Tâm Sài Gòn",
+        "Buj đào rung / Làm Sa Gòn",
+    )
+
+def test_reported_wabe_crop_keeps_primary_diacritics():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    root = os.path.dirname(os.path.dirname(__file__))
+    paths = glob.glob(os.path.join(root, "crops", "tile_1_0_poi_11_*.png"))
+    if not paths:
+        pytest.skip("missing optional reported w?b? regression crop")
+    img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img is not None and img.size > 0
+    h, w = img.shape[:2]
+    text = _recognize_text_crop_vietocr(img, [0, 0, w, h], icon_side="left", scale=1.0)
+    assert "săbẽ" in text
+    assert "sănẽ" not in text
+
+def test_leading_prefix_repair_preserves_uppercase_acronym_prefixes():
+    from src.vision.text_cleaning.quality import _ocr_tokens
+
+    primary = "UBND ph??ng S?i G?n"
+    normalized = "BND ph??ng S?i G?n"
+    primary_tokens = _ocr_tokens(primary)
+    norm_tokens = _ocr_tokens(normalized)
+    assert len(primary_tokens[0]) == len(norm_tokens[0]) + 1
+    assert primary_tokens[0].endswith(norm_tokens[0])
+    assert primary.split()[0].isupper()
+
+def test_leading_prefix_repair_preserves_ascii_brand_prefixes():
+    from src.vision.text_cleaning.quality import _ocr_tokens
+
+    primary = "Eni Vietnam B.V"
+    normalized = "ni Vietnam B.V"
+    primary_tokens = _ocr_tokens(primary)
+    norm_tokens = _ocr_tokens(normalized)
+    assert len(primary_tokens[0]) == len(norm_tokens[0]) + 1
+    assert primary_tokens[0].endswith(norm_tokens[0])
+    assert not any("?" <= ch <= "?" or ch in "??" for ch in primary_tokens[0])
 
