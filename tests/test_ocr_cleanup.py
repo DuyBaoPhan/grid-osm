@@ -37,6 +37,8 @@ def test_context_spelling_preserves_brands_and_names():
     assert normalize_ocr_spelling("THE COFFEE LAB") == "THE COFFEE LAB"
     assert normalize_ocr_spelling("Highlands Coffee Saigon Post Office") == "Highlands Coffee Saigon Post Office"
     assert _clean_final_ocr_text("Highlands Coffee Saigon Post Office") == "Highlands Coffee Saigon Post Office"
+    assert _clean_final_ocr_text("TÚMI Sài Gòn Central / Post Office Store") == "TUMI Sài Gòn Central / Post Office Store"
+    assert _clean_final_ocr_text("ÁO DÀI AND ÁO BÀ BA RENTALS") == "ÁO DÀI AND ÁO BÀ BA RENTALS"
     assert normalize_ocr_spelling("wăbẽ săbẽ boutique") == "wăbẽ săbẽ boutique"
     assert normalize_ocr_spelling("MCM Post Office") == "MCM Post Office"
 
@@ -47,6 +49,17 @@ def test_place_dictionary_adds_vietnamese_diacritics_conservatively():
     assert normalize_place_phrases("Bun bo Da Lat") == "Bún bò Đà Lạt"
     assert _clean_final_ocr_text("Ca phe sua da") == "Cà phê sua da"
     assert _clean_final_ocr_text("Pho bo Hanoi") == "Phở bò Hà Nội"
+
+
+def test_symspell_ocr_corrections_are_conservative():
+    assert _clean_final_ocr_text("Nha thuoc Long Chau") == "Nhà thuốc Long Châu"
+    assert _clean_final_ocr_text("Khach san Rex") == "Khách sạn Rex"
+    assert _clean_final_ocr_text("Buu dien Trung tam") == "Bưu điện Trung tâm"
+    assert _clean_final_ocr_text("KFC Nguyen Hue").startswith("KFC ")
+    assert _clean_final_ocr_text("GEOX") == "GEOX"
+    assert _clean_final_ocr_text("MCM Post Office") == "MCM Post Office"
+    assert _clean_final_ocr_text("THE COFFEE LAB") == "THE COFFEE LAB"
+    assert _clean_final_ocr_text("Hh3 thu0c L0ng Cbau") != "Nhà thuốc Long Châu"
 
 
 def test_final_cleanup_removes_junk_without_dropping_valid_core():
@@ -61,6 +74,10 @@ def test_merge_best_diacritics_keeps_primary_when_base_same():
 
 def test_crop_regressions_do_not_rewrite_marked_vietnamese_words():
     assert _clean_final_ocr_text("Vườn Trong Phố, Gia Định Connection") == "Vườn Trong Phố, Gia Định Connection"
+    assert _clean_final_ocr_text("Bưu điện Trung / tâm Sài Gòn / Grand 19th century") == "Bưu điện Trung / tâm Sài Gòn"
+    assert _clean_final_ocr_text("Bưu điện Trung / tâm Sài Gòn / Grand 19th-century post office") == "Bưu điện Trung / tâm Sài Gòn"
+    assert _clean_final_ocr_text("Bưu điện Trung / tâm sà gòr / Grand 9th cen ,Jry") == "Bưu điện Trung / tâm sà gòr"
+    assert _clean_final_ocr_text("LPBank PGD Bưu điện / Phòng giao dịch Sài Gòn") == "LPBank PGD Bưu điện / Phòng giao dịch Sài Gòn"
     assert _clean_final_ocr_text("Hum Central - Healthy / Veggies Delights / Trải nghiệm ẩm thực sáng tạo") == "Hum Central - Healthy / Veggies Delights / Trải nghiệm ẩm thực sáng tạo"
     assert _clean_final_ocr_text("MCM Post Office / MCM - Biểu Tượng / Thời Đại Mới") == "MCM Post Office / MCM - Biểu Tượng / Thời Đại Mới"
 

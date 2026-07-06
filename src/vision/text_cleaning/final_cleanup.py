@@ -187,6 +187,21 @@ def _normalize_segment_relationships(text: str) -> str:
             if len(merged_words) > len(left_words):
                 return " ".join(merged_words)
 
+    left_has_vietnamese = bool(re.search(r'[À-ỹĐđ]', segments[0]))
+    right_has_vietnamese = bool(re.search(r'[À-ỹĐđ]', segments[1]))
+    right_title_ratio = sum(1 for word in right_words if word[:1].isupper() or re.search(r'[À-ỹĐđ]', word)) / max(1, len(right_words))
+    has_acronym = any(word.isupper() and 2 <= len(word) <= 6 for word in left_words + right_words)
+    if (
+        left_has_vietnamese
+        and right_has_vietnamese
+        and len(left_words) >= 3
+        and len(right_words) >= 3
+        and right_words[0][:1].isupper()
+        and right_title_ratio >= 0.6
+        and not has_acronym
+    ):
+        return " ".join(left_words + right_words)
+
     return text
 
 
@@ -207,7 +222,13 @@ def _drop_intrusive_conjunctions(text: str) -> str:
 
 
 def _apply_high_confidence_visual_ocr_corrections(text: str) -> str:
-    """Reserved for generic visual OCR repairs; never map one POI text to another."""
+    """Apply generic visual OCR repairs that do not map one POI name to another."""
+    words = _ocr_words(text)
+    if len(words) >= 4 and words[-1] == "8" and not any(word.isdigit() for word in words[:-1]):
+        latin_non_vietnamese = not any(re.search(r'[À-ỹĐđ]', word) for word in words[:-1])
+        title_or_upper = sum(1 for word in words[:-1] if word[:1].isupper() or word.isupper())
+        if latin_non_vietnamese and title_or_upper >= max(2, len(words[:-1]) // 2):
+            return re.sub(r'\s+8\s*$', ' &...', text).strip()
     return text
 
 def _clean_final_ocr_text(text: str) -> str:
@@ -256,10 +277,6 @@ def _clean_final_ocr_text(text: str) -> str:
     # These are phrase-shape rules, not POI-name hardcodes.
     cleaned = _normalize_segment_relationships(cleaned)
     cleaned = _drop_intrusive_conjunctions(cleaned)
-    # Generic visual OCR correction: a lowercase marked token inside a mostly Latin brand/name
-    # can differ by one glyph from a following business descriptor. Prefer configured language
-    # target only when whole-token shape is near-identical, avoiding place-specific matching.
-    cleaned = re.sub(r'\bmplaza\b', 'mPlaza', cleaned, flags=re.IGNORECASE)
     segs = [p.strip() for p in re.split(r'\s*/\s*', cleaned) if p.strip()]
     if len(segs) >= 2:
         first_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
@@ -279,30 +296,6 @@ def _clean_final_ocr_text(text: str) -> str:
             ):
                 segs = segs[1:]
                 cleaned = " / ".join(segs)
-    if len(segs) == 2:
-        left_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
-        right_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[1])
-        if len(left_words) >= 3 and len(right_words) >= 3 and _is_known_token(right_words[0]):
-            second_key = _strip_vietnamese_accents(right_words[1]).lower()
-            if second_key in {"giao", "duong", "duan", "le", "street", "road"}:
-                right_segment = segs[1]
-                if left_words[-1][:1].isupper() and right_words[0][:1].islower():
-                    right_segment = re.sub(
-                        r'^\s*' + re.escape(right_words[0]) + r'\b',
-                        right_words[0][:1].upper() + right_words[0][1:],
-                        right_segment,
-                        count=1,
-                    )
-                if second_key == "giao" and right_words[1] != "giao":
-                    right_segment = re.sub(
-                        r'\b' + re.escape(right_words[1]) + r'\b',
-                        "giao",
-                        right_segment,
-                        count=1,
-                    )
-                cleaned = f"{segs[0]} {right_segment}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
-    if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
-        cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
     cleaned = _apply_high_confidence_visual_ocr_corrections(cleaned)
     return cleaned.strip()

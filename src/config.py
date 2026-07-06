@@ -71,6 +71,11 @@ PADDLE_TEXT_DET_ENABLED = True         # Dùng PaddleOCR detect vùng text trư�
 PADDLE_TEXT_DET_MIN_CONF = 0.45        # Ngưỡng confidence tối thiểu cho text box PaddleOCR
 PADDLE_TEXT_DET_ICON_MARGIN_PX = 28    # Vùng né icon trong crop POI khi lọc text box
 
+# ── OCR SymSpell correction ───────────────────────────────────
+OCR_SYMSPELL_ENABLED = True             # Sửa lỗi OCR nhẹ bằng custom dictionary POI
+OCR_SYMSPELL_MAX_EDIT_DISTANCE = 1      # Bảo thủ: chỉ sửa token lệch 1 ký tự
+OCR_SYMSPELL_MIN_TERM_COUNT = 2         # Bỏ token dictionary quá hiếm khi build SymSpell
+
 # ── YOLOv8 POI Detection ──────────────────────────────────────
 YOLO_MODEL_PATH = str(BASE_DIR / "model" / "detect_place_ggmap.pt")
 

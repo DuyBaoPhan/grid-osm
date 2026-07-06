@@ -562,6 +562,12 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                 if primary_mark_count > norm_mark_count and 1 <= base_diffs <= 2 and same_shape:
                     keep_primary_reason = "diacritic-regressed"
 
+            if not keep_primary_reason:
+                primary_mark_count = len(re.findall(r'[À-ỹĐđ]', primary_cleaned or ""))
+                norm_mark_count = len(re.findall(r'[À-ỹĐđ]', norm_cleaned or ""))
+                if primary_mark_count >= norm_mark_count + 2 and norm_gain < 12:
+                    keep_primary_reason = "diacritic-loss"
+
             if not keep_primary_reason and norm_gain < 9:
                 if (
                     len(primary_tokens) > len(norm_tokens)
