@@ -21,24 +21,19 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import config
 from config import (
-    CENTER_LAT,
-    CENTER_LNG,
-    CLEAN_RESULTS_CSV_FILE,
     EXPAND_EMPTY,
-    NUM_WORKERS,
     RADIUS_KM,
-    TARGET_DISTRICT,
-    TARGET_PROVINCE,
-    TARGET_WARD,
     ZOOM_LEVEL,
 )
 from grid import (
     generate_all_tiles,
     is_point_in_boundary,
     lat_lng_to_tile,
+    load_boundary_from_path,
     load_or_download_boundary,
     tile_center,
 )
+from scan_context import ScanArea, get_single_config_area
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +55,9 @@ class Coordinator:
         _lock       : asyncio.Lock để bảo vệ trạng thái chia sẻ giữa các worker
     """
 
-    def __init__(self) -> None:
+    def __init__(self, area: Optional[ScanArea] = None) -> None:
+        self.area = area or get_single_config_area()
+        os.makedirs(self.area.runtime_dir, exist_ok=True)
         self._all_tiles: List[TileCoord] = []
         self._all_tiles_set: Set[TileCoord] = set()
         self._visited: Set[TileCoord] = set()
@@ -83,21 +80,28 @@ class Coordinator:
           3. Nạp checkpoint (nếu có) để tiếp tục từ lần chạy trước
           4. Đưa tile khởi điểm vào queue
         """
-        # 1. Tải ranh giới quận
-        logger.info("Loading district boundary for '%s'...", TARGET_DISTRICT)
-        self._boundary = load_or_download_boundary(TARGET_DISTRICT)
+        # 1. Tải ranh giới quận/huyện
+        logger.info("Loading boundary for '%s, %s'...", self.area.district, self.area.province)
+        if self.area.boundary_path:
+            self._boundary = load_boundary_from_path(self.area.boundary_path)
+        else:
+            self._boundary = load_or_download_boundary(self.area.district, self.area.province)
         if self._boundary:
             logger.info("District boundary loaded successfully.")
         else:
             logger.warning(
-                "Could not load district boundary for '%s'. "
-                "Geofencing will be disabled — all tiles within radius will be scanned.",
-                TARGET_DISTRICT,
+                "Could not load boundary for '%s'. Geofencing disabled.",
+                self.area.district,
             )
 
         # 2. Sinh danh sách tile
         self._all_tiles = generate_all_tiles(
-            CENTER_LAT, CENTER_LNG, RADIUS_KM, ZOOM_LEVEL, TARGET_DISTRICT
+            self.area.center_lat,
+            self.area.center_lng,
+            RADIUS_KM,
+            ZOOM_LEVEL,
+            self.area.district,
+            boundary_geometry=self._boundary,
         )
         self._all_tiles_set = set(self._all_tiles)
         logger.info("Total tiles to scan: %d", len(self._all_tiles))
@@ -107,12 +111,18 @@ class Coordinator:
         self._results = _deduplicate_pois(self._load_results())
         self._save_clean_results_csv_sync()
 
-        # 4. Xác định tile ban đầu (tile chứa tâm quận)
-        center_tile = lat_lng_to_tile(CENTER_LAT, CENTER_LNG, ZOOM_LEVEL)
+        # 4. Xác định tile ban đầu (tile chứa tâm khu vực)
+        center_tile = lat_lng_to_tile(
+            self.area.center_lat,
+            self.area.center_lng,
+            ZOOM_LEVEL,
+            self.area.center_lat,
+            self.area.center_lng,
+        )
         if center_tile not in self._all_tiles_set:
             # Nếu tâm không trong danh sách, lấy tile gần tâm nhất
             if self._all_tiles:
-                center_tile = _sort_by_distance(set(self._all_tiles), CENTER_LAT, CENTER_LNG)[0]
+                center_tile = _sort_by_distance(set(self._all_tiles), self.area.center_lat, self.area.center_lng)[0]
 
         # 5. Khởi tạo queue từ checkpoint nếu có, hoặc bắt đầu mới hoàn toàn
         if visited_from_checkpoint or queued_from_checkpoint:
@@ -121,7 +131,7 @@ class Coordinator:
 
             # Đưa lại các tile đã queued từ checkpoint vào queue (ưu tiên xử lý trước)
             seed_tiles = queued_from_checkpoint - self._visited - self._discarded
-            for tile in _sort_by_distance(seed_tiles, CENTER_LAT, CENTER_LNG):
+            for tile in _sort_by_distance(seed_tiles, self.area.center_lat, self.area.center_lng):
                 await self._queue.put(tile)
                 self._queued.add(tile)
 
@@ -136,7 +146,7 @@ class Coordinator:
                     "Found %d unscanned tiles not in checkpoint queue — re-queuing them.",
                     len(remaining_unqueued),
                 )
-                for tile in _sort_by_distance(remaining_unqueued, CENTER_LAT, CENTER_LNG):
+                for tile in _sort_by_distance(remaining_unqueued, self.area.center_lat, self.area.center_lng):
                     await self._queue.put(tile)
                     self._queued.add(tile)
 
@@ -147,7 +157,7 @@ class Coordinator:
         else:
             # Bắt đầu mới hoàn toàn: xếp toàn bộ tile theo thứ tự khoảng cách từ tọa độ xuất phát ra ngoài
             # Điều này giúp lan tỏa tròn đều từ tâm, ưu tiên Up, Down, Left, Right trước do khoảng cách nhỏ hơn góc chéo
-            sorted_tiles = _sort_by_distance(self._all_tiles_set, CENTER_LAT, CENTER_LNG)
+            sorted_tiles = _sort_by_distance(self._all_tiles_set, self.area.center_lat, self.area.center_lng)
             for tile in sorted_tiles:
                 await self._queue.put(tile)
                 self._queued.add(tile)
@@ -179,7 +189,7 @@ class Coordinator:
                 remaining = self._all_tiles_set - self._visited - self._discarded - self._queued
                 if remaining:
                     # Lấy tile tiếp theo gần tọa độ xuất phát (tâm) nhất
-                    next_tile = _sort_by_distance(remaining, CENTER_LAT, CENTER_LNG)[0]
+                    next_tile = _sort_by_distance(remaining, self.area.center_lat, self.area.center_lng)[0]
                     await self._queue.put(next_tile)
                     self._queued.add(next_tile)
 
@@ -221,7 +231,7 @@ class Coordinator:
             #    nằm trong polygon không, để ghi đè LLM hallucination ──
             geo_inside = True  # Mặc định: coi là trong quận
             if self._boundary:
-                clat, clng = tile_center(tx, ty, ZOOM_LEVEL)
+                clat, clng = tile_center(tx, ty, ZOOM_LEVEL, self.area.center_lat, self.area.center_lng)
                 geo_inside = is_point_in_boundary(clat, clng, self._boundary, buffer_meters=100.0)
 
             if outside_district and geo_inside:
@@ -325,11 +335,11 @@ class Coordinator:
 
     @property
     def checkpoint_file(self) -> str:
-        return config.CHECKPOINT_FILE
+        return self.area.checkpoint_file
 
     @property
     def results_file(self) -> str:
-        return config.RESULTS_FILE
+        return self.area.results_file
 
     # ── Checkpoint I/O ───────────────────────────────────────
 
@@ -417,7 +427,7 @@ class Coordinator:
 
     def _save_clean_results_csv_sync(self) -> None:
         """Ghi file CSV sạch cuối cùng cho POI đã dedupe."""
-        tmp = CLEAN_RESULTS_CSV_FILE + ".tmp"
+        tmp = self.area.clean_csv_file + ".tmp"
         fieldnames = [
             "title_poi",
             "ten_dia_diem",
@@ -442,13 +452,13 @@ class Coordinator:
                         "title_poi": name,
                         "ten_dia_diem": name,
                         "toa_do": _format_coordinate(lat, lng),
-                        "quan_huyen_xa": _format_admin_area(),
-                        "tinh_thanh_pho": TARGET_PROVINCE,
+                        "quan_huyen_xa": _format_admin_area(self.area),
+                        "tinh_thanh_pho": self.area.province,
                         "crop_image": _format_crop_path(poi.get("crop_image") or poi.get("crop_path")),
                         "tile_x": poi.get("tile_x", ""),
                         "tile_y": poi.get("tile_y", ""),
                     })
-            _robust_replace(tmp, CLEAN_RESULTS_CSV_FILE)
+            _robust_replace(tmp, self.area.clean_csv_file)
         except Exception as exc:
             logger.warning("Could not save clean CSV results: %s", exc)
 
@@ -465,7 +475,12 @@ class Coordinator:
                 self._results,
                 self._discarded,
                 self._captured,
+                out_path=self.area.map_viewer_file,
                 tile_bboxes=self._tile_bboxes,
+                center_lat=self.area.center_lat,
+                center_lng=self.area.center_lng,
+                target_district=self.area.district,
+                boundary_geometry=self._boundary,
             )
         except Exception as exc:
             logger.debug("Could not update map viewer: %s", exc)
@@ -473,7 +488,7 @@ class Coordinator:
         # Ghi map_status.json → HTML sẽ poll file này để biết khi nào cần reload
         try:
             import time as _time
-            status_path = config.STATUS_FILE
+            status_path = self.area.status_file
             data = {
                 "ts": _time.time(),
                 "done": len(self._visited),
@@ -509,10 +524,10 @@ def _format_coordinate(lat: object, lng: object) -> str:
     return f"{lat_s}, {lng_s}"
 
 
-def _format_admin_area() -> str:
+def _format_admin_area(area: ScanArea) -> str:
     """Ghép xã/phường nếu có, rồi quận/huyện đang quét."""
-    ward = (TARGET_WARD or "").strip()
-    district = (TARGET_DISTRICT or "").strip()
+    ward = (area.ward or "").strip()
+    district = (area.district or "").strip()
     return ", ".join(part for part in (ward, district) if part)
 
 

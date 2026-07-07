@@ -229,3 +229,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated nationwide boundaries
+boundaries/
+
+# Generated scan start centers
+centers/

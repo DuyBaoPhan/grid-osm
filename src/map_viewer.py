@@ -466,6 +466,10 @@ def build_and_save(
     captured: set = None,
     out_path: str = _MAP_OUT,
     tile_bboxes: dict = None,
+    center_lat: float = None,
+    center_lng: float = None,
+    target_district: str = None,
+    boundary_geometry: dict = None,
 ) -> str:
     """
     Sinh map_viewer.html tu trang thai hien tai va ghi ra disk.
@@ -483,22 +487,30 @@ def build_and_save(
     pct     = done / total * 100 if total else 0
     poi_count = len(pois)
 
-    # Đọc ranh giới hành chính của quận từ cache nếu có để vẽ lên bản đồ
+    # Đọc ranh giới hành chính để vẽ lên bản đồ
     boundary_geojson_str = "null"
-    from grid import _safe_cache_path
-    cache_path = _safe_cache_path(config.TARGET_DISTRICT)
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "r", encoding="utf-8") as f:
-                boundary_data = json.load(f)
-                boundary_feature = {
-                    "type": "Feature",
-                    "properties": {"name": config.TARGET_DISTRICT},
-                    "geometry": boundary_data
-                }
-                boundary_geojson_str = json.dumps(boundary_feature)
-        except Exception:
-            pass
+    if boundary_geometry:
+        boundary_feature = {
+            "type": "Feature",
+            "properties": {"name": target_district or config.TARGET_DISTRICT},
+            "geometry": boundary_geometry,
+        }
+        boundary_geojson_str = json.dumps(boundary_feature, ensure_ascii=False)
+    else:
+        from grid import _safe_cache_path
+        cache_path = _safe_cache_path(config.TARGET_DISTRICT)
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    boundary_data = json.load(f)
+                    boundary_feature = {
+                        "type": "Feature",
+                        "properties": {"name": config.TARGET_DISTRICT},
+                        "geometry": boundary_data
+                    }
+                    boundary_geojson_str = json.dumps(boundary_feature)
+            except Exception:
+                pass
 
     geojson_obj = build_geojson(all_tiles, visited, queued, discarded, captured, tile_bboxes)
     geojson_str = json.dumps(geojson_obj)
@@ -564,10 +576,10 @@ def build_and_save(
     html = HTML_TEMPLATE.format(
         total=total, done=done, queued=q_count, discarded=disc,
         pending=pending, pois=poi_count, pct=pct,
-        center_lat=config.CENTER_LAT,
-        center_lng=config.CENTER_LNG,
+        center_lat=center_lat if center_lat is not None else config.CENTER_LAT,
+        center_lng=center_lng if center_lng is not None else config.CENTER_LNG,
         map_zoom=display_zoom,
-        target_district=config.TARGET_DISTRICT,
+        target_district=target_district or config.TARGET_DISTRICT,
         geojson=geojson_str,
         boundary_geojson=boundary_geojson_str,
         page_ts=current_ts,

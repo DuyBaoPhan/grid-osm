@@ -1,4 +1,6 @@
+import argparse
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -6,18 +8,16 @@ import sys
 import threading
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
-# Đảm bảo src/ luôn nằm trong sys.path để tìm thấy các module
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))
 
-# Fix Windows terminal encoding (cp1252 không hỗ trợ tiếng Việt có dấu)
 import io
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 else:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 else:
@@ -25,121 +25,127 @@ else:
 
 from playwright.async_api import async_playwright
 
-from config import LOG_FILE, LOG_LEVEL, MAP_VIEWER_FILE, NUM_WORKERS, RESULTS_FILE
+import config
+from config import LOG_FILE, LOG_LEVEL, NUM_WORKERS
 from src.coordinator import Coordinator
-from src.map_viewer import build_and_save as _build_map
+from src.scan_context import ScanArea, get_single_config_area, iter_manifest_areas
 from src.worker import Worker
 
-
-# ── Logging setup ─────────────────────────────────────────────
 
 def _setup_logging() -> None:
     level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
     fmt = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
     datefmt = "%H:%M:%S"
-
     handlers: list[logging.Handler] = [
         logging.StreamHandler(sys.stdout),
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
     ]
-
     logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers)
 
 
 logger = logging.getLogger(__name__)
-
-MAP_SERVER_PORT = 8765  # HTTP server phục vụ map_viewer.html qua localhost
+MAP_SERVER_PORT = 8765
 _http_server: ThreadingHTTPServer | None = None
 
 
 def _start_map_server(directory: str, port: int) -> ThreadingHTTPServer:
-    """Khởi chạy HTTP server nhỏ phục vụ map_viewer.html (cho phép fetch() hoạt động)."""
     class _Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=directory, **kwargs)
-        def log_message(self, *args):  # noqa: tắt log request thừa
+        def log_message(self, *args):
             pass
 
     server = ThreadingHTTPServer(('127.0.0.1', port), _Handler)
-    t = threading.Thread(target=server.serve_forever, daemon=True)
-    t.start()
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     return server
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Google Maps POI scraper")
+    parser.add_argument("--scan-mode", choices=["single", "manifest"], default=config.SCAN_MODE)
+    parser.add_argument("--province", default=config.SCAN_AREA_FILTER_PROVINCE)
+    parser.add_argument("--district", default=config.SCAN_AREA_FILTER_DISTRICT)
+    parser.add_argument("--start-index", type=int, default=config.SCAN_START_INDEX)
+    parser.add_argument("--max-areas", type=int, default=config.SCAN_MAX_AREAS)
+    return parser.parse_args()
+
+
+def _areas_from_args(args: argparse.Namespace) -> list[ScanArea]:
+    if args.scan_mode == "manifest":
+        return list(iter_manifest_areas(args.province, args.district, args.start_index, args.max_areas))
+    return [get_single_config_area()]
+
+
+async def _run_area(area: ScanArea, pw) -> None:
+    logger.info("=" * 60)
+    logger.info("  Area: %s / %s", area.province, area.district)
+    logger.info("  Runtime: %s", area.runtime_dir)
+    logger.info("=" * 60)
+
+    coord = Coordinator(area)
+    await coord.init()
+    if coord.is_done:
+        logger.info("Area done or queue empty: %s / %s", area.province, area.district)
+        _write_done(area, coord)
+        return
+
+    global _http_server
+    runtime_dir = os.path.dirname(area.map_viewer_file)
+    if _http_server is None:
+        _http_server = _start_map_server(runtime_dir, MAP_SERVER_PORT)
+    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/{os.path.basename(area.map_viewer_file)}"
+    logger.info("Map viewer opened: %s", map_url)
+    webbrowser.open(map_url)
+
+    workers = [Worker(i, coord) for i in range(NUM_WORKERS)]
+    tasks = [asyncio.create_task(w.run(pw)) for w in workers]
+    try:
+        done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        for task in done:
+            exc = task.exception()
+            if exc:
+                logger.error("Worker crashed: %s", exc, exc_info=exc)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        remaining = [t for t in tasks if not t.done()]
+        if remaining:
+            await asyncio.gather(*remaining, return_exceptions=True)
+
+    stats = coord.stats
+    logger.info("  DONE area %s / %s", area.province, area.district)
+    logger.info("  Tiles processed : %d / %d (%.1f%%)", stats["tiles_done"], stats["total_tiles"], stats["pct_done"])
+    logger.info("  POIs collected  : %d", stats["pois_found"])
+    logger.info("  Results saved   → %s", area.results_file)
+    if coord.is_done:
+        _write_done(area, coord)
+
+
+def _write_done(area: ScanArea, coord: Coordinator) -> None:
+    path = Path(area.runtime_dir) / "done.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"province": area.province, "district": area.district, "stats": coord.stats}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 async def main() -> None:
     _setup_logging()
-
-    logger.info("=" * 60)
-    logger.info("  Google Maps POI Scraper — Local AI Edition")
-    logger.info("  Workers: %d", NUM_WORKERS)
-    logger.info("=" * 60)
-
-    # Sử dụng kích thước màn hình mặc định từ cấu hình (không tự động fullscreen nữa)
-    import config
-    logger.info("Sử dụng kích thước màn hình từ cấu hình: %dx%d px", config.SCREENSHOT_W, config.SCREENSHOT_H)
-
-    # Khởi tạo coordinator
-    coord = Coordinator()
-    await coord.init()
-
-    if coord.is_done:
-        logger.info("Queue is empty — nothing to do. "
-                    "Delete runtime/checkpoint.json to restart.")
+    args = _parse_args()
+    areas = _areas_from_args(args)
+    logger.info("Google Maps POI Scraper — mode=%s workers=%d areas=%d", args.scan_mode, NUM_WORKERS, len(areas))
+    logger.info("Viewport: %dx%d px", config.SCREENSHOT_W, config.SCREENSHOT_H)
+    if not areas:
+        logger.warning("No scan areas found. Download boundaries/manifest first.")
         return
 
-    # Khởi động HTTP server để phục vụ map_viewer.html qua localhost
-    runtime_dir = os.path.dirname(MAP_VIEWER_FILE)
-    global _http_server
-    _http_server = _start_map_server(runtime_dir, MAP_SERVER_PORT)
-
-    # Mở bản đồ trong trình duyệt (qua HTTP → fetch() hoạt động)
-    map_path = _build_map(coord._all_tiles, coord._visited, coord._queued, coord._results, coord._discarded, tile_bboxes=coord._tile_bboxes)
-    map_url = f"http://127.0.0.1:{MAP_SERVER_PORT}/{os.path.basename(map_path)}"
-    logger.info("Map viewer opened: %s", map_url)
-    webbrowser.open(map_url)
-
-    # Chạy workers dưới Playwright context
     async with async_playwright() as pw:
-        workers = [Worker(i, coord) for i in range(NUM_WORKERS)]
-        tasks = [asyncio.create_task(w.run(pw)) for w in workers]
+        for area in areas:
+            await _run_area(area, pw)
 
-        try:
-            # Chờ hoàn thành
-            done, pending = await asyncio.wait(
-                tasks,
-                return_when=asyncio.FIRST_EXCEPTION,
-            )
-            # Nếu có exception
-            for task in done:
-                exc = task.exception()
-                if exc:
-                    logger.error("Worker crashed: %s", exc, exc_info=exc)
-        except KeyboardInterrupt:
-            logger.warning("KeyboardInterrupt (Ctrl+C) detected — shutting down all workers gracefully…")
-            raise
-        finally:
-            # Huỷ tasks còn lại
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            remaining = [t for t in tasks if not t.done()]
-            if remaining:
-                await asyncio.gather(*remaining, return_exceptions=True)
-
-    # In tóm tắt
-    stats = coord.stats
-    logger.info("=" * 60)
-    logger.info("  DONE")
-    logger.info("  Tiles processed : %d / %d (%.1f%%)",
-                stats["tiles_done"], stats["total_tiles"], stats["pct_done"])
-    logger.info("  POIs collected  : %d", stats["pois_found"])
-    logger.info("  Queue remaining : %d", stats["queue_size"])
-    logger.info("  Results saved   → %s", RESULTS_FILE)
-    logger.info("=" * 60)
-    logger.info("Run `python clean_data.py` to deduplicate and export CSV.")
-
-
-# ── Entry point ───────────────────────────────────────────────
 
 if __name__ == "__main__":
     try:

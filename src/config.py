@@ -59,6 +59,18 @@ LOG_FILE        = str(BASE_DIR / "scraper.log")
 STATUS_FILE     = str(RUNTIME_DIR / "map_status.json")   # Dùng để HTML auto-reload khi có cập nhật
 MAP_VIEWER_FILE = str(RUNTIME_DIR / "map_viewer.html")
 
+# ── Nationwide boundaries / batch scan ───────────────────────
+BOUNDARIES_DIR = BASE_DIR / "boundaries"
+BOUNDARY_MANIFEST_FILE = BOUNDARIES_DIR / "manifest.json"
+CENTERS_DIR = BASE_DIR / "centers"
+CENTER_POINTS_FILE = CENTERS_DIR / "post_office_centers.json"
+AREA_RUNTIME_ROOT = RUNTIME_DIR / "areas"
+SCAN_MODE = "single"                  # single | manifest
+SCAN_AREA_FILTER_PROVINCE = ""        # lọc tỉnh/thành khi SCAN_MODE="manifest"
+SCAN_AREA_FILTER_DISTRICT = ""        # lọc quận/huyện khi SCAN_MODE="manifest"
+SCAN_START_INDEX = 0                   # bỏ qua N dòng đầu manifest
+SCAN_MAX_AREAS = 0                     # 0 = chạy hết manifest
+
 # ── Output metadata ───────────────────────────────────────────
 TARGET_WARD      = ""
 TARGET_PROVINCE  = "TP. Hồ Chí Minh"

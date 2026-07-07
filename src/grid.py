@@ -1,119 +1,108 @@
-# =============================================================
-# grid.py — Hệ thống lưới OSM tile
-#
-# Cung cấp:
-#   lat_lng_to_tile(lat, lng, zoom)       → (tx, ty)
-#   tile_center(tx, ty, zoom)             → (lat, lng)
-#   tile_bbox(tx, ty, zoom)               → (lat_min, lng_min, lat_max, lng_max)
-#   generate_all_tiles(lat, lng, r_km, z) → list[(tx, ty)]
-# =============================================================
+from __future__ import annotations
 
 import math
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import config
-
-# ── Custom Grid coordinates for Perfect Edge-to-Edge Tiling ──
-
-_n = 2 ** config.ZOOM_LEVEL
-_cx_frac = (config.CENTER_LNG + 180.0) / 360.0 * _n
-_lat_rad = math.radians(config.CENTER_LAT)
-_cy_frac = (1.0 - math.asinh(math.tan(_lat_rad)) / math.pi) / 2.0 * _n
+from boundary_manager import load_geojson
 
 
-def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
-    """Chuyển tọa độ địa lý → chỉ số grid (tx, ty) custom gần nhất."""
+def _center_frac(center_lat: float, center_lng: float, zoom: int) -> tuple[float, float, float]:
     n = 2 ** zoom
+    cx = (center_lng + 180.0) / 360.0 * n
+    lat_rad = math.radians(center_lat)
+    cy = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+    return n, cx, cy
+
+
+def lat_lng_to_tile(
+    lat: float,
+    lng: float,
+    zoom: int,
+    center_lat: Optional[float] = None,
+    center_lng: Optional[float] = None,
+) -> Tuple[int, int]:
+    """Chuyển tọa độ địa lý → chỉ số grid custom gần nhất."""
+    center_lat = config.CENTER_LAT if center_lat is None else center_lat
+    center_lng = config.CENTER_LNG if center_lng is None else center_lng
+    n, cx0, cy0 = _center_frac(center_lat, center_lng, zoom)
     cx_frac = (lng + 180.0) / 360.0 * n
     lat_rad = math.radians(lat)
     cy_frac = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
-    
     step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
-    
-    tx = int(round((cx_frac - _cx_frac) / step_x))
-    ty = int(round((cy_frac - _cy_frac) / step_y))
-    return tx, ty
+    return int(round((cx_frac - cx0) / step_x)), int(round((cy_frac - cy0) / step_y))
 
 
-def tile_center(tx: int, ty: int, zoom: int) -> Tuple[float, float]:
-    """
-    Trả về tọa độ tâm của custom grid cell (tx, ty) dịch chuyển.
-    tx: bước nhảy ngang (mỗi bước = 1024 px = 4.0 tile units)
-    ty: bước nhảy dọc (mỗi bước = SCREENSHOT_H px = SCREENSHOT_H/256 tile units)
-    """
+def tile_center(
+    tx: int,
+    ty: int,
+    zoom: int,
+    center_lat: Optional[float] = None,
+    center_lng: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Trả về tọa độ tâm custom grid cell."""
+    center_lat = config.CENTER_LAT if center_lat is None else center_lat
+    center_lng = config.CENTER_LNG if center_lng is None else center_lng
+    n, cx0, cy0 = _center_frac(center_lat, center_lng, zoom)
     step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
-    
-    x_c = _cx_frac + tx * step_x
-    y_c = _cy_frac + ty * step_y
-    
-    def _y_to_lat(y_f: float) -> float:
-        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_f / _n))))
-        
-    lng = x_c / _n * 360.0 - 180.0
-    lat = _y_to_lat(y_c)
+    x_c = cx0 + tx * step_x
+    y_c = cy0 + ty * step_y
+    lng = x_c / n * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_c / n))))
     return lat, lng
 
 
-def tile_viewport_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    """
-    Trả về bounding box thực tế của custom grid cell (tx, ty)
-    tiếp giáp khít mép (edge-to-edge) 0% gap và 0% overlap.
-    """
+def tile_viewport_bbox(
+    tx: int,
+    ty: int,
+    zoom: int,
+    center_lat: Optional[float] = None,
+    center_lng: Optional[float] = None,
+) -> Tuple[float, float, float, float]:
+    """Trả về bbox thực tế của custom grid cell."""
+    center_lat = config.CENTER_LAT if center_lat is None else center_lat
+    center_lng = config.CENTER_LNG if center_lng is None else center_lng
+    n, cx0, cy0 = _center_frac(center_lat, center_lng, zoom)
     step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
-    
-    x_c = _cx_frac + tx * step_x
-    y_c = _cy_frac + ty * step_y
-    
-    x_min = x_c - (step_x / 2.0)
-    x_max = x_c + (step_x / 2.0)
-    y_min = y_c - (step_y / 2.0)
-    y_max = y_c + (step_y / 2.0)
-    
-    def _y_to_lat(y_f: float) -> float:
-        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_f / _n))))
-        
-    lng_min = x_min / _n * 360.0 - 180.0
-    lng_max = x_max / _n * 360.0 - 180.0
-    lat_max = _y_to_lat(y_min)
-    lat_min = _y_to_lat(y_max)
-    
-    return lat_min, lng_min, lat_max, lng_max
+    x_c = cx0 + tx * step_x
+    y_c = cy0 + ty * step_y
+    x_min, x_max = x_c - step_x / 2.0, x_c + step_x / 2.0
+    y_min, y_max = y_c - step_y / 2.0, y_c + step_y / 2.0
+
+    def y_to_lat(y_f: float) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y_f / n))))
+
+    return (
+        y_to_lat(y_max),
+        x_min / n * 360.0 - 180.0,
+        y_to_lat(y_min),
+        x_max / n * 360.0 - 180.0,
+    )
 
 
 def tile_bbox(tx: int, ty: int, zoom: int) -> Tuple[float, float, float, float]:
-    """Trả về bounding box giống tile_viewport_bbox."""
     return tile_viewport_bbox(tx, ty, zoom)
 
 
-# ── Radius-based tile set ────────────────────────────────────
-
 def km_to_tile_radius(km: float, lat: float, zoom: int) -> int:
-    """
-    Ước tính số tile tương ứng với khoảng cách km ở vĩ độ lat.
-    1 tile ≈ 40075 * cos(lat) / 2^zoom km
-    """
     tile_km = 40075.016 * math.cos(math.radians(lat)) / (2 ** zoom)
     return max(1, int(math.ceil(km / tile_km)))
 
 
 def _safe_cache_path(district_name: str) -> str:
-    """Loại bỏ dấu tiếng Việt để tạo tên file cache ASCII an toàn tuyệt đối trên Windows/Linux."""
-    import unicodedata
-    import re
-    nfkd_form = unicodedata.normalize('NFKD', district_name)
-    ascii_name = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-    safe_name = "".join(c if c.isalnum() else "_" for c in ascii_name.lower())
-    safe_name = re.sub(r"_+", "_", safe_name).strip("_")
-    return f"boundary_{safe_name}.json"
+    from boundary_manager import slugify
+    return f"boundary_{slugify(district_name)}.json"
 
 
-def load_or_download_boundary(district_name: str) -> Optional[dict]:
-    """
-    Nạp polygon ranh giới quận từ cache file cục bộ.
-    Nếu chưa có, tự động tải về từ OSM Nominatim API và lưu cache.
-    """
+def load_boundary_from_path(path: str) -> Optional[dict]:
+    return load_geojson(path)
+
+
+def load_or_download_boundary(district_name: str, province_name: str = "Thành phố Hồ Chí Minh") -> Optional[dict]:
+    """Nạp/tải polygon ranh giới quận từ cache cũ ở root project."""
     import json
     import os
     import urllib.parse
@@ -121,55 +110,32 @@ def load_or_download_boundary(district_name: str) -> Optional[dict]:
     import logging
 
     logger = logging.getLogger(__name__)
-    
-    # Chuẩn hóa tên file cache ASCII an toàn
     cache_path = _safe_cache_path(district_name)
-
-    # 1. Nạp từ cache nếu tồn tại
     if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if "type" in data and "coordinates" in data:
-                    logger.info("Loaded cached district boundary from %s", cache_path)
-                    return data
-        except Exception as e:
-            logger.warning("Could not read cached boundary file %s: %s", cache_path, e)
+        geometry = load_geojson(cache_path)
+        if geometry:
+            logger.info("Loaded cached district boundary from %s", cache_path)
+            return geometry
 
-    # 2. Tải từ OSM Nominatim
-    query = f"{district_name}, Thành phố Hồ Chí Minh, Vietnam"
+    query = f"{district_name}, {province_name}, Vietnam"
     url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&polygon_geojson=1&limit=1"
-    
     logger.info("Downloading district boundary for '%s' from Nominatim API...", district_name)
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "OSM-POI-Scraper/2.0 (+https://github.com/DuyBaoPhan/grid-osm)"}
-    )
-    
+    req = urllib.request.Request(url, headers={"User-Agent": "OSM-POI-Scraper/2.0 (+https://github.com/DuyBaoPhan/grid-osm)"})
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            if response.status == 200:
-                results = json.loads(response.read().decode("utf-8"))
-                if results and "geojson" in results[0]:
-                    geometry = results[0]["geojson"]
-                    # Ghi cache file
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(geometry, f, ensure_ascii=False, indent=2)
-                    logger.info("Saved downloaded district boundary to %s", cache_path)
-                    return geometry
-                else:
-                    logger.warning("No geojson geometry found in Nominatim response for '%s'", district_name)
-    except Exception as e:
-        logger.warning("Could not download boundary from Nominatim: %s", e)
-        
+        with urllib.request.urlopen(req, timeout=20) as response:
+            results = json.loads(response.read().decode("utf-8"))
+            if results and "geojson" in results[0]:
+                geometry = results[0]["geojson"]
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(geometry, f, ensure_ascii=False, indent=2)
+                return geometry
+    except Exception as exc:
+        logger.warning("Could not download boundary from Nominatim: %s", exc)
     return None
 
 
 def is_point_in_boundary(lat: float, lng: float, geometry: dict, buffer_meters: float = 0.0) -> bool:
-    """
-    Kiểm tra xem một tọa độ (lat, lng) có nằm trong GeoJSON geometry (Polygon hoặc MultiPolygon) không.
-    Hỗ trợ tham số buffer_meters (nới rộng ranh giới ra một khoảng mét) để tránh mất POI ở biên.
-    """
+    """Kiểm tra điểm nằm trong GeoJSON Polygon/MultiPolygon, có buffer gần đúng."""
     geom_type = geometry.get("type")
     coords = geometry.get("coordinates", [])
 
@@ -178,75 +144,88 @@ def is_point_in_boundary(lat: float, lng: float, geometry: dict, buffer_meters: 
         n = len(poly)
         if n < 3:
             return False
-        p1x, p1y = poly[0][0], poly[0][1] # lng, lat
+        p1x, p1y = poly[0][0], poly[0][1]
         for i in range(n + 1):
             p2x, p2y = poly[i % n][0], poly[i % n][1]
-            if y > min(p1y, p2y):
-                if y <= max(p1y, p2y):
-                    if x <= max(p1x, p2x):
-                        if p1y != p2y:
-                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                        if p1x == p2x or x <= xinters:
-                            inside = not inside
+            if y > min(p1y, p2y) and y <= max(p1y, p2y) and x <= max(p1x, p2x):
+                xinters = p1x
+                if p1y != p2y:
+                    xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                if p1x == p2x or x <= xinters:
+                    inside = not inside
             p1x, p1y = p2x, p2y
         return inside
 
-    # Kiểm tra xem có nằm trực tiếp trong Polygon/MultiPolygon không
-    is_inside = False
-    if geom_type == "Polygon":
-        if coords:
-            is_inside = pip(lng, lat, coords[0])
+    rings: list[list] = []
+    if geom_type == "Polygon" and coords:
+        rings = [coords[0]]
     elif geom_type == "MultiPolygon":
-        for poly_coords in coords:
-            if poly_coords and pip(lng, lat, poly_coords[0]):
-                is_inside = True
-                break
-
-    if is_inside:
+        rings = [poly[0] for poly in coords if poly]
+    if any(pip(lng, lat, ring) for ring in rings):
         return True
-
     if buffer_meters <= 0.0:
         return False
 
-    # Nếu nằm ngoài, kiểm tra xem có nằm trong vùng đệm (buffer) không
-    # Chuyển đổi buffer_meters sang độ (độ vĩ độ/kinh độ gần đúng tại TP.HCM)
     lat_buf = buffer_meters / 111000.0
-    lng_buf = buffer_meters / 109000.0
+    lng_buf = buffer_meters / max(1.0, 111000.0 * math.cos(math.radians(lat)))
     max_buf_sq = max(lat_buf, lng_buf) ** 2
 
-    def point_to_segment_dist_sq(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
-        dx = bx - ax
-        dy = by - ay
+    def dist_sq(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+        dx, dy = bx - ax, by - ay
         if dx == 0 and dy == 0:
             return (px - ax) ** 2 + (py - ay) ** 2
-        t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
-        t = max(0.0, min(1.0, t))
-        cx = ax + t * dx
-        cy = ay + t * dy
+        t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+        cx, cy = ax + t * dx, ay + t * dy
         return (px - cx) ** 2 + (py - cy) ** 2
 
-    def check_poly_buffer(poly: list) -> bool:
-        n = len(poly)
-        if n < 2:
-            return False
-        for i in range(n):
-            p1 = poly[i]
-            p2 = poly[(i + 1) % n]
-            dist_sq = point_to_segment_dist_sq(lng, lat, p1[0], p1[1], p2[0], p2[1])
-            if dist_sq <= max_buf_sq:
+    for ring in rings:
+        for i, p1 in enumerate(ring):
+            p2 = ring[(i + 1) % len(ring)]
+            if dist_sq(lng, lat, p1[0], p1[1], p2[0], p2[1]) <= max_buf_sq:
                 return True
-        return False
-
-    if geom_type == "Polygon":
-        if coords and check_poly_buffer(coords[0]):
-            return True
-    elif geom_type == "MultiPolygon":
-        for poly_coords in coords:
-            if poly_coords and check_poly_buffer(poly_coords[0]):
-                return True
-
     return False
 
+
+def _geometry_bbox(geometry: dict) -> Optional[tuple[float, float, float, float]]:
+    from boundary_manager import geometry_bbox
+    bbox = geometry_bbox(geometry)
+    if not bbox:
+        return None
+    lat_min, lng_min, lat_max, lng_max = bbox
+    return lat_min, lng_min, lat_max, lng_max
+
+
+def generate_tiles_for_boundary(center_lat: float, center_lng: float, zoom: int, geometry: dict) -> List[Tuple[int, int]]:
+    import logging
+    logger = logging.getLogger(__name__)
+    bbox = _geometry_bbox(geometry)
+    if not bbox:
+        return []
+    lat_min, lng_min, lat_max, lng_max = bbox
+    n, cx0, cy0 = _center_frac(center_lat, center_lng, zoom)
+    x1 = (lng_min + 180.0) / 360.0 * n
+    x2 = (lng_max + 180.0) / 360.0 * n
+
+    def lat_to_y(lt: float) -> float:
+        return (1.0 - math.asinh(math.tan(math.radians(lt))) / math.pi) / 2.0 * n
+
+    y1, y2 = lat_to_y(lat_min), lat_to_y(lat_max)
+    step_x = config.SCREENSHOT_W / 256.0
+    step_y = config.SCREENSHOT_H / 256.0
+    tx_min = int(math.floor((min(x1, x2) - cx0) / step_x))
+    tx_max = int(math.ceil((max(x1, x2) - cx0) / step_x))
+    ty_min = int(math.floor((min(y1, y2) - cy0) / step_y))
+    ty_max = int(math.ceil((max(y1, y2) - cy0) / step_y))
+    tiles: List[Tuple[int, int]] = []
+    for tx in range(tx_min, tx_max + 1):
+        for ty in range(ty_min, ty_max + 1):
+            clat, clng = tile_center(tx, ty, zoom, center_lat, center_lng)
+            a, b, c, d = tile_viewport_bbox(tx, ty, zoom, center_lat, center_lng)
+            points = [(a, b), (a, d), (c, b), (c, d), (clat, clng)]
+            if any(is_point_in_boundary(lt, ln, geometry, 0.0) for lt, ln in points):
+                tiles.append((tx, ty))
+    logger.info("Generated %d tiles inside polygon boundary", len(tiles))
+    return tiles
 
 
 def generate_all_tiles(
@@ -255,182 +234,45 @@ def generate_all_tiles(
     radius_km: float,
     zoom: int,
     district_name: Optional[str] = None,
+    boundary_geometry: Optional[dict] = None,
 ) -> List[Tuple[int, int]]:
-    """
-    Sinh danh sách tile thuộc vùng cần quét.
-    - Nếu cung cấp district_name và có thể tải/nạp polygon ranh giới:
-      -> Trả về tất cả tile có tâm nằm trong boundary polygon của quận.
-    - Nếu không, fall back về phương pháp sinh tile hình tròn theo bán kính radius_km truyền thống.
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-
+    if boundary_geometry:
+        return generate_tiles_for_boundary(center_lat, center_lng, zoom, boundary_geometry)
     if district_name:
-        geometry = load_or_download_boundary(district_name)
+        geometry = load_or_download_boundary(district_name, getattr(config, "TARGET_PROVINCE", "Vietnam"))
         if geometry:
-            # Trích xuất bounding box của polygon để duyệt
-            coords = geometry.get("coordinates", [])
-            
-            # Khởi tạo min/max lat/lng
-            lats = []
-            lngs = []
-            
-            def extract_points(lst):
-                for item in lst:
-                    if isinstance(item, list) and len(item) == 2 and isinstance(item[0], (int, float)):
-                        lngs.append(item[0])
-                        lats.append(item[1])
-                    elif isinstance(item, list):
-                        extract_points(item)
-            
-            extract_points(coords)
-            
-            if lats and lngs:
-                # Không nới ranh quận; chống cắt nhãn ở biên vùng quét dùng SCREENSHOT_OVERLAP_PX.
-                lat_buf = 0.0
-                lng_buf = 0.0
-                
-                lat_min = min(lats) - lat_buf
-                lat_max = max(lats) + lat_buf
-                lng_min = min(lngs) - lng_buf
-                lng_max = max(lngs) + lng_buf
-                
-                logger.info(
-                    "District polygon boundary bbox (buffered 0m): lat=[%.6f, %.6f], lng=[%.6f, %.6f]",
-                    lat_min, lat_max, lng_min, lng_max
-                )
-                
-                # Chuyển boundary lat/lng sang fractional tile coordinates
-                x1 = (lng_min + 180.0) / 360.0 * _n
-                x2 = (lng_max + 180.0) / 360.0 * _n
-                
-                def _lat_to_y(lt: float) -> float:
-                    return (1.0 - math.asinh(math.tan(math.radians(lt))) / math.pi) / 2.0 * _n
-                
-                y1 = _lat_to_y(lat_min)
-                y2 = _lat_to_y(lat_max)
-                
-                x_min_frac, x_max_frac = min(x1, x2), max(x1, x2)
-                y_min_frac, y_max_frac = min(y1, y2), max(y1, y2)
-                
-                step_x = config.SCREENSHOT_W / 256.0
-                step_y = config.SCREENSHOT_H / 256.0
-                
-                # Tính phạm vi chỉ số tx, ty quanh tâm
-                tx_min = int(math.floor((x_min_frac - _cx_frac) / step_x))
-                tx_max = int(math.ceil((x_max_frac - _cx_frac) / step_x))
-                ty_min = int(math.floor((y_min_frac - _cy_frac) / step_y))
-                ty_max = int(math.ceil((y_max_frac - _cy_frac) / step_y))
-                
-                tiles: List[Tuple[int, int]] = []
-                for tx in range(tx_min, tx_max + 1):
-                    for ty in range(ty_min, ty_max + 1):
-                        clat, clng = tile_center(tx, ty, zoom)
-                        t_lat_min, t_lng_min, t_lat_max, t_lng_max = tile_viewport_bbox(tx, ty, zoom)
-                        corners = [
-                            (t_lat_min, t_lng_min),
-                            (t_lat_min, t_lng_max),
-                            (t_lat_max, t_lng_min),
-                            (t_lat_max, t_lng_max),
-                            (clat, clng)
-                        ]
-                        # Không nới ranh quận; chỉ lấy tile chạm/nằm trong boundary thật.
-                        if any(is_point_in_boundary(lat, lng, geometry, buffer_meters=0.0) for lat, lng in corners):
-                            tiles.append((tx, ty))
-                
-                logger.info("Generated %d tiles inside polygon boundary of '%s'", len(tiles), district_name)
-                return tiles
-
-    # Fallback to circle radius
-    logger.info("Falling back to traditional circular radius-based tile generation.")
+            return generate_tiles_for_boundary(center_lat, center_lng, zoom, geometry)
     tile_r = km_to_tile_radius(radius_km, center_lat, zoom)
-
     step_x = config.SCREENSHOT_W / 256.0
     step_y = config.SCREENSHOT_H / 256.0
-    
     tx_r = int(math.ceil(tile_r / step_x))
     ty_r = int(math.ceil(tile_r / step_y))
-
-    tiles = []
+    tiles: list[tuple[int, int]] = []
     for ty in range(-ty_r, ty_r + 1):
         for tx in range(-tx_r, tx_r + 1):
-            clat, clng = tile_center(tx, ty, zoom)
+            clat, clng = tile_center(tx, ty, zoom, center_lat, center_lng)
             if _haversine(center_lat, center_lng, clat, clng) <= radius_km:
                 tiles.append((tx, ty))
-
     return tiles
 
 
 def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Khoảng cách Haversine tính bằng km."""
-    R = 6371.0
+    r = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lng2 - lng1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlng / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def pixel_to_gps(
-    center_lat: float,
-    center_lon: float,
-    zoom: int,
-    width: float,
-    height: float,
-    pixel_x: float,
-    pixel_y: float,
-    tile_size: int = 256
-) -> Tuple[float, float]:
-    """
-    Chuyển pixel trên ảnh Google Maps/OSM -> GPS sử dụng Web Mercator Projection.
-    """
+def pixel_to_gps(center_lat: float, center_lon: float, zoom: int, width: float, height: float, pixel_x: float, pixel_y: float, tile_size: int = 256) -> Tuple[float, float]:
     scale = tile_size * (2 ** zoom)
-
-    # ===== GPS tâm -> World Pixel =====
     center_world_x = (center_lon + 180.0) / 360.0 * scale
-
-    sin_lat = math.sin(math.radians(center_lat))
-    sin_lat = max(min(sin_lat, 0.9999), -0.9999)
-
-    center_world_y = (
-        0.5
-        - math.log((1 + sin_lat) / (1 - sin_lat))
-        / (4 * math.pi)
-    ) * scale
-
-    # ===== Pixel tương đối so với tâm =====
-    dx = pixel_x - width / 2
-    dy = pixel_y - height / 2
-
-    # ===== World Pixel của điểm cần tìm =====
-    world_x = center_world_x + dx
-    world_y = center_world_y + dy
-
-    # ===== World Pixel -> GPS =====
+    sin_lat = max(min(math.sin(math.radians(center_lat)), 0.9999), -0.9999)
+    center_world_y = (0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)) * scale
+    world_x = center_world_x + pixel_x - width / 2
+    world_y = center_world_y + pixel_y - height / 2
     lon = world_x / scale * 360.0 - 180.0
-
     n = math.pi - (2 * math.pi * world_y / scale)
-
-    lat = math.degrees(
-        math.atan(
-            math.sinh(n)
-        )
-    )
-
+    lat = math.degrees(math.atan(math.sinh(n)))
     return lat, lon
-
-
-# ── Quick self-test ──────────────────────────────────────────
-if __name__ == "__main__":
-    zoom = 21
-    lat, lng = 10.7769, 106.7009
-    tx, ty = lat_lng_to_tile(lat, lng, zoom)
-    clat, clng = tile_center(tx, ty, zoom)
-    print(f"Input  : ({lat}, {lng})")
-    print(f"Tile   : ({tx}, {ty})")
-    print(f"Center : ({clat:.6f}, {clng:.6f})")
-
-    tiles_1km = generate_all_tiles(lat, lng, 1.0, zoom)
-    tiles_25km = generate_all_tiles(lat, lng, 25.0, zoom)
-    print(f"Tiles in  1 km radius: {len(tiles_1km)}")
-    print(f"Tiles in 25 km radius: {len(tiles_25km)}")
