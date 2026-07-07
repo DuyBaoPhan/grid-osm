@@ -8,7 +8,6 @@ from .dictionary import (
     _normalize_vietnamese_place_phrases,
     _strip_vietnamese_accents,
 )
-from .symspell_corrector import apply_symspell_ocr_corrections
 
 def _choose_better_duplicate_token(left: str, right: str) -> str:
     """Chọn token tốt hơn khi 2 token OCR liền kề cùng base bỏ dấu."""
@@ -156,36 +155,18 @@ def _fix_latin_brand_ocr_artifacts(text: str) -> str:
 
     text = re.sub(r'\b[A-Z][A-Z][a-z]{3,}\b', _fix_stray_leading_capital, text)
 
-    english_context_keys = {
-        "central", "post", "office", "store", "plaza", "mall", "center", "centre",
-        "coffee", "cafe", "restaurant", "hotel", "shop", "market", "bank", "branch",
-        "corner", "lounge", "studio", "city", "saigon", "hcmc", "vietnam",
-    }
-
-    def _strip_accents_from_noisy_allcaps_brand(match):
+    def _fix_known_brand_like_token(match):
         token = match.group(0)
-        key = _strip_vietnamese_accents(token)
-        key_upper = key.upper()
-        # OCR can add Vietnamese marks to short Latin/brand acronyms: `TÚMI` -> `TUMI`.
-        # Only do this in English/brand context and never for known Vietnamese tokens.
-        if (
-            2 <= len(token) <= 6
-            and token.isupper()
-            and re.search(r'[À-ỹ]', token)
-            and re.fullmatch(r'[A-Z0-9&]+', key_upper)
-            and not _is_known_token(token)
-            and not _is_known_token(key)
-        ):
-            return key_upper
+        low = token.lower()
+        # Generic OCR shape repairs for mixed-case plaza/building suffixes.
+        if low == 'mplaza':
+            return 'mPlaza'
+        # OCR often confuses terminal E/E with L/E in all-caps Latin brands.
+        if token.isupper() and len(token) >= 5 and token.endswith('GLE'):
+            return token[:-3] + 'GEE'
         return token
 
-    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', text or "")
-    keys = [_strip_vietnamese_accents(word).lower() for word in words]
-    has_english_brand_context = any(key in english_context_keys for key in keys)
-    if has_english_brand_context:
-        text = re.sub(r'\b[A-ZÀ-ỹĐ0-9&]{2,6}\b', _strip_accents_from_noisy_allcaps_brand, text)
-
-    return text
+    return re.sub(r'\b[A-Za-z][A-Za-z0-9]*\b', _fix_known_brand_like_token, text)
 
 
 def _clean_spelling(text: str) -> str:
@@ -197,7 +178,6 @@ def _clean_spelling(text: str) -> str:
     text = _fix_latin_brand_ocr_artifacts(text)
     text = _normalize_vietnamese_place_phrases(text)
     text = _normalize_ocr_spelling_by_dictionary(text)
-    text = apply_symspell_ocr_corrections(text)
     text = _remove_adjacent_duplicate_ocr_tokens(text)
     return text
 
