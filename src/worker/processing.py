@@ -326,6 +326,8 @@ class TileProcessingMixin:
                 "review_reason":    canonical_match.reason,
                 "approx_lat":       poi_lat,
                 "approx_lng":       poi_lng,
+                "crop_image":       item.get("crop_image") or item.get("crop_path", ""),
+                "crop_path":        item.get("crop_path") or item.get("crop_image", ""),
                 "tile_x":           tx,
                 "tile_y":           ty,
                 "distance_pixels":  round(distance_pixels, 1),

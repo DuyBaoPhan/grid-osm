@@ -54,9 +54,14 @@ RUNTIME_DIR = BASE_DIR / "runtime"
 RUNTIME_DIR.mkdir(exist_ok=True)
 CHECKPOINT_FILE = str(RUNTIME_DIR / "checkpoint.json")
 RESULTS_FILE    = str(RUNTIME_DIR / "results.json")
+CLEAN_RESULTS_CSV_FILE = str(RUNTIME_DIR / "clean_results.csv")
 LOG_FILE        = str(BASE_DIR / "scraper.log")
 STATUS_FILE     = str(RUNTIME_DIR / "map_status.json")   # Dùng để HTML auto-reload khi có cập nhật
 MAP_VIEWER_FILE = str(RUNTIME_DIR / "map_viewer.html")
+
+# ── Output metadata ───────────────────────────────────────────
+TARGET_WARD      = ""
+TARGET_PROVINCE  = "TP. Hồ Chí Minh"
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL = "INFO"                     # DEBUG / INFO / WARNING

@@ -12,6 +12,7 @@
 # =============================================================
 
 import asyncio
+import csv
 import json
 import logging
 import os
@@ -22,10 +23,13 @@ import config
 from config import (
     CENTER_LAT,
     CENTER_LNG,
+    CLEAN_RESULTS_CSV_FILE,
     EXPAND_EMPTY,
     NUM_WORKERS,
     RADIUS_KM,
     TARGET_DISTRICT,
+    TARGET_PROVINCE,
+    TARGET_WARD,
     ZOOM_LEVEL,
 )
 from grid import (
@@ -101,6 +105,7 @@ class Coordinator:
         # 3. Nạp checkpoint
         visited_from_checkpoint, queued_from_checkpoint = self._load_checkpoint()
         self._results = _deduplicate_pois(self._load_results())
+        self._save_clean_results_csv_sync()
 
         # 4. Xác định tile ban đầu (tile chứa tâm quận)
         center_tile = lat_lng_to_tile(CENTER_LAT, CENTER_LNG, ZOOM_LEVEL)
@@ -406,8 +411,46 @@ class Coordinator:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self._results, f, ensure_ascii=False, indent=2)
             _robust_replace(tmp, self.results_file)
+            self._save_clean_results_csv_sync()
         except Exception as exc:
             logger.warning("Could not save results: %s", exc)
+
+    def _save_clean_results_csv_sync(self) -> None:
+        """Ghi file CSV sạch cuối cùng cho POI đã dedupe."""
+        tmp = CLEAN_RESULTS_CSV_FILE + ".tmp"
+        fieldnames = [
+            "title_poi",
+            "ten_dia_diem",
+            "toa_do",
+            "quan_huyen_xa",
+            "tinh_thanh_pho",
+            "crop_image",
+            "tile_x",
+            "tile_y",
+        ]
+        try:
+            with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for poi in self._results:
+                    name = (poi.get("name") or "").strip()
+                    lat = poi.get("approx_lat")
+                    lng = poi.get("approx_lng")
+                    if not name:
+                        continue
+                    writer.writerow({
+                        "title_poi": name,
+                        "ten_dia_diem": name,
+                        "toa_do": _format_coordinate(lat, lng),
+                        "quan_huyen_xa": _format_admin_area(),
+                        "tinh_thanh_pho": TARGET_PROVINCE,
+                        "crop_image": _format_crop_path(poi.get("crop_image") or poi.get("crop_path")),
+                        "tile_x": poi.get("tile_x", ""),
+                        "tile_y": poi.get("tile_y", ""),
+                    })
+            _robust_replace(tmp, CLEAN_RESULTS_CSV_FILE)
+        except Exception as exc:
+            logger.warning("Could not save clean CSV results: %s", exc)
 
     # ── Map viewer update ────────────────────────────────────
 
@@ -446,6 +489,47 @@ class Coordinator:
 
 
 # ── Utilities ────────────────────────────────────────────────
+
+def _format_float(value: object) -> str:
+    """Format số tọa độ ổn định cho CSV."""
+    if value is None:
+        return ""
+    try:
+        return f"{float(value):.6f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _format_coordinate(lat: object, lng: object) -> str:
+    """Format cặp tọa độ lat,lng cho CSV."""
+    lat_s = _format_float(lat)
+    lng_s = _format_float(lng)
+    if not lat_s or not lng_s:
+        return ""
+    return f"{lat_s}, {lng_s}"
+
+
+def _format_admin_area() -> str:
+    """Ghép xã/phường nếu có, rồi quận/huyện đang quét."""
+    ward = (TARGET_WARD or "").strip()
+    district = (TARGET_DISTRICT or "").strip()
+    return ", ".join(part for part in (ward, district) if part)
+
+
+def _format_crop_path(path_value: object) -> str:
+    """Format crop path ngắn, dễ mở từ CSV."""
+    if not path_value:
+        return ""
+    try:
+        path = os.fspath(path_value)
+    except TypeError:
+        return ""
+    try:
+        rel = os.path.relpath(path, config.BASE_DIR)
+    except Exception:
+        rel = path
+    return rel.replace("\\", "/")
+
 
 def _sort_by_distance(
     tiles: Set[TileCoord],

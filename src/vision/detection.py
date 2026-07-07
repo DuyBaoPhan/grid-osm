@@ -438,6 +438,8 @@ async def extract_pois_from_screenshot(
                 safe_name = f"Unknown_{i}"
             filename = f"tile_{tx}_{ty}_poi_{i}_{safe_name}.png"
             output_path = os.path.join(POI_CROPS_DIR, filename)
+            poi_item["crop_image"] = output_path
+            poi_item["crop_path"] = output_path
             save_poi_crop(screenshot_bytes, poi_item, output_path, scale)
             logger.debug("  [Crop saved] %s", output_path)
             
