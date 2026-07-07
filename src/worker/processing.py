@@ -312,12 +312,15 @@ class TileProcessingMixin:
                     canonical_match.reason,
                 )
 
-            # Giữ text OCR trong crop làm nguồn chân lý. Canonical/nearby chỉ là gợi ý, không overwrite `name`.
+            # Use canonical only when matcher accepted high-confidence evidence (DOM/nearby/spatial),
+            # never from hardcoded OCR cleanup rules.
+            final_name = suggested_name or name
+            name_source = canonical_match.source if suggested_name else "ocr"
             pois.append({
-                "name":             name,
+                "name":             final_name,
                 "ocr_name":         name,
                 "suggested_canonical_name": suggested_name,
-                "name_source":      "ocr",
+                "name_source":      name_source,
                 "name_match_score": round(canonical_match.score, 3),
                 "needs_review":     canonical_match.needs_review,
                 "review_reason":    canonical_match.reason,

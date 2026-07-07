@@ -166,29 +166,14 @@ class CaptureMixin:
 
                 console.log('[CENTER]', {{ lat: {lat}, lng: {lng} }});
 
-                // ── 8. Vẽ scan box đúng bằng vùng TILE (SCREENSHOT_W × SCREENSHOT_H, căn giữa viewport) ───
-                const tileW    = {SCREENSHOT_W};
-                const tileH    = {SCREENSHOT_H};
-                const tileLeft = Math.round((window.innerWidth  - tileW) / 2);
-                const tileTop  = Math.round((window.innerHeight - tileH) / 2);
-                let scanBox = document.getElementById('active-worker-scan-box');
-                if (!scanBox) {{
-                    scanBox = document.createElement('div');
-                    scanBox.id = 'active-worker-scan-box';
-                    document.body.appendChild(scanBox);
-                }}
-                scanBox.style.cssText = [
-                    `position:fixed`,
-                    `left:${{tileLeft}}px`,
-                    `top:${{tileTop}}px`,
-                    `width:${{tileW}}px`,
-                    `height:${{tileH}}px`,
-                    `border:3px solid rgba(0,210,255,0.85)`,
-                    `background:transparent`,
-                    `pointer-events:none`,
-                    `z-index:99999999`,
-                    `box-sizing:border-box`
-                ].join('!important;') + '!important';
+                // ── 8. Không vẽ scan box vào DOM trước khi chụp screenshot ───────────────
+                // Trước đây code tạo `active-worker-scan-box` với border cyan tại đây.
+                // Vì screenshot chụp toàn viewport sau bước này, border đó trở thành pixel thật
+                // và lọt vào crop/OCR như các đường xanh ngang qua nhãn POI.
+                // Nếu cần debug vùng tile, hãy vẽ overlay sau khi chụp trên ảnh debug riêng,
+                // không vẽ trực tiếp lên Google Maps DOM trước screenshot.
+                const oldScanBox = document.getElementById('active-worker-scan-box');
+                if (oldScanBox) oldScanBox.remove();
 
                 return null;  // Full viewport, không crop
             }}""")

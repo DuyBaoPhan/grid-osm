@@ -211,7 +211,7 @@ def split_crop_into_lines_normalized(crop_img: np.ndarray, scale: float = 1.0) -
 
 
 def _select_primary_line_crops(line_crops: List[np.ndarray]) -> List[np.ndarray]:
-    """Chỉ giữ dòng tên chính: ưu tiên dòng có font/chiều cao chữ lớn nhất, bỏ mô tả nhỏ bên dưới."""
+    """Giữ dòng tên chính và dòng tiếp nối đủ lớn; bỏ mô tả/category nhỏ bên dưới."""
     usable = [crop for crop in line_crops if crop is not None and crop.size > 0]
     if len(usable) <= 1:
         return usable
@@ -222,12 +222,17 @@ def _select_primary_line_crops(line_crops: List[np.ndarray]) -> List[np.ndarray]
         return usable[:1]
 
     # Google Maps thường đặt tên chính ở đầu nhãn; category/mô tả nằm dưới.
-    # Padding làm dòng nhỏ có crop height gần dòng chính, nên không chọn mọi dòng gần max.
+    # Giữ dòng gần main line như trước, nhưng cho phép dòng thứ 2 thấp hơn nếu vẫn đủ lớn
+    # vì nhiều tên POI hợp lệ xuống dòng (vd: `Hello Thợ - Cứu Hộ Xe / Máy & Sửa Xe Lưu Động`).
     first_h = heights[0]
     keep_threshold = max(first_h * 0.92, max_h * 0.82)
+    continuation_threshold = max(18.0, first_h * 0.55)
     kept = []
-    for crop, h in zip(usable, heights):
+    for idx, (crop, h) in enumerate(zip(usable, heights)):
         if h >= keep_threshold:
+            kept.append(crop)
+            continue
+        if idx == 1 and kept and h >= continuation_threshold:
             kept.append(crop)
             continue
         break

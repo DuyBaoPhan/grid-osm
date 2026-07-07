@@ -70,11 +70,22 @@ OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận 
 PADDLE_TEXT_DET_ENABLED = True         # Dùng PaddleOCR detect vùng text trước khi đưa VietOCR đọc
 PADDLE_TEXT_DET_MIN_CONF = 0.45        # Ngưỡng confidence tối thiểu cho text box PaddleOCR
 PADDLE_TEXT_DET_ICON_MARGIN_PX = 28    # Vùng né icon trong crop POI khi lọc text box
+OCR_FAST_MODE = True                   # Bật early-exit để giảm số lần VietOCR predict khi kết quả đã đủ tốt
+OCR_EARLY_STOP_SCALES = True           # Dừng thử scale OCR sớm nếu line đã đạt chất lượng tốt
+OCR_ENABLE_NORMALIZED_FALLBACK = True  # Giữ normalized fallback cho các case OCR primary chưa đủ tốt
+OCR_GOOD_LINE_SCORE = 18               # Ngưỡng score để nhận line OCR là đủ tốt và bỏ scale còn lại
+OCR_GOOD_PRIMARY_SCORE = 28            # Ngưỡng score để bỏ qua normalized fallback khi primary đã ổn
+OCR_TIMING_LOG_ENABLED = False          # Log thời gian từng nhánh OCR để đo bottleneck thực tế
+OCR_SKIP_UNMASKED_IF_MASKED_GOOD = False # Giữ ổn định pipeline: luôn chạy unmasked để sửa lỗi chữ đầu; chỉ bật True khi chấp nhận rủi ro
+OCR_GOOD_MASKED_SCORE = 44             # Ngưỡng bảo thủ: masked phải rất sạch mới bỏ unmasked
+
+# ── OCR SymSpell correction ───────────────────────────────────
+OCR_SYMSPELL_ENABLED = True             # Sửa lỗi OCR nhẹ bằng custom dictionary POI
+OCR_SYMSPELL_MAX_EDIT_DISTANCE = 1      # Bảo thủ: chỉ sửa token lệch 1 ký tự
+OCR_SYMSPELL_MIN_TERM_COUNT = 2         # Bỏ token dictionary quá hiếm khi build SymSpell
 
 # ── YOLOv8 POI Detection ──────────────────────────────────────
-YOLO_MODEL_PATH = str(BASE_DIR / "model" / "bestv3.pt")
-VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
-OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
+YOLO_MODEL_PATH = str(BASE_DIR / "model" / "detect_place_ggmap.pt")
 
 # ── Icon-Text Matching (Google Maps horizontal layout) ────────
 # User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI của text, khoảng cách ~5px, nằm ngang nhau

@@ -520,10 +520,7 @@ def _is_weak_edge_segment(segment: str) -> bool:
     # Lowercase 1 từ ở rìa thường là mảnh chữ nhãn khác: reverses, tybrid...
     if token[:1].islower() and len(clean) >= 5:
         return True
-    # Titlecase dài kết thúc bằng đuôi OCR artifact như "Priviness".
-    # Giữ an toàn vì chỉ áp dụng khi token nằm ở mép và phần còn lại có tín hiệu mạnh.
-    if token[:1].isupper() and token[1:].islower() and len(clean) >= 8 and clean.endswith("iness"):
-        return True
+    # Titlecase/lowercase edge tokens are handled by generic shape checks only.
     # ALLCAPS dài không phải acronym ngắn thường là mảnh OCR cạnh crop.
     if token.isupper() and len(clean) > 6:
         return True

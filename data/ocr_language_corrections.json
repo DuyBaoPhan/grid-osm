@@ -19,8 +19,7 @@
         "sua",
         "xe",
         "cuu",
-        "ho",
-        "hello"
+        "ho"
       ]
     },
     {
@@ -230,6 +229,71 @@
         "bep",
         "handmade"
       ]
+    },
+    {
+      "wrong_base": "trong",
+      "canonical": "Trường",
+      "context": [
+        "thpt",
+        "thcs",
+        "tieu",
+        "hoc",
+        "chuyen",
+        "mam",
+        "non",
+        "dai"
+      ]
+    },
+    {
+      "wrong_base": "truong",
+      "canonical": "Trường",
+      "context": [
+        "thpt",
+        "thcs",
+        "tieu",
+        "hoc",
+        "chuyen",
+        "mam",
+        "non",
+        "dai"
+      ]
+    },
+    {
+      "wrong_base": "chuyen",
+      "canonical": "Chuyên",
+      "context": [
+        "truong",
+        "thpt",
+        "thcs",
+        "tieu",
+        "hoc"
+      ]
+    },
+    {
+      "wrong_base": "cong",
+      "canonical": "Cổng",
+      "context": [
+        "duong",
+        "sach",
+        "vao",
+        "chao",
+        "truong",
+        "cho",
+        "nha"
+      ]
+    },
+    {
+      "wrong_base": "giao",
+      "canonical": "giao",
+      "context": [
+        "thach",
+        "le",
+        "duan",
+        "vong",
+        "xoay",
+        "pham",
+        "ngoc"
+      ]
     }
   ],
   "contextual_phrase_corrections": [
@@ -416,11 +480,2823 @@
         "Đồ",
         "Cúng"
       ]
+    },
+    {
+      "source": [
+        "quan",
+        "an"
+      ],
+      "target": [
+        "Quán",
+        "ăn"
+      ]
+    },
+    {
+      "source": [
+        "quan",
+        "com"
+      ],
+      "target": [
+        "Quán",
+        "cơm"
+      ]
+    },
+    {
+      "source": [
+        "com",
+        "tam"
+      ],
+      "target": [
+        "Cơm",
+        "tấm"
+      ]
+    },
+    {
+      "source": [
+        "bun",
+        "bo"
+      ],
+      "target": [
+        "Bún",
+        "bò"
+      ]
+    },
+    {
+      "source": [
+        "bun",
+        "rieu"
+      ],
+      "target": [
+        "Bún",
+        "riêu"
+      ]
+    },
+    {
+      "source": [
+        "hu",
+        "tieu"
+      ],
+      "target": [
+        "Hủ",
+        "tiếu"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "mi"
+      ],
+      "target": [
+        "Bánh",
+        "mì"
+      ]
+    },
+    {
+      "source": [
+        "tra",
+        "sua"
+      ],
+      "target": [
+        "Trà",
+        "sữa"
+      ]
+    },
+    {
+      "source": [
+        "rua",
+        "xe"
+      ],
+      "target": [
+        "Rửa",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "bom",
+        "va"
+      ],
+      "target": [
+        "Bơm",
+        "vá"
+      ]
+    },
+    {
+      "source": [
+        "cat",
+        "toc"
+      ],
+      "target": [
+        "Cắt",
+        "tóc"
+      ]
+    },
+    {
+      "source": [
+        "giat",
+        "say"
+      ],
+      "target": [
+        "Giặt",
+        "sấy"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "thoai"
+      ],
+      "target": [
+        "Điện",
+        "thoại"
+      ]
+    },
+    {
+      "source": [
+        "sua",
+        "dien",
+        "thoai"
+      ],
+      "target": [
+        "Sửa",
+        "điện",
+        "thoại"
+      ]
+    },
+    {
+      "source": [
+        "tap",
+        "hoa"
+      ],
+      "target": [
+        "Tạp",
+        "hóa"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang"
+      ],
+      "target": [
+        "Cửa",
+        "hàng"
+      ]
+    },
+    {
+      "source": [
+        "van",
+        "phong",
+        "pham"
+      ],
+      "target": [
+        "Văn",
+        "phòng",
+        "phẩm"
+      ]
+    },
+    {
+      "source": [
+        "my",
+        "pham"
+      ],
+      "target": [
+        "Mỹ",
+        "phẩm"
+      ]
+    },
+    {
+      "source": [
+        "do",
+        "gia",
+        "dung"
+      ],
+      "target": [
+        "Đồ",
+        "gia",
+        "dụng"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "kham"
+      ],
+      "target": [
+        "Phòng",
+        "khám"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "khoa"
+      ],
+      "target": [
+        "Nha",
+        "khoa"
+      ]
+    },
+    {
+      "source": [
+        "benh",
+        "vien"
+      ],
+      "target": [
+        "Bệnh",
+        "viện"
+      ]
+    },
+    {
+      "source": [
+        "mam",
+        "non"
+      ],
+      "target": [
+        "Mầm",
+        "non"
+      ]
+    },
+    {
+      "source": [
+        "tieu",
+        "hoc"
+      ],
+      "target": [
+        "Tiểu",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "hoc"
+      ],
+      "target": [
+        "Trung",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "ngoai",
+        "ngu"
+      ],
+      "target": [
+        "Ngoại",
+        "ngữ"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "trai"
+      ],
+      "target": [
+        "Nguyễn",
+        "Trãi"
+      ]
+    },
+    {
+      "source": [
+        "tran",
+        "hung",
+        "dao"
+      ],
+      "target": [
+        "Trần",
+        "Hưng",
+        "Đạo"
+      ]
+    },
+    {
+      "source": [
+        "le",
+        "loi"
+      ],
+      "target": [
+        "Lê",
+        "Lợi"
+      ]
+    },
+    {
+      "source": [
+        "le",
+        "lai"
+      ],
+      "target": [
+        "Lê",
+        "Lai"
+      ]
+    },
+    {
+      "source": [
+        "ton",
+        "duc",
+        "thang"
+      ],
+      "target": [
+        "Tôn",
+        "Đức",
+        "Thắng"
+      ]
+    },
+    {
+      "source": [
+        "hai",
+        "ba",
+        "trung"
+      ],
+      "target": [
+        "Hai",
+        "Bà",
+        "Trưng"
+      ]
+    },
+    {
+      "source": [
+        "nam",
+        "ky",
+        "khoi",
+        "nghia"
+      ],
+      "target": [
+        "Nam",
+        "Kỳ",
+        "Khởi",
+        "Nghĩa"
+      ]
+    },
+    {
+      "source": [
+        "pho",
+        "bo"
+      ],
+      "target": [
+        "Phở",
+        "bò"
+      ]
+    },
+    {
+      "source": [
+        "pho",
+        "cuon"
+      ],
+      "target": [
+        "Phở",
+        "cuốn"
+      ]
+    },
+    {
+      "source": [
+        "bun",
+        "cha"
+      ],
+      "target": [
+        "Bún",
+        "chả"
+      ]
+    },
+    {
+      "source": [
+        "bun",
+        "thit",
+        "nuong"
+      ],
+      "target": [
+        "Bún",
+        "thịt",
+        "nướng"
+      ]
+    },
+    {
+      "source": [
+        "bun",
+        "dau",
+        "mam",
+        "tom"
+      ],
+      "target": [
+        "Bún",
+        "đậu",
+        "mắm",
+        "tôm"
+      ]
+    },
+    {
+      "source": [
+        "mi",
+        "quang"
+      ],
+      "target": [
+        "Mì",
+        "Quảng"
+      ]
+    },
+    {
+      "source": [
+        "cao",
+        "lau"
+      ],
+      "target": [
+        "Cao",
+        "lầu"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "xeo"
+      ],
+      "target": [
+        "Bánh",
+        "xèo"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "cuon"
+      ],
+      "target": [
+        "Bánh",
+        "cuốn"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "canh"
+      ],
+      "target": [
+        "Bánh",
+        "canh"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "can"
+      ],
+      "target": [
+        "Bánh",
+        "căn"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "beo"
+      ],
+      "target": [
+        "Bánh",
+        "bèo"
+      ]
+    },
+    {
+      "source": [
+        "banh",
+        "trang"
+      ],
+      "target": [
+        "Bánh",
+        "tráng"
+      ]
+    },
+    {
+      "source": [
+        "goi",
+        "cuon"
+      ],
+      "target": [
+        "Gỏi",
+        "cuốn"
+      ]
+    },
+    {
+      "source": [
+        "lau",
+        "de"
+      ],
+      "target": [
+        "Lẩu",
+        "dê"
+      ]
+    },
+    {
+      "source": [
+        "lau",
+        "bo"
+      ],
+      "target": [
+        "Lẩu",
+        "bò"
+      ]
+    },
+    {
+      "source": [
+        "lau",
+        "hai",
+        "san"
+      ],
+      "target": [
+        "Lẩu",
+        "hải",
+        "sản"
+      ]
+    },
+    {
+      "source": [
+        "quan",
+        "nhau"
+      ],
+      "target": [
+        "Quán",
+        "nhậu"
+      ]
+    },
+    {
+      "source": [
+        "quan",
+        "cafe"
+      ],
+      "target": [
+        "Quán",
+        "cafe"
+      ]
+    },
+    {
+      "source": [
+        "quan",
+        "ca",
+        "phe"
+      ],
+      "target": [
+        "Quán",
+        "cà",
+        "phê"
+      ]
+    },
+    {
+      "source": [
+        "ca",
+        "phe",
+        "muoi"
+      ],
+      "target": [
+        "Cà",
+        "phê",
+        "muối"
+      ]
+    },
+    {
+      "source": [
+        "tra",
+        "chanh"
+      ],
+      "target": [
+        "Trà",
+        "chanh"
+      ]
+    },
+    {
+      "source": [
+        "tra",
+        "da"
+      ],
+      "target": [
+        "Trà",
+        "đá"
+      ]
+    },
+    {
+      "source": [
+        "che",
+        "thai"
+      ],
+      "target": [
+        "Chè",
+        "Thái"
+      ]
+    },
+    {
+      "source": [
+        "sinh",
+        "to"
+      ],
+      "target": [
+        "Sinh",
+        "tố"
+      ]
+    },
+    {
+      "source": [
+        "nuoc",
+        "ep"
+      ],
+      "target": [
+        "Nước",
+        "ép"
+      ]
+    },
+    {
+      "source": [
+        "hai",
+        "san"
+      ],
+      "target": [
+        "Hải",
+        "sản"
+      ]
+    },
+    {
+      "source": [
+        "do",
+        "nuong"
+      ],
+      "target": [
+        "Đồ",
+        "nướng"
+      ]
+    },
+    {
+      "source": [
+        "do",
+        "an",
+        "vat"
+      ],
+      "target": [
+        "Đồ",
+        "ăn",
+        "vặt"
+      ]
+    },
+    {
+      "source": [
+        "tiem",
+        "toc"
+      ],
+      "target": [
+        "Tiệm",
+        "tóc"
+      ]
+    },
+    {
+      "source": [
+        "tiem",
+        "nail"
+      ],
+      "target": [
+        "Tiệm",
+        "nail"
+      ]
+    },
+    {
+      "source": [
+        "tiem",
+        "giat",
+        "ui"
+      ],
+      "target": [
+        "Tiệm",
+        "giặt",
+        "ủi"
+      ]
+    },
+    {
+      "source": [
+        "giat",
+        "ui"
+      ],
+      "target": [
+        "Giặt",
+        "ủi"
+      ]
+    },
+    {
+      "source": [
+        "ve",
+        "sinh",
+        "cong",
+        "nghiep"
+      ],
+      "target": [
+        "Vệ",
+        "sinh",
+        "công",
+        "nghiệp"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "lanh"
+      ],
+      "target": [
+        "Điện",
+        "lạnh"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "nuoc"
+      ],
+      "target": [
+        "Điện",
+        "nước"
+      ]
+    },
+    {
+      "source": [
+        "sua",
+        "khoa"
+      ],
+      "target": [
+        "Sửa",
+        "khóa"
+      ]
+    },
+    {
+      "source": [
+        "sua",
+        "may",
+        "tinh"
+      ],
+      "target": [
+        "Sửa",
+        "máy",
+        "tính"
+      ]
+    },
+    {
+      "source": [
+        "may",
+        "tinh"
+      ],
+      "target": [
+        "Máy",
+        "tính"
+      ]
+    },
+    {
+      "source": [
+        "photocopy"
+      ],
+      "target": [
+        "Photocopy"
+      ]
+    },
+    {
+      "source": [
+        "in",
+        "an"
+      ],
+      "target": [
+        "In",
+        "ấn"
+      ]
+    },
+    {
+      "source": [
+        "chuyen",
+        "phat",
+        "nhanh"
+      ],
+      "target": [
+        "Chuyển",
+        "phát",
+        "nhanh"
+      ]
+    },
+    {
+      "source": [
+        "van",
+        "chuyen"
+      ],
+      "target": [
+        "Vận",
+        "chuyển"
+      ]
+    },
+    {
+      "source": [
+        "cho",
+        "thue",
+        "xe"
+      ],
+      "target": [
+        "Cho",
+        "thuê",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "phu",
+        "tung",
+        "xe",
+        "may"
+      ],
+      "target": [
+        "Phụ",
+        "tùng",
+        "xe",
+        "máy"
+      ]
+    },
+    {
+      "source": [
+        "bao",
+        "duong",
+        "xe"
+      ],
+      "target": [
+        "Bảo",
+        "dưỡng",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "cuu",
+        "ho",
+        "giao",
+        "thong"
+      ],
+      "target": [
+        "Cứu",
+        "hộ",
+        "giao",
+        "thông"
+      ]
+    },
+    {
+      "source": [
+        "cat",
+        "kinh"
+      ],
+      "target": [
+        "Cắt",
+        "kính"
+      ]
+    },
+    {
+      "source": [
+        "nhom",
+        "kinh"
+      ],
+      "target": [
+        "Nhôm",
+        "kính"
+      ]
+    },
+    {
+      "source": [
+        "vat",
+        "lieu",
+        "xay",
+        "dung"
+      ],
+      "target": [
+        "Vật",
+        "liệu",
+        "xây",
+        "dựng"
+      ]
+    },
+    {
+      "source": [
+        "noi",
+        "that"
+      ],
+      "target": [
+        "Nội",
+        "thất"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "may"
+      ],
+      "target": [
+        "Điện",
+        "máy"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "dan",
+        "dung"
+      ],
+      "target": [
+        "Điện",
+        "dân",
+        "dụng"
+      ]
+    },
+    {
+      "source": [
+        "sieu",
+        "thi"
+      ],
+      "target": [
+        "Siêu",
+        "thị"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "tien",
+        "loi"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "tiện",
+        "lợi"
+      ]
+    },
+    {
+      "source": [
+        "cho",
+        "dem"
+      ],
+      "target": [
+        "Chợ",
+        "đêm"
+      ]
+    },
+    {
+      "source": [
+        "cho",
+        "dau",
+        "moi"
+      ],
+      "target": [
+        "Chợ",
+        "đầu",
+        "mối"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "thuong",
+        "mai"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "thương",
+        "mại"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "tap",
+        "hoa"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "tạp",
+        "hóa"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "my",
+        "pham"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "mỹ",
+        "phẩm"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "dien",
+        "thoai"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "điện",
+        "thoại"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "xe",
+        "may"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "xe",
+        "máy"
+      ]
+    },
+    {
+      "source": [
+        "cua",
+        "hang",
+        "xang",
+        "dau"
+      ],
+      "target": [
+        "Cửa",
+        "hàng",
+        "xăng",
+        "dầu"
+      ]
+    },
+    {
+      "source": [
+        "cay",
+        "xang"
+      ],
+      "target": [
+        "Cây",
+        "xăng"
+      ]
+    },
+    {
+      "source": [
+        "tram",
+        "xang"
+      ],
+      "target": [
+        "Trạm",
+        "xăng"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "sach"
+      ],
+      "target": [
+        "Nhà",
+        "sách"
+      ]
+    },
+    {
+      "source": [
+        "do",
+        "choi"
+      ],
+      "target": [
+        "Đồ",
+        "chơi"
+      ]
+    },
+    {
+      "source": [
+        "thoi",
+        "trang"
+      ],
+      "target": [
+        "Thời",
+        "trang"
+      ]
+    },
+    {
+      "source": [
+        "giay",
+        "dep"
+      ],
+      "target": [
+        "Giày",
+        "dép"
+      ]
+    },
+    {
+      "source": [
+        "dong",
+        "ho"
+      ],
+      "target": [
+        "Đồng",
+        "hồ"
+      ]
+    },
+    {
+      "source": [
+        "vang",
+        "bac"
+      ],
+      "target": [
+        "Vàng",
+        "bạc"
+      ]
+    },
+    {
+      "source": [
+        "kim",
+        "hoan"
+      ],
+      "target": [
+        "Kim",
+        "hoàn"
+      ]
+    },
+    {
+      "source": [
+        "hoa",
+        "tuoi"
+      ],
+      "target": [
+        "Hoa",
+        "tươi"
+      ]
+    },
+    {
+      "source": [
+        "cay",
+        "canh"
+      ],
+      "target": [
+        "Cây",
+        "cảnh"
+      ]
+    },
+    {
+      "source": [
+        "thu",
+        "cung"
+      ],
+      "target": [
+        "Thú",
+        "cưng"
+      ]
+    },
+    {
+      "source": [
+        "thuc",
+        "an",
+        "chan",
+        "nuoi"
+      ],
+      "target": [
+        "Thức",
+        "ăn",
+        "chăn",
+        "nuôi"
+      ]
+    },
+    {
+      "source": [
+        "tram",
+        "y",
+        "te"
+      ],
+      "target": [
+        "Trạm",
+        "y",
+        "tế"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "y",
+        "te"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "y",
+        "tế"
+      ]
+    },
+    {
+      "source": [
+        "benh",
+        "vien",
+        "da",
+        "khoa"
+      ],
+      "target": [
+        "Bệnh",
+        "viện",
+        "đa",
+        "khoa"
+      ]
+    },
+    {
+      "source": [
+        "benh",
+        "vien",
+        "nhi"
+      ],
+      "target": [
+        "Bệnh",
+        "viện",
+        "nhi"
+      ]
+    },
+    {
+      "source": [
+        "benh",
+        "vien",
+        "phu",
+        "san"
+      ],
+      "target": [
+        "Bệnh",
+        "viện",
+        "phụ",
+        "sản"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "kham",
+        "da",
+        "khoa"
+      ],
+      "target": [
+        "Phòng",
+        "khám",
+        "đa",
+        "khoa"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "kham",
+        "nhi"
+      ],
+      "target": [
+        "Phòng",
+        "khám",
+        "nhi"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "kham",
+        "san",
+        "phu",
+        "khoa"
+      ],
+      "target": [
+        "Phòng",
+        "khám",
+        "sản",
+        "phụ",
+        "khoa"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "kham",
+        "thu",
+        "y"
+      ],
+      "target": [
+        "Phòng",
+        "khám",
+        "thú",
+        "y"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "thuoc",
+        "tay"
+      ],
+      "target": [
+        "Nhà",
+        "thuốc",
+        "tây"
+      ]
+    },
+    {
+      "source": [
+        "thiet",
+        "bi",
+        "y",
+        "te"
+      ],
+      "target": [
+        "Thiết",
+        "bị",
+        "y",
+        "tế"
+      ]
+    },
+    {
+      "source": [
+        "tham",
+        "my",
+        "vien"
+      ],
+      "target": [
+        "Thẩm",
+        "mỹ",
+        "viện"
+      ]
+    },
+    {
+      "source": [
+        "vien",
+        "tham",
+        "my"
+      ],
+      "target": [
+        "Viện",
+        "thẩm",
+        "mỹ"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "mam",
+        "non"
+      ],
+      "target": [
+        "Trường",
+        "mầm",
+        "non"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "tieu",
+        "hoc"
+      ],
+      "target": [
+        "Trường",
+        "tiểu",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "trung",
+        "hoc"
+      ],
+      "target": [
+        "Trường",
+        "trung",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "thcs"
+      ],
+      "target": [
+        "Trường",
+        "THCS"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "thpt"
+      ],
+      "target": [
+        "Trường",
+        "THPT"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "dai",
+        "hoc"
+      ],
+      "target": [
+        "Trường",
+        "đại",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "cao",
+        "dang"
+      ],
+      "target": [
+        "Trường",
+        "cao",
+        "đẳng"
+      ]
+    },
+    {
+      "source": [
+        "truong",
+        "nghe"
+      ],
+      "target": [
+        "Trường",
+        "nghề"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "anh",
+        "ngu"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "Anh",
+        "ngữ"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "ngoai",
+        "ngu"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "ngoại",
+        "ngữ"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "tin",
+        "hoc"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "tin",
+        "học"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "gia",
+        "su"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "gia",
+        "sư"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "thieu",
+        "nhi"
+      ],
+      "target": [
+        "Nhà",
+        "thiếu",
+        "nhi"
+      ]
+    },
+    {
+      "source": [
+        "uy",
+        "ban",
+        "nhan",
+        "dan"
+      ],
+      "target": [
+        "Ủy",
+        "ban",
+        "nhân",
+        "dân"
+      ]
+    },
+    {
+      "source": [
+        "cong",
+        "an",
+        "phuong"
+      ],
+      "target": [
+        "Công",
+        "an",
+        "phường"
+      ]
+    },
+    {
+      "source": [
+        "cong",
+        "an",
+        "xa"
+      ],
+      "target": [
+        "Công",
+        "an",
+        "xã"
+      ]
+    },
+    {
+      "source": [
+        "cong",
+        "an",
+        "quan"
+      ],
+      "target": [
+        "Công",
+        "an",
+        "quận"
+      ]
+    },
+    {
+      "source": [
+        "cong",
+        "an",
+        "huyen"
+      ],
+      "target": [
+        "Công",
+        "an",
+        "huyện"
+      ]
+    },
+    {
+      "source": [
+        "toa",
+        "an",
+        "nhan",
+        "dan"
+      ],
+      "target": [
+        "Tòa",
+        "án",
+        "nhân",
+        "dân"
+      ]
+    },
+    {
+      "source": [
+        "vien",
+        "kiem",
+        "sat"
+      ],
+      "target": [
+        "Viện",
+        "kiểm",
+        "sát"
+      ]
+    },
+    {
+      "source": [
+        "kho",
+        "bac",
+        "nha",
+        "nuoc"
+      ],
+      "target": [
+        "Kho",
+        "bạc",
+        "Nhà",
+        "nước"
+      ]
+    },
+    {
+      "source": [
+        "bao",
+        "hiem",
+        "xa",
+        "hoi"
+      ],
+      "target": [
+        "Bảo",
+        "hiểm",
+        "xã",
+        "hội"
+      ]
+    },
+    {
+      "source": [
+        "buu",
+        "dien"
+      ],
+      "target": [
+        "Bưu",
+        "điện"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "van",
+        "hoa"
+      ],
+      "target": [
+        "Nhà",
+        "văn",
+        "hóa"
+      ]
+    },
+    {
+      "source": [
+        "trung",
+        "tam",
+        "hanh",
+        "chinh"
+      ],
+      "target": [
+        "Trung",
+        "tâm",
+        "hành",
+        "chính"
+      ]
+    },
+    {
+      "source": [
+        "khu",
+        "pho"
+      ],
+      "target": [
+        "Khu",
+        "phố"
+      ]
+    },
+    {
+      "source": [
+        "to",
+        "dan",
+        "pho"
+      ],
+      "target": [
+        "Tổ",
+        "dân",
+        "phố"
+      ]
+    },
+    {
+      "source": [
+        "ap",
+        "van",
+        "hoa"
+      ],
+      "target": [
+        "Ấp",
+        "văn",
+        "hóa"
+      ]
+    },
+    {
+      "source": [
+        "thon",
+        "van",
+        "hoa"
+      ],
+      "target": [
+        "Thôn",
+        "văn",
+        "hóa"
+      ]
+    },
+    {
+      "source": [
+        "ben",
+        "xe"
+      ],
+      "target": [
+        "Bến",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "ben",
+        "tau"
+      ],
+      "target": [
+        "Bến",
+        "tàu"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "ga"
+      ],
+      "target": [
+        "Nhà",
+        "ga"
+      ]
+    },
+    {
+      "source": [
+        "ga",
+        "tau"
+      ],
+      "target": [
+        "Ga",
+        "tàu"
+      ]
+    },
+    {
+      "source": [
+        "san",
+        "bay"
+      ],
+      "target": [
+        "Sân",
+        "bay"
+      ]
+    },
+    {
+      "source": [
+        "cang",
+        "hang",
+        "khong"
+      ],
+      "target": [
+        "Cảng",
+        "hàng",
+        "không"
+      ]
+    },
+    {
+      "source": [
+        "tram",
+        "dung",
+        "nghi"
+      ],
+      "target": [
+        "Trạm",
+        "dừng",
+        "nghỉ"
+      ]
+    },
+    {
+      "source": [
+        "tram",
+        "thu",
+        "phi"
+      ],
+      "target": [
+        "Trạm",
+        "thu",
+        "phí"
+      ]
+    },
+    {
+      "source": [
+        "bai",
+        "do",
+        "xe"
+      ],
+      "target": [
+        "Bãi",
+        "đỗ",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "bai",
+        "gui",
+        "xe"
+      ],
+      "target": [
+        "Bãi",
+        "gửi",
+        "xe"
+      ]
+    },
+    {
+      "source": [
+        "diem",
+        "dung",
+        "xe",
+        "buyt"
+      ],
+      "target": [
+        "Điểm",
+        "dừng",
+        "xe",
+        "buýt"
+      ]
+    },
+    {
+      "source": [
+        "tram",
+        "xe",
+        "buyt"
+      ],
+      "target": [
+        "Trạm",
+        "xe",
+        "buýt"
+      ]
+    },
+    {
+      "source": [
+        "ngan",
+        "hang"
+      ],
+      "target": [
+        "Ngân",
+        "hàng"
+      ]
+    },
+    {
+      "source": [
+        "phong",
+        "giao",
+        "dich"
+      ],
+      "target": [
+        "Phòng",
+        "giao",
+        "dịch"
+      ]
+    },
+    {
+      "source": [
+        "cay",
+        "atm"
+      ],
+      "target": [
+        "Cây",
+        "ATM"
+      ]
+    },
+    {
+      "source": [
+        "bao",
+        "hiem"
+      ],
+      "target": [
+        "Bảo",
+        "hiểm"
+      ]
+    },
+    {
+      "source": [
+        "bao",
+        "viet"
+      ],
+      "target": [
+        "Bảo",
+        "Việt"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "nghi"
+      ],
+      "target": [
+        "Nhà",
+        "nghỉ"
+      ]
+    },
+    {
+      "source": [
+        "can",
+        "ho",
+        "dich",
+        "vu"
+      ],
+      "target": [
+        "Căn",
+        "hộ",
+        "dịch",
+        "vụ"
+      ]
+    },
+    {
+      "source": [
+        "khu",
+        "nghi",
+        "duong"
+      ],
+      "target": [
+        "Khu",
+        "nghỉ",
+        "dưỡng"
+      ]
+    },
+    {
+      "source": [
+        "khu",
+        "du",
+        "lich"
+      ],
+      "target": [
+        "Khu",
+        "du",
+        "lịch"
+      ]
+    },
+    {
+      "source": [
+        "di",
+        "tich",
+        "lich",
+        "su"
+      ],
+      "target": [
+        "Di",
+        "tích",
+        "lịch",
+        "sử"
+      ]
+    },
+    {
+      "source": [
+        "den",
+        "tho"
+      ],
+      "target": [
+        "Đền",
+        "thờ"
+      ]
+    },
+    {
+      "source": [
+        "nha",
+        "tho"
+      ],
+      "target": [
+        "Nhà",
+        "thờ"
+      ]
+    },
+    {
+      "source": [
+        "tu",
+        "vien"
+      ],
+      "target": [
+        "Tu",
+        "viện"
+      ]
+    },
+    {
+      "source": [
+        "thanh",
+        "that"
+      ],
+      "target": [
+        "Thánh",
+        "thất"
+      ]
+    },
+    {
+      "source": [
+        "dinh",
+        "lang"
+      ],
+      "target": [
+        "Đình",
+        "làng"
+      ]
+    },
+    {
+      "source": [
+        "mieng",
+        "tho"
+      ],
+      "target": [
+        "Miếu",
+        "thờ"
+      ]
+    },
+    {
+      "source": [
+        "nghia",
+        "trang"
+      ],
+      "target": [
+        "Nghĩa",
+        "trang"
+      ]
+    },
+    {
+      "source": [
+        "tinh",
+        "thanh"
+      ],
+      "target": [
+        "Tỉnh",
+        "thành"
+      ]
+    },
+    {
+      "source": [
+        "thanh",
+        "pho"
+      ],
+      "target": [
+        "Thành",
+        "phố"
+      ]
+    },
+    {
+      "source": [
+        "thi",
+        "xa"
+      ],
+      "target": [
+        "Thị",
+        "xã"
+      ]
+    },
+    {
+      "source": [
+        "thi",
+        "tran"
+      ],
+      "target": [
+        "Thị",
+        "trấn"
+      ]
+    },
+    {
+      "source": [
+        "phuong",
+        "xa"
+      ],
+      "target": [
+        "Phường",
+        "xã"
+      ]
+    },
+    {
+      "source": [
+        "quan",
+        "huyen"
+      ],
+      "target": [
+        "Quận",
+        "huyện"
+      ]
+    },
+    {
+      "source": [
+        "duong",
+        "pho"
+      ],
+      "target": [
+        "Đường",
+        "phố"
+      ]
+    },
+    {
+      "source": [
+        "quoc",
+        "lo"
+      ],
+      "target": [
+        "Quốc",
+        "lộ"
+      ]
+    },
+    {
+      "source": [
+        "tinh",
+        "lo"
+      ],
+      "target": [
+        "Tỉnh",
+        "lộ"
+      ]
+    },
+    {
+      "source": [
+        "xa",
+        "lo"
+      ],
+      "target": [
+        "Xa",
+        "lộ"
+      ]
+    },
+    {
+      "source": [
+        "dai",
+        "lo"
+      ],
+      "target": [
+        "Đại",
+        "lộ"
+      ]
+    },
+    {
+      "source": [
+        "hem"
+      ],
+      "target": [
+        "Hẻm"
+      ]
+    },
+    {
+      "source": [
+        "ngo"
+      ],
+      "target": [
+        "Ngõ"
+      ]
+    },
+    {
+      "source": [
+        "ngach"
+      ],
+      "target": [
+        "Ngách"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "van",
+        "cu"
+      ],
+      "target": [
+        "Nguyễn",
+        "Văn",
+        "Cừ"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "van",
+        "linh"
+      ],
+      "target": [
+        "Nguyễn",
+        "Văn",
+        "Linh"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "thi",
+        "minh",
+        "khai"
+      ],
+      "target": [
+        "Nguyễn",
+        "Thị",
+        "Minh",
+        "Khai"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "hue"
+      ],
+      "target": [
+        "Nguyễn",
+        "Huệ"
+      ]
+    },
+    {
+      "source": [
+        "nguyen",
+        "dinh",
+        "chieu"
+      ],
+      "target": [
+        "Nguyễn",
+        "Đình",
+        "Chiểu"
+      ]
+    },
+    {
+      "source": [
+        "tran",
+        "phu"
+      ],
+      "target": [
+        "Trần",
+        "Phú"
+      ]
+    },
+    {
+      "source": [
+        "tran",
+        "quang",
+        "khai"
+      ],
+      "target": [
+        "Trần",
+        "Quang",
+        "Khải"
+      ]
+    },
+    {
+      "source": [
+        "tran",
+        "cao",
+        "van"
+      ],
+      "target": [
+        "Trần",
+        "Cao",
+        "Vân"
+      ]
+    },
+    {
+      "source": [
+        "le",
+        "duan"
+      ],
+      "target": [
+        "Lê",
+        "Duẩn"
+      ]
+    },
+    {
+      "source": [
+        "le",
+        "thanh",
+        "ton"
+      ],
+      "target": [
+        "Lê",
+        "Thánh",
+        "Tôn"
+      ]
+    },
+    {
+      "source": [
+        "le",
+        "van",
+        "sy"
+      ],
+      "target": [
+        "Lê",
+        "Văn",
+        "Sỹ"
+      ]
+    },
+    {
+      "source": [
+        "pham",
+        "van",
+        "dong"
+      ],
+      "target": [
+        "Phạm",
+        "Văn",
+        "Đồng"
+      ]
+    },
+    {
+      "source": [
+        "pham",
+        "ngu",
+        "lao"
+      ],
+      "target": [
+        "Phạm",
+        "Ngũ",
+        "Lão"
+      ]
+    },
+    {
+      "source": [
+        "vo",
+        "van",
+        "tan"
+      ],
+      "target": [
+        "Võ",
+        "Văn",
+        "Tần"
+      ]
+    },
+    {
+      "source": [
+        "vo",
+        "thi",
+        "sau"
+      ],
+      "target": [
+        "Võ",
+        "Thị",
+        "Sáu"
+      ]
+    },
+    {
+      "source": [
+        "hoang",
+        "van",
+        "thu"
+      ],
+      "target": [
+        "Hoàng",
+        "Văn",
+        "Thụ"
+      ]
+    },
+    {
+      "source": [
+        "dien",
+        "bien",
+        "phu"
+      ],
+      "target": [
+        "Điện",
+        "Biên",
+        "Phủ"
+      ]
+    },
+    {
+      "source": [
+        "cach",
+        "mang",
+        "thang",
+        "tam"
+      ],
+      "target": [
+        "Cách",
+        "Mạng",
+        "Tháng",
+        "Tám"
+      ]
+    },
+    {
+      "source": [
+        "ba",
+        "thang",
+        "hai"
+      ],
+      "target": [
+        "Ba",
+        "Tháng",
+        "Hai"
+      ]
+    },
+    {
+      "source": [
+        "ly",
+        "thuong",
+        "kiet"
+      ],
+      "target": [
+        "Lý",
+        "Thường",
+        "Kiệt"
+      ]
+    },
+    {
+      "source": [
+        "ton",
+        "that",
+        "tung"
+      ],
+      "target": [
+        "Tôn",
+        "Thất",
+        "Tùng"
+      ]
+    },
+    {
+      "source": [
+        "au",
+        "co"
+      ],
+      "target": [
+        "Âu",
+        "Cơ"
+      ]
+    },
+    {
+      "source": [
+        "lac",
+        "long",
+        "quan"
+      ],
+      "target": [
+        "Lạc",
+        "Long",
+        "Quân"
+      ]
+    },
+    {
+      "source": [
+        "hung",
+        "vuong"
+      ],
+      "target": [
+        "Hùng",
+        "Vương"
+      ]
+    },
+    {
+      "source": [
+        "quang",
+        "trung"
+      ],
+      "target": [
+        "Quang",
+        "Trung"
+      ]
+    },
+    {
+      "source": [
+        "phan",
+        "dinh",
+        "phung"
+      ],
+      "target": [
+        "Phan",
+        "Đình",
+        "Phùng"
+      ]
+    },
+    {
+      "source": [
+        "phan",
+        "chu",
+        "trinh"
+      ],
+      "target": [
+        "Phan",
+        "Châu",
+        "Trinh"
+      ]
+    },
+    {
+      "source": [
+        "ha",
+        "noi"
+      ],
+      "target": [
+        "Hà",
+        "Nội"
+      ]
+    },
+    {
+      "source": [
+        "da",
+        "nang"
+      ],
+      "target": [
+        "Đà",
+        "Nẵng"
+      ]
+    },
+    {
+      "source": [
+        "can",
+        "tho"
+      ],
+      "target": [
+        "Cần",
+        "Thơ"
+      ]
+    },
+    {
+      "source": [
+        "hai",
+        "phong"
+      ],
+      "target": [
+        "Hải",
+        "Phòng"
+      ]
+    },
+    {
+      "source": [
+        "binh",
+        "duong"
+      ],
+      "target": [
+        "Bình",
+        "Dương"
+      ]
+    },
+    {
+      "source": [
+        "dong",
+        "nai"
+      ],
+      "target": [
+        "Đồng",
+        "Nai"
+      ]
+    },
+    {
+      "source": [
+        "ba",
+        "ria",
+        "vung",
+        "tau"
+      ],
+      "target": [
+        "Bà",
+        "Rịa",
+        "Vũng",
+        "Tàu"
+      ]
+    },
+    {
+      "source": [
+        "khanh",
+        "hoa"
+      ],
+      "target": [
+        "Khánh",
+        "Hòa"
+      ]
+    },
+    {
+      "source": [
+        "thua",
+        "thien",
+        "hue"
+      ],
+      "target": [
+        "Thừa",
+        "Thiên",
+        "Huế"
+      ]
+    },
+    {
+      "source": [
+        "quang",
+        "ninh"
+      ],
+      "target": [
+        "Quảng",
+        "Ninh"
+      ]
+    },
+    {
+      "source": [
+        "nghe",
+        "an"
+      ],
+      "target": [
+        "Nghệ",
+        "An"
+      ]
+    },
+    {
+      "source": [
+        "thanh",
+        "hoa"
+      ],
+      "target": [
+        "Thanh",
+        "Hóa"
+      ]
+    },
+    {
+      "source": [
+        "lam",
+        "dong"
+      ],
+      "target": [
+        "Lâm",
+        "Đồng"
+      ]
+    },
+    {
+      "source": [
+        "dak",
+        "lak"
+      ],
+      "target": [
+        "Đắk",
+        "Lắk"
+      ]
+    },
+    {
+      "source": [
+        "gia",
+        "lai"
+      ],
+      "target": [
+        "Gia",
+        "Lai"
+      ]
+    },
+    {
+      "source": [
+        "kien",
+        "giang"
+      ],
+      "target": [
+        "Kiên",
+        "Giang"
+      ]
+    },
+    {
+      "source": [
+        "an",
+        "giang"
+      ],
+      "target": [
+        "An",
+        "Giang"
+      ]
+    },
+    {
+      "source": [
+        "tien",
+        "giang"
+      ],
+      "target": [
+        "Tiền",
+        "Giang"
+      ]
+    },
+    {
+      "source": [
+        "long",
+        "an"
+      ],
+      "target": [
+        "Long",
+        "An"
+      ]
+    },
+    {
+      "source": [
+        "soc",
+        "trang"
+      ],
+      "target": [
+        "Sóc",
+        "Trăng"
+      ]
+    },
+    {
+      "source": [
+        "bac",
+        "ninh"
+      ],
+      "target": [
+        "Bắc",
+        "Ninh"
+      ]
+    },
+    {
+      "source": [
+        "bac",
+        "giang"
+      ],
+      "target": [
+        "Bắc",
+        "Giang"
+      ]
+    },
+    {
+      "source": [
+        "thai",
+        "nguyen"
+      ],
+      "target": [
+        "Thái",
+        "Nguyên"
+      ]
+    },
+    {
+      "source": [
+        "thai",
+        "binh"
+      ],
+      "target": [
+        "Thái",
+        "Bình"
+      ]
+    },
+    {
+      "source": [
+        "nam",
+        "dinh"
+      ],
+      "target": [
+        "Nam",
+        "Định"
+      ]
+    },
+    {
+      "source": [
+        "ninh",
+        "binh"
+      ],
+      "target": [
+        "Ninh",
+        "Bình"
+      ]
+    },
+    {
+      "source": [
+        "binh",
+        "dinh"
+      ],
+      "target": [
+        "Bình",
+        "Định"
+      ]
+    },
+    {
+      "source": [
+        "phu",
+        "yen"
+      ],
+      "target": [
+        "Phú",
+        "Yên"
+      ]
+    },
+    {
+      "source": [
+        "quang",
+        "nam"
+      ],
+      "target": [
+        "Quảng",
+        "Nam"
+      ]
+    },
+    {
+      "source": [
+        "quang",
+        "ngai"
+      ],
+      "target": [
+        "Quảng",
+        "Ngãi"
+      ]
+    },
+    {
+      "source": [
+        "binh",
+        "thuan"
+      ],
+      "target": [
+        "Bình",
+        "Thuận"
+      ]
+    },
+    {
+      "source": [
+        "ninh",
+        "thuan"
+      ],
+      "target": [
+        "Ninh",
+        "Thuận"
+      ]
     }
   ],
   "safe_standalone_aliases": {
     "hanoi": "Hà Nội",
     "saigon": "Sài Gòn",
-    "hcm": "HCM"
+    "hcm": "HCM",
+    "haiphong": "Hải Phòng",
+    "danang": "Đà Nẵng",
+    "dalat": "Đà Lạt",
+    "nhatrang": "Nha Trang",
+    "vungtau": "Vũng Tàu",
+    "cantho": "Cần Thơ",
+    "hue": "Huế",
+    "hoian": "Hội An"
   }
 }
