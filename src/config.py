@@ -15,7 +15,7 @@ OLLAMA_MODEL      = "qwen2.5vl:3b"
 
 # ── Worker ───────────────────────────────────────────────────
 NUM_WORKERS            = 1              # Tăng lên 4 worker để chụp nhanh hơn theo yêu cầu người dùng
-DELAY_BETWEEN_REQ      = 1.5            # giây nghỉ giữa mỗi tile
+DELAY_BETWEEN_REQ      = 0.8            # giây nghỉ giữa mỗi tile
 MAX_RETRIES            = 2              # số lần retry khi tile lỗi
 BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
 HEADLESS               = False          # Set False để hiển thị giao diện trình duyệt của từng worker
@@ -44,7 +44,7 @@ POI_CROPS_DIR = str(BASE_DIR / "crops") # Thư mục lưu các mảnh ảnh POI
 
 # ── Map load ─────────────────────────────────────────────────
 PAGE_LOAD_TIMEOUT  = 20_000            # ms — timeout goto()
-PAGE_SETTLE_MS     = 1_500            # ms — chờ sau networkidle
+PAGE_SETTLE_MS     = 1_200            # ms — chờ sau networkidle
 
 # ── Expansion ────────────────────────────────────────────────
 EXPAND_EMPTY = False                   # True = expand cả tile trống
@@ -86,6 +86,8 @@ OCR_SYMSPELL_MIN_TERM_COUNT = 2         # Bỏ token dictionary quá hiếm khi 
 
 # ── YOLOv8 POI Detection ──────────────────────────────────────
 YOLO_MODEL_PATH = str(BASE_DIR / "model" / "detect_place_ggmap.pt")
+VIETOCR_BEAM_WIDTH = 20                # beam search width để khám phá nhiều khả năng nhận diện hơn
+OCR_TEXT_PAD_PX = 24                   # padding crop chữ trước khi nhận diện (tăng từ 4 để có context tốt hơn)
 
 # ── Icon-Text Matching (Google Maps horizontal layout) ────────
 # User confirmed: Icon CÓ THỂ TRÁI hoặc PHẢI của text, khoảng cách ~5px, nằm ngang nhau

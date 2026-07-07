@@ -166,12 +166,8 @@ class CaptureMixin:
 
                 console.log('[CENTER]', {{ lat: {lat}, lng: {lng} }});
 
-                // ── 8. Không vẽ scan box vào DOM trước khi chụp screenshot ───────────────
-                // Trước đây code tạo `active-worker-scan-box` với border cyan tại đây.
-                // Vì screenshot chụp toàn viewport sau bước này, border đó trở thành pixel thật
-                // và lọt vào crop/OCR như các đường xanh ngang qua nhãn POI.
-                // Nếu cần debug vùng tile, hãy vẽ overlay sau khi chụp trên ảnh debug riêng,
-                // không vẽ trực tiếp lên Google Maps DOM trước screenshot.
+                // ── 8. Không vẽ scan box lên DOM trước khi chụp ─────────────────────
+                // Scan box cyan từng lọt vào raw_screenshot và crop POI thành line xanh.
                 const oldScanBox = document.getElementById('active-worker-scan-box');
                 if (oldScanBox) oldScanBox.remove();
 
