@@ -5,6 +5,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
+from src.vision.recognizers import _unmasked_loses_reliable_numeric_vietnamese_segment
+
 from src.canonical_matcher import resolve_canonical_name
 from src.vietnam_places import normalize_ocr_spelling, normalize_place_phrases
 from src.vision import (
@@ -22,7 +24,11 @@ from src.vision import (
     _score_ocr_text_quality,
     _texts_are_unrelated,
 )
-from src.vision.crop_processing import split_crop_into_lines
+from src.vision.text_cleaning.final_cleanup import (
+    _normalize_food_slash_continuation,
+    _normalize_vietnamese_food_ocr_artifacts,
+)
+from src.vision.crop_processing import split_crop_into_lines, _select_primary_line_crops
 from src.vision.recognizers import _recognize_text_crop_vietocr
 
 
@@ -66,6 +72,101 @@ def test_final_cleanup_removes_junk_without_dropping_valid_core():
     assert _clean_final_ocr_text("Pravered / Tiệm Nhà Nấm 89") == "Tiệm Nhà Nấm 89"
     assert _clean_final_ocr_text("Bình Bình Quán") == "Bình Quán"
     assert _junk_token_count("Tiệm Nhà Nấm 89") == 0
+
+
+def test_primary_line_selection_keeps_plausible_second_line_continuation():
+    import numpy as np
+
+    line_1 = np.zeros((24, 120, 3), dtype=np.uint8)
+    continuation = np.zeros((20, 120, 3), dtype=np.uint8)
+    category = np.zeros((14, 120, 3), dtype=np.uint8)
+    assert _select_primary_line_crops([line_1, continuation]) == [line_1, continuation]
+    assert _select_primary_line_crops([line_1, category]) == [line_1]
+
+
+def test_unmasked_does_not_replace_valid_vietnamese_numeric_segment():
+    masked = "Disminery / Tiệm Nhà Nấm 89 / CONTIORAPHING"
+    unmasked = "Quiệm Nhà Năm 20"
+    assert _unmasked_loses_reliable_numeric_vietnamese_segment(masked, unmasked)
+    assert not _unmasked_loses_reliable_numeric_vietnamese_segment(masked, "Tiệm Nhà Nấm 89")
+
+
+def test_food_ocr_artifact_cleanup_is_generic():
+    noisy = "Quán Quân Miến Phở Gà Phố / Nướng Mai Xuân Cảnh"
+    step_1 = _normalize_vietnamese_food_ocr_artifacts(noisy)
+    assert step_1 == "Quán Miến Phở Gà Phở / Nướng Mai Xuân Cảnh"
+    assert _normalize_food_slash_continuation(step_1) == "Quán Miến Phở Gà, Phở Nướng Mai Xuân Cảnh"
+    assert _clean_final_ocr_text(noisy) == "Quán Miến Phở Gà, Phở Nướng Mai Xuân Cảnh"
+
+
+def test_reported_food_crop_image_keeps_second_menu_item_boundary():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    root = os.path.dirname(os.path.dirname(__file__))
+    paths = glob.glob(os.path.join(root, "crops", "tile_0_1_poi_9_*.png"))
+    if not paths:
+        pytest.skip("missing optional reported Quán Miến Phở regression crop")
+    img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img is not None and img.size > 0
+    h, w = img.shape[:2]
+    text = _recognize_text_crop_vietocr(img, [0, 0, w, h], icon_side="left", scale=1.0)
+    assert text == "Quán Miến Phở Gà, Phở Nướng Mai Xuân Cảnh"
+
+
+def test_reported_category_lines_are_dropped_from_real_crops():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    root = os.path.dirname(os.path.dirname(__file__))
+    cases = [
+        ("*NXB*Tổng*hợp*.png", "NXB Tổng hợp"),
+        ("*Pacobooks*.png", "Pacobooks"),
+    ]
+    for pattern, expected in cases:
+        paths = glob.glob(os.path.join(root, "crops", pattern))
+        if not paths:
+            pytest.skip(f"missing optional reported category crop: {pattern}")
+        img = cv2.imdecode(np.fromfile(paths[-1], dtype=np.uint8), cv2.IMREAD_COLOR)
+        assert img is not None and img.size > 0
+        h, w = img.shape[:2]
+        assert _recognize_text_crop_vietocr(img, [0, 0, w, h], icon_side="left", scale=1.0) == expected
+
+
+def test_reported_org_descriptor_crop_drops_redundant_office_word():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    root = os.path.dirname(os.path.dirname(__file__))
+    paths = glob.glob(os.path.join(root, "crops", "*LPBank*.png"))
+    if not paths:
+        pytest.skip("missing optional reported LPBank crop")
+    img = cv2.imdecode(np.fromfile(paths[-1], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img is not None and img.size > 0
+    h, w = img.shape[:2]
+    assert _recognize_text_crop_vietocr(img, [0, 0, w, h], icon_side="left", scale=1.0) == "LPBank PGD Bưu điện / Giao dịch Sài Gòn"
+
+
+def test_reported_short_crop_preserves_vietnamese_diacritics_at_top_edge():
+    import glob
+
+    import cv2
+    import numpy as np
+
+    root = os.path.dirname(os.path.dirname(__file__))
+    paths = glob.glob(os.path.join(root, "crops", "*BÀ_BA_RENTALS.png"))
+    if not paths:
+        pytest.skip("missing optional reported ÁO DÀI regression crop")
+    img = cv2.imdecode(np.fromfile(paths[-1], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert img is not None and img.size > 0
+    h, w = img.shape[:2]
+    assert _recognize_text_crop_vietocr(img, [0, 0, w, h], icon_side="left", scale=1.0) == "ÁO DÀI AND ÁO / BÀ BA RENTALS"
 
 
 def test_merge_best_diacritics_keeps_primary_when_base_same():
