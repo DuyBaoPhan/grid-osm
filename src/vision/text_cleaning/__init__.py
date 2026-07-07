@@ -74,6 +74,7 @@ __all__ = [
     _merge_missing_middle_tokens,
     _merge_overlapping_ocr_continuation,
     _junk_token_count,
+    _junk_token_count,
     _looks_like_bad_ocr,
     _looks_like_vietnamese_gibberish,
     _score_ocr_text_quality,

@@ -281,19 +281,6 @@
         "cho",
         "nha"
       ]
-    },
-    {
-      "wrong_base": "giao",
-      "canonical": "giao",
-      "context": [
-        "thach",
-        "le",
-        "duan",
-        "vong",
-        "xoay",
-        "pham",
-        "ngoc"
-      ]
     }
   ],
   "contextual_phrase_corrections": [

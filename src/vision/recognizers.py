@@ -5,23 +5,11 @@
 import io
 import logging
 import re
-import time
 from typing import List
 
 import cv2
 import numpy as np
 from PIL import Image
-
-from config import (
-    OCR_EARLY_STOP_SCALES,
-    OCR_ENABLE_NORMALIZED_FALLBACK,
-    OCR_FAST_MODE,
-    OCR_GOOD_LINE_SCORE,
-    OCR_GOOD_MASKED_SCORE,
-    OCR_GOOD_PRIMARY_SCORE,
-    OCR_SKIP_UNMASKED_IF_MASKED_GOOD,
-    OCR_TIMING_LOG_ENABLED,
-)
 
 from .models import _get_paddle_text_detector, _get_vietocr_predictor
 from .geometry import detect_text_area
@@ -61,57 +49,6 @@ from .crop_processing import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _is_good_enough_ocr(text: str, min_score: int) -> bool:
-    """Return True when OCR text is clean enough to skip slower fallback branches."""
-    cleaned = _clean_final_ocr_text(text)
-    return (
-        bool(cleaned)
-        and not _looks_like_bad_ocr(cleaned)
-        and not _looks_like_vietnamese_gibberish(cleaned)
-        and _junk_token_count(cleaned) == 0
-        and _score_ocr_text_quality(cleaned) >= min_score
-    )
-
-
-def _unmasked_loses_reliable_numeric_vietnamese_segment(masked_text: str, unmasked_text: str) -> bool:
-    """True when unmasked drops/changes a likely valid Vietnamese name+number segment from masked OCR."""
-    masked_segments = [part.strip() for part in re.split(r'\s*/\s*', masked_text or "") if part.strip()]
-    unmasked_digits = set(re.findall(r'\d+', unmasked_text or ""))
-    unmasked_keys = set(_ocr_tokens(unmasked_text))
-    for segment in masked_segments:
-        words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9]+', segment)
-        if len(words) < 3:
-            continue
-        digits = set(re.findall(r'\d+', segment))
-        if not digits or not re.search(r'[À-ỹĐđ]', segment):
-            continue
-        segment_keys = [key for key in _ocr_tokens(segment) if not key.isdigit()]
-        if len(segment_keys) < 2:
-            continue
-        overlap = sum(1 for key in segment_keys if key in unmasked_keys)
-        if digits != (digits & unmasked_digits) and overlap >= max(1, len(segment_keys) // 2):
-            return True
-    return False
-
-
-def _apply_ocr_rescue_stage(selected_text: str, alt_variants, rescue_fn, stage_name: str) -> str:
-    """Apply one OCR rescue function to masked/unmasked/normalized alternates."""
-    for alt_source, alt_text in alt_variants:
-        rescued_text = rescue_fn(selected_text, alt_text)
-        if rescued_text != selected_text:
-            logger.info(
-                "  [OCR %s] Selected='%s' + %s='%s' -> '%s'",
-                stage_name,
-                selected_text,
-                alt_source,
-                alt_text,
-                rescued_text,
-            )
-            return rescued_text
-    return selected_text
-
 
 def _recognize_text_paddle(cv_img: np.ndarray) -> str:
     """Fallback recognition bằng PaddleOCR trên crop đã chọn."""
@@ -234,7 +171,7 @@ def _recognize_text_crop_vietocr_normalized(
                     return _score_ocr_text_quality(text)
 
                 candidates = []
-                for fx in (2, 1, 3):
+                for fx in (1, 2, 3):
                     if fx == 1:
                         candidate_img = padded_line
                     else:
@@ -250,8 +187,6 @@ def _recognize_text_crop_vietocr_normalized(
                     if clean_text:
                         score = _score_ocr_text_quality(clean_text, fx)
                         candidates.append((score, clean_text))
-                        if OCR_FAST_MODE and OCR_EARLY_STOP_SCALES and score >= OCR_GOOD_LINE_SCORE:
-                            break
 
                 if candidates:
                     text_clean = max(candidates, key=lambda x: x[0])[1]
@@ -304,9 +239,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     # 2. Tạo bản sao sạch và tô đè màu nền lên vùng padding 10px ngoài
     crop_clean = raw_crop.copy()
     h_rc, w_rc = crop_clean.shape[:2]
-    # Keep border cleanup conservative for short POI crops: a fixed 10px trim can erase
-    # Vietnamese diacritics near the top edge (e.g. Á/À), causing OCR hallucinations.
-    border_w = min(int(10 * scale), max(0, min(h_rc, w_rc) // 10))
+    border_w = int(10 * scale)
     if border_w > 0:
         if border_w < h_rc:
             crop_clean[0:border_w, :] = bg_color
@@ -327,7 +260,6 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
 
         try:
             line_crops = _select_primary_line_crops(split_crop_into_lines(crop_local, scale))
-            full_line_crops = _select_primary_line_crops(split_crop_into_lines(prepared_crop, scale))
             
             texts = []
 
@@ -345,7 +277,7 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                 )
                 rgb_line = cv2.cvtColor(padded_line, cv2.COLOR_BGR2RGB)
                 candidates = []
-                for fx in (2, 1, 3):
+                for fx in (1, 2, 3):
                     im = rgb_line if fx == 1 else cv2.resize(rgb_line, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
                     raw_text = (predictor.predict(Image.fromarray(im)) or "").strip()
                     text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
@@ -354,8 +286,6 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                         score = _score_ocr_text_quality(text_clean, fx)
                         if score > -150:
                             candidates.append((score, text_clean))
-                            if OCR_FAST_MODE and OCR_EARLY_STOP_SCALES and score >= OCR_GOOD_LINE_SCORE:
-                                break
                 return max(candidates, key=lambda x: x[0])[1] if candidates else ""
 
             def _prepend_prefix_if_shared(base_text: str, alt_text: str) -> str:
@@ -413,49 +343,11 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                                 return merged_clean
                 return base_clean
 
-            def _prefer_line_evidence_over_full_text(full_text: str, line_text: str, *, allow_leading_insertions: bool = False) -> str:
-                full_clean = _clean_final_ocr_text(full_text)
-                line_clean = _clean_final_ocr_text(line_text)
-                if not full_clean or not line_clean or full_clean == line_clean:
-                    return full_clean or line_clean
-                full_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', full_clean)
-                line_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', line_clean)
-                if not full_words or not line_words:
-                    return full_clean
-                full_keys = [_strip_vietnamese_accents(w).lower() for w in full_words]
-                line_keys = [_strip_vietnamese_accents(w).lower() for w in line_words]
-                matched = []
-                start = 0
-                for key in line_keys:
-                    try:
-                        pos = full_keys.index(key, start)
-                    except ValueError:
-                        return full_clean
-                    matched.append(pos)
-                    start = pos + 1
-                inserted = [idx for idx in range(0, len(full_keys)) if idx not in set(matched)]
-                if allow_leading_insertions:
-                    inserted = [idx for idx in inserted if idx > matched[0]]
-                if inserted and len(inserted) <= 2 and len(line_keys) >= 2:
-                    return line_clean
-                return full_clean
-
-            for line_idx, line_crop in enumerate(line_crops):
+            for line_crop in line_crops:
                 if line_crop.size == 0:
                     continue
                 best_line_text = _best_text_for_line(line_crop)
                 if best_line_text:
-                    line_evidence_text = best_line_text
-                    if line_idx < len(full_line_crops) and full_line_crops[line_idx].size > 0:
-                        full_line_crop = full_line_crops[line_idx]
-                        same_shape = full_line_crop.shape[:2] == line_crop.shape[:2]
-                        width_gain = full_line_crop.shape[1] - line_crop.shape[1]
-                        height_gain = full_line_crop.shape[0] - line_crop.shape[0]
-                        should_probe_full_line = not same_shape and (width_gain >= int(12 * scale) or height_gain >= int(4 * scale))
-                        if should_probe_full_line:
-                            full_evidence = _best_text_for_line(full_line_crop)
-                            if full_evidence:
-                                line_evidence_text = _prefer_line_evidence_over_full_text(line_evidence_text, full_evidence)
                     h_line, w_line = line_crop.shape[:2]
                     # Probe left side: full-line OCR can ignore a visible leading brand when line is wide.
                     if w_line >= int(90 * scale):
@@ -466,7 +358,6 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
                             if rescued != _clean_final_ocr_text(best_line_text):
                                 best_line_text = rescued
                                 break
-                    best_line_text = _prefer_line_evidence_over_full_text(best_line_text, line_evidence_text)
                     if best_line_text and not _is_junk_line(best_line_text):
                         texts.append(best_line_text)
             return " / ".join(texts)
@@ -493,29 +384,13 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             r = int(16 * scale)
             cv2.circle(crop_masked, (int(cx_local), int(cy_local)), r, bg_color, -1)
 
-    timing_start = time.perf_counter()
-    masked_start = time.perf_counter()
     primary_masked = _ocr_from_prepared_crop(crop_masked)
-    masked_ms = (time.perf_counter() - masked_start) * 1000.0
-    skip_unmasked = (
-        OCR_FAST_MODE
-        and OCR_SKIP_UNMASKED_IF_MASKED_GOOD
-        and _is_good_enough_ocr(primary_masked, OCR_GOOD_MASKED_SCORE)
-    )
-    if skip_unmasked:
-        primary_unmasked = ""
-        unmasked_ms = 0.0
-    else:
-        unmasked_start = time.perf_counter()
-        primary_unmasked = _ocr_from_prepared_crop(crop_clean)
-        unmasked_ms = (time.perf_counter() - unmasked_start) * 1000.0
+    primary_unmasked = _ocr_from_prepared_crop(crop_clean)
 
     def _should_use_unmasked(masked_text: str, unmasked_text: str) -> bool:
         if not masked_text or not unmasked_text:
             return bool(unmasked_text and not masked_text)
         if _ocr_artifact_score(unmasked_text) > _ocr_artifact_score(masked_text) + 2:
-            return False
-        if _unmasked_loses_reliable_numeric_vietnamese_segment(masked_text, unmasked_text):
             return False
         if re.search(r'[)\]}>"“”]', unmasked_text) and not re.search(r'[)\]}>"“”]', masked_text):
             return False
@@ -595,18 +470,8 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     else:
         primary_text = primary_masked
 
-    # 4. Chạy luồng normalized OCR làm fallback chỉ khi primary chưa đủ tốt.
-    should_run_normalized = OCR_ENABLE_NORMALIZED_FALLBACK and not (
-        OCR_FAST_MODE and _is_good_enough_ocr(primary_text, OCR_GOOD_PRIMARY_SCORE)
-    )
-    normalized_ms = 0.0
-    if should_run_normalized:
-        normalized_start = time.perf_counter()
-        norm_text = _recognize_text_crop_vietocr_normalized(cv_img, bbox, icon_side, scale, cx, cy)
-        normalized_ms = (time.perf_counter() - normalized_start) * 1000.0
-    else:
-        norm_text = ""
-        logger.debug("  [OCR fast path] primary accepted, skip normalized: '%s'", primary_text)
+    # 4. Chạy luồng normalized OCR làm fallback
+    norm_text = _recognize_text_crop_vietocr_normalized(cv_img, bbox, icon_side, scale, cx, cy)
     
     # 5. So sánh chất lượng và chọn kết quả tốt nhất bằng score tổng quát, không keyword.
     def _candidate_score(text: str, source: str) -> float:
@@ -660,78 +525,37 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
         if best_source == "normalized" and primary_candidate and not _looks_like_bad_ocr(primary_text):
             primary_score, _, primary_cleaned, _ = primary_candidate
             norm_gain = best_score - primary_score
-            norm_cleaned = _clean_final_ocr_text(norm_text)
-            primary_tokens = _ocr_tokens(primary_cleaned)
-            norm_tokens = _ocr_tokens(selected_text)
-            primary_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', primary_cleaned or "")
-            norm_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', norm_cleaned or "")
-
-            keep_primary_reason = ""
-            if len(primary_words) >= 2 and len(primary_words) == len(norm_words):
-                primary_mark_count = len(re.findall(r'[À-ỹĐđ]', primary_cleaned or ""))
-                norm_mark_count = len(re.findall(r'[À-ỹĐđ]', norm_cleaned or ""))
-                base_diffs = sum(
-                    1
-                    for p_word, n_word in zip(primary_words, norm_words)
-                    if _strip_vietnamese_accents(p_word).lower() != _strip_vietnamese_accents(n_word).lower()
-                )
-                same_shape = all(abs(len(p_word) - len(n_word)) <= 1 for p_word, n_word in zip(primary_words, norm_words))
-                if primary_mark_count > norm_mark_count and 1 <= base_diffs <= 2 and same_shape:
-                    keep_primary_reason = "diacritic-regressed"
-
-            if not keep_primary_reason:
-                primary_mark_count = len(re.findall(r'[À-ỹĐđ]', primary_cleaned or ""))
-                norm_mark_count = len(re.findall(r'[À-ỹĐđ]', norm_cleaned or ""))
-                if primary_mark_count >= norm_mark_count + 2 and norm_gain < 12:
-                    keep_primary_reason = "diacritic-loss"
-
-            if not keep_primary_reason and norm_gain < 9:
+            if norm_gain < 9:
+                primary_tokens = _ocr_tokens(primary_cleaned)
+                norm_tokens = _ocr_tokens(selected_text)
                 if (
                     len(primary_tokens) > len(norm_tokens)
                     and _contains_token_subsequence(primary_tokens, norm_tokens)
                     and _ocr_artifact_score(primary_cleaned) <= _ocr_artifact_score(selected_text) + 6
                 ):
-                    keep_primary_reason = "dropped leading tokens"
+                    selected_text = primary_cleaned
+                    best_source = "primary"
+                    logger.info(
+                        "  [OCR keep primary] Primary='%s' rejected Normalized='%s' dropped leading tokens (gain=%.1f)",
+                        primary_cleaned,
+                        selected_raw,
+                        norm_gain,
+                    )
                 else:
                     m_known = sum(1 for t in _ocr_tokens(primary_text) if _is_known_token(t))
                     n_known = sum(1 for t in _ocr_tokens(selected_raw) if _is_known_token(t))
-                    if n_known <= m_known:
-                        keep_primary_reason = "non-clear"
-
-            if keep_primary_reason:
-                selected_text = primary_cleaned
-                best_source = "primary"
-                logger.info(
-                    "  [OCR keep primary] Primary='%s' rejected Normalized='%s' (%s, gain=%.1f)",
-                    primary_cleaned,
-                    selected_raw,
-                    keep_primary_reason,
-                    norm_gain,
-                )
-        if best_source == "primary" and norm_text and primary_candidate:
-            norm_cleaned = _clean_final_ocr_text(norm_text)
-            primary_cleaned = primary_candidate[2]
-            primary_tokens = _ocr_tokens(primary_cleaned)
-            norm_tokens = _ocr_tokens(norm_cleaned)
-            primary_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', primary_cleaned or "")
-            if (
-                len(primary_tokens) >= 3
-                and len(primary_tokens) == len(norm_tokens)
-                and len(primary_tokens[0]) == len(norm_tokens[0]) + 1
-                and primary_tokens[0].endswith(norm_tokens[0])
-                and primary_tokens[1:] == norm_tokens[1:]
-                and re.search(r'[À-ỹĐđ]', primary_tokens[0])
-                and re.search(r'[À-ỹĐđ]', norm_tokens[0])
-                and primary_words
-                and not primary_words[0].isupper()
-            ):
-                selected_text = norm_cleaned
-                best_source = "normalized"
-                logger.info(
-                    "  [OCR normalized chosen] Primary='%s' repaired leading-prefix artifact -> Normalized='%s'",
-                    primary_cleaned,
-                    norm_cleaned,
-                )
+                    if n_known > m_known:
+                        # Normalized has more known/valid tokens, keep it
+                        pass
+                    else:
+                        selected_text = primary_cleaned
+                        best_source = "primary"
+                        logger.info(
+                            "  [OCR keep primary] Primary='%s' rejected non-clear Normalized='%s' (gain=%.1f)",
+                            primary_cleaned,
+                            selected_raw,
+                            norm_gain,
+                        )
         is_normalized_chosen = best_source == "normalized"
         if best_source == "primary" and norm_text and _normalized_regresses_quality(primary_text, norm_text):
             logger.info("  [OCR keep primary] Primary='%s' rejected lower-quality Normalized='%s'", primary_text, norm_text)
@@ -766,27 +590,28 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
             logger.info("  [OCR merge diacritics] Selected='%s' + Primary='%s' -> '%s'", selected_text, primary_text, merged_text)
             selected_text = merged_text
 
-    alt_variants = (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text))
-    selected_text = _apply_ocr_rescue_stage(
-        selected_text,
-        alt_variants,
-        _append_missing_known_suffix,
-        "suffix rescue",
-    )
-    selected_text = _apply_ocr_rescue_stage(
-        selected_text,
-        alt_variants,
-        _merge_missing_middle_tokens,
-        "missing-middle rescue",
-    )
-    selected_text = _apply_ocr_rescue_stage(
-        selected_text,
-        alt_variants,
-        _merge_overlapping_ocr_continuation,
-        "overlap rescue",
-    )
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        rescued_text = _append_missing_known_suffix(selected_text, alt_text)
+        if rescued_text != selected_text:
+            logger.info("  [OCR suffix rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
+            selected_text = rescued_text
+            break
+
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        rescued_text = _merge_missing_middle_tokens(selected_text, alt_text)
+        if rescued_text != selected_text:
+            logger.info("  [OCR missing-middle rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
+            selected_text = rescued_text
+            break
+
+    for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
+        merged_text = _merge_overlapping_ocr_continuation(selected_text, alt_text)
+        if merged_text != selected_text:
+            logger.info("  [OCR overlap rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, merged_text)
+            selected_text = merged_text
+            break
         
-    paddle_ms = 0.0
+    # 6. Fallback sang PaddleOCR nếu cả hai luồng đều lỗi/rác
     if (
         not selected_text
         or _looks_like_bad_ocr(selected_text)
@@ -795,40 +620,10 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     ):
         tx1, ty1, tx2, ty2 = detect_text_area(crop_masked, scale)
         crop_for_paddle = crop_masked[ty1:ty2, max(0, tx1 - int(6 * scale)):tx2]
-        if crop_for_paddle.size > 0:
-            paddle_start = time.perf_counter()
-            paddle_text = _clean_final_ocr_text(_recognize_text_paddle(crop_for_paddle))
-            paddle_ms = (time.perf_counter() - paddle_start) * 1000.0
-        else:
-            paddle_text = ""
+        paddle_text = _clean_final_ocr_text(_recognize_text_paddle(crop_for_paddle)) if crop_for_paddle.size > 0 else ""
         if paddle_text and not _looks_like_bad_ocr(paddle_text) and _junk_token_count(paddle_text) == 0:
-            if OCR_TIMING_LOG_ENABLED:
-                total_ms = (time.perf_counter() - timing_start) * 1000.0
-                logger.info(
-                    "  [OCR timing] total=%.0fms masked=%.0fms unmasked=%.0fms normalized=%.0fms paddle=%.0fms normalized_run=%s source=paddle text='%s'",
-                    total_ms,
-                    masked_ms,
-                    unmasked_ms,
-                    normalized_ms,
-                    paddle_ms,
-                    should_run_normalized,
-                    paddle_text,
-                )
             logger.info("  [OCR fallback] VietOCR selected='%s' -> PaddleOCR='%s'", selected_text, paddle_text)
             return paddle_text
 
     selected_text = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(selected_text))
-    if OCR_TIMING_LOG_ENABLED:
-        total_ms = (time.perf_counter() - timing_start) * 1000.0
-        logger.info(
-            "  [OCR timing] total=%.0fms masked=%.0fms unmasked=%.0fms normalized=%.0fms paddle=%.0fms normalized_run=%s source=%s text='%s'",
-            total_ms,
-            masked_ms,
-            unmasked_ms,
-            normalized_ms,
-            paddle_ms,
-            should_run_normalized,
-            "normalized" if is_normalized_chosen else "primary",
-            selected_text,
-        )
     return selected_text

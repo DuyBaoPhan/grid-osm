@@ -20,7 +20,7 @@ Dự án hiện tập trung vào bài toán: **tự động thu thập tên POI 
 
 ### 2. Phát hiện POI bằng YOLOv8
 
-- Model: [model/detect_place_ggmap.pt](file:///d:/grid-osm/model/detect_place_ggmap.pt)
+- Model: [model/bestv3.pt](file:///d:/grid-osm/model/bestv3.pt)
 - Detect icon/label POI trên ảnh tile.
 - Merge bbox gần/chồng nhau để không tách icon và text thành nhiều POI.
 - Lọc bbox ngoài core tile để giảm POI trùng giữa các tile.
@@ -32,20 +32,16 @@ Pipeline chính nằm trong package [src/vision](file:///d:/grid-osm/src/vision)
 - [detection.py](file:///d:/grid-osm/src/vision/detection.py): detect POI và điều phối OCR.
 - [recognizers.py](file:///d:/grid-osm/src/vision/recognizers.py): VietOCR/PaddleOCR recognition.
 - [geometry.py](file:///d:/grid-osm/src/vision/geometry.py): bbox expansion và text area detection.
-- [crop_processing.py](file:///d:/grid-osm/src/vision/crop_processing.py): normalize crop, split line, chọn main/continuation line.
+- [crop_processing.py](file:///d:/grid-osm/src/vision/crop_processing.py): normalize crop, split line.
 - [models.py](file:///d:/grid-osm/src/vision/models.py): lazy-load YOLO/VietOCR/PaddleOCR.
 - [rendering.py](file:///d:/grid-osm/src/vision/rendering.py): debug draw và crop save.
 - VietOCR đọc text chính.
 - Chạy nhiều biến thể crop:
   - masked icon
   - unmasked icon
-  - normalized background khi primary chưa đủ tốt
+  - normalized background
   - line split
-  - scale `2x/1x/3x` với early-stop khi line đã đủ tốt
-- Có image-level evidence OCR có điều kiện:
-  - so OCR từ text-area crop với OCR từ full visible line crop
-  - chỉ chạy khi crop nội bộ khác full-line đáng kể
-  - dùng để loại token hallucinated không có bằng chứng ảnh, không dùng keyword/hardcode
+  - scale `1x/2x/3x`
 - PaddleOCR dùng làm detector/recognition fallback khi VietOCR ra text rác.
 - Lưu crop POI vào [crops](file:///d:/grid-osm/crops) để audit thủ công.
 
@@ -72,14 +68,12 @@ Nhóm xử lý chính:
 - Chuẩn hóa địa danh Việt Nam theo gazetteer.
 - Sửa dấu/chính tả bằng dictionary có context.
 - Không sửa bừa brand/acronym như `GEOX`, `MCM`, `DAFC`.
-- Xóa duplicate OCR có điều kiện:
+- Xóa duplicate OCR:
   - `Ăn Ăn Vặt` → `Ăn Vặt`
   - `TP TP Hồ Chí Minh` → `TP Hồ Chí Minh`
 - Cứu prefix/suffix khi OCR bị cắt:
   - giữ brand đầu như `Haeduri Hai Bà Trưng`
   - nối phần cuối tên khi alternate OCR có overlap hợp lệ
-- Bỏ category/descriptor nhỏ bằng line-height geometry thay vì keyword text.
-- Giữ continuation line thật nếu đủ lớn, ví dụ nhãn xuống dòng.
 - Phát hiện chuỗi tiếng Việt giả để kích hoạt fallback:
   - ví dụ `Têm viên nông nân`
 
@@ -87,9 +81,9 @@ Nhóm xử lý chính:
 
 Các file liên quan:
 
-- [runtime/map_viewer.html](file:///d:/grid-osm/runtime/map_viewer.html)
-- [runtime/map_data.json](file:///d:/grid-osm/runtime/map_data.json)
-- [runtime/map_status.json](file:///d:/grid-osm/runtime/map_status.json)
+- [map_viewer.html](file:///d:/grid-osm/map_viewer.html)
+- [map_data.json](file:///d:/grid-osm/map_data.json)
+- [map_status.json](file:///d:/grid-osm/map_status.json)
 - [src/map_viewer.py](file:///d:/grid-osm/src/map_viewer.py)
 
 Chức năng:
@@ -107,41 +101,24 @@ Chức năng:
 grid-osm/
 ├─ main.py                         # Entry point
 ├─ requirements.txt                # Python dependencies
-├─ LICENSE                         # License
-├─ README.md                       # Tài liệu dự án
-├─ boundary_quan_1.json             # Cache boundary Quận 1
+├─ checkpoint.json                  # Trạng thái quét hiện tại
+├─ results.json                     # POI raw output
+├─ map_data.json                    # Data cho map viewer
+├─ map_viewer.html                  # Dashboard local
 ├─ scraper.log                      # Log runtime
 ├─ crops/                           # Crop POI OCR audit
 ├─ screenshots/                     # Screenshot tile/debug
-├─ runtime/                         # Output runtime hiện tại
-│  ├─ checkpoint.json               # Trạng thái quét hiện tại
-│  ├─ results.json                  # POI raw output
-│  ├─ map_data.json                 # Data cho map viewer
-│  ├─ map_data.js                   # JS data cho map viewer
-│  ├─ map_status.json               # Trạng thái map viewer
-│  └─ map_viewer.html               # Dashboard local runtime
 ├─ model/
-│  └─ detect_place_ggmap.pt         # YOLOv8 place detection model
+│  └─ bestv3.pt                     # YOLOv8 model
 ├─ data/
 │  ├─ vietnam_places.txt            # Gazetteer địa danh
 │  ├─ osm_words.json                # Dictionary từ OSM
 │  ├─ osm_raw_cache*.json           # Cache OSM raw
 │  ├─ ocr_language_corrections.json # Rule sửa OCR có context
 │  └─ ocr_ground_truth.json         # Ground truth/audit OCR
-├─ scripts/
-│  ├─ audit_results.py              # Audit kết quả
-│  ├─ build_vietnam_dictionary.py   # Build dictionary tiếng Việt/OSM
-│  ├─ finalize_results.py           # Hậu xử lý kết quả
-│  ├─ random_vietnam_crop_test.py   # Test random crop OCR
-│  ├─ synthetic_output_stress.py    # Stress test output cleanup
-│  └─ validate_ocr_corrections.py   # Validate rule OCR corrections
 ├─ src/
 │  ├─ config.py                     # Cấu hình chính
 │  ├─ coordinator.py                # Queue, checkpoint, dedupe, output
-│  ├─ grid.py                       # Tile grid + boundary polygon
-│  ├─ map_viewer.py                 # Local map data/server helper
-│  ├─ vietnam_places.py             # Vietnamese normalization
-│  ├─ canonical_matcher.py          # Match/normalize tên chuẩn
 │  ├─ worker.py                     # Bản gốc đã comment để tham chiếu
 │  ├─ worker/                       # Package Playwright worker runtime
 │  │  ├─ __init__.py                 # Re-export Worker
@@ -152,14 +129,15 @@ grid-osm/
 │  │  ├─ dom.py                      # DOM POI coordinate extraction
 │  │  ├─ capture.py                  # Screenshot capture/save
 │  │  └─ _original_worker_commented.py # Archive comment bản gốc
+│  ├─ grid.py                       # Tile grid + boundary polygon
 │  ├─ vision.py                     # Bản gốc đã comment để tham chiếu
 │  ├─ vision/                       # Package YOLO + OCR runtime
 │  │  ├─ __init__.py                 # API tương thích `from src.vision import ...`
 │  │  ├─ models.py                   # Lazy-load model YOLO/VietOCR/PaddleOCR
 │  │  ├─ detection.py                # Extract POI từ screenshot
-│  │  ├─ recognizers.py              # VietOCR/PaddleOCR recognition + image evidence
+│  │  ├─ recognizers.py              # VietOCR/PaddleOCR recognition
 │  │  ├─ geometry.py                 # Bbox/text-area geometry
-│  │  ├─ crop_processing.py          # Normalize/split OCR crop + line selection
+│  │  ├─ crop_processing.py          # Normalize/split OCR crop
 │  │  ├─ rendering.py                # Draw detection + save crop
 │  │  ├─ ocr_quality.py              # Quality helper re-export
 │  │  ├─ text_cleaning/              # OCR cleanup package
@@ -172,10 +150,12 @@ grid-osm/
 │  │  │  ├─ quality.py
 │  │  │  └─ _original_text_cleaning_commented.py
 │  │  └─ _original_vision_commented.py # Archive comment bản gốc
+│  ├─ vietnam_places.py             # Vietnamese normalization
+│  ├─ canonical_matcher.py          # Match/normalize tên chuẩn
+│  └─ map_viewer.py                 # Local map data/server helper
 └─ tests/
    └─ test_ocr_cleanup.py           # Regression tests OCR cleanup
 ```
-
 
 ---
 
@@ -186,9 +166,9 @@ grid-osm/
 | OS | Windows 10/11 |
 | Python | 3.10+ |
 | RAM | >= 16 GB |
-| GPU | Tùy chọn nhưng rất khuyến nghị cho VietOCR; CPU chạy đúng nhưng chậm |
+| GPU | Tùy chọn, OCR hiện cấu hình CPU |
 | Browser | Chromium qua Playwright |
-| Model | YOLOv8 weights trong `model/detect_place_ggmap.pt` |
+| Model | YOLOv8 weights trong `model/bestv3.pt` |
 
 ---
 
@@ -234,22 +214,17 @@ SAVE_SCREENSHOTS = True
 SAVE_POI_CROPS = True
 
 VIETOCR_MODEL = "vgg_transformer"
-VIETOCR_DEVICE = "cpu"      # đổi thành "cuda" nếu PyTorch CUDA hoạt động
-OCR_FAST_MODE = True
-OCR_EARLY_STOP_SCALES = True
-OCR_ENABLE_NORMALIZED_FALLBACK = True
-OCR_TIMING_LOG_ENABLED = False
-OCR_SKIP_UNMASKED_IF_MASKED_GOOD = False
+VIETOCR_DEVICE = "cpu"
 PADDLE_TEXT_DET_ENABLED = True
 
-YOLO_MODEL_PATH = str(BASE_DIR / "model" / "detect_place_ggmap.pt")
+YOLO_MODEL_PATH = str(BASE_DIR / "model" / "bestv3.pt")
 ```
+
+Khuyến nghị hiện tại:
 
 - `NUM_WORKERS = 1` để ổn định khi mở Google Maps thật.
 - `HEADLESS = False` để dễ quan sát browser.
 - Giữ `SAVE_POI_CROPS = True` khi đang audit OCR.
-- Giữ `OCR_SKIP_UNMASKED_IF_MASKED_GOOD = False` nếu ưu tiên ổn định hơn tốc độ.
-- Chỉ bật `VIETOCR_DEVICE = "cuda"` khi `torch.cuda.is_available()` trả về `True`.
 
 ---
 
@@ -267,9 +242,9 @@ py main.py
 
 Runtime tạo/cập nhật:
 
-- [runtime/checkpoint.json](file:///d:/grid-osm/runtime/checkpoint.json)
-- [runtime/results.json](file:///d:/grid-osm/runtime/results.json)
-- [runtime/map_data.json](file:///d:/grid-osm/runtime/map_data.json)
+- [checkpoint.json](file:///d:/grid-osm/checkpoint.json)
+- [results.json](file:///d:/grid-osm/results.json)
+- [map_data.json](file:///d:/grid-osm/map_data.json)
 - [scraper.log](file:///d:/grid-osm/scraper.log)
 - [crops](file:///d:/grid-osm/crops)
 
@@ -283,7 +258,7 @@ Mở:
 http://127.0.0.1:8765/map_viewer.html
 ```
 
-Hoặc mở trực tiếp [runtime/map_viewer.html](file:///d:/grid-osm/runtime/map_viewer.html).
+Hoặc mở trực tiếp [map_viewer.html](file:///d:/grid-osm/map_viewer.html).
 
 ---
 
@@ -299,14 +274,10 @@ Test này bảo vệ các lỗi đã gặp:
 
 - lặp từ: `Ăn Ăn`, `Gù Gù`, `TP TP`
 - sai dấu/chính tả có context: `Nhà lẫm` → `Nhà Làm`
-- brand/acronym không bị sửa sai: `GEOX`, `MCM`, `LPBank`, `DAFC`
+- brand/acronym không bị sửa sai: `GEOX`, `MCM`
 - không xóa brand đầu dòng: `Haeduri Hai Bà Trưng`
 - phát hiện OCR tiếng Việt giả: `Têm viên nông nân`
 - cứu suffix/continuation tên địa điểm
-- không làm mất segment Việt + số như `Tiệm Nhà Nấm 89`
-- giữ continuation line thật như `Hello Thợ - Cứu Hộ Xe / Máy & Sửa Xe Lưu Động`
-- bỏ category nhỏ như `Bookstore` khỏi `NXB Tổng hợp`, `Pacobooks`
-- loại token hallucinated bằng image evidence như `LPBank ... / Giao dịch Sài Gòn`
 
 Nên chạy test này trước khi sửa [src/vision](file:///d:/grid-osm/src/vision), [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning), hoặc [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py).
 
@@ -328,28 +299,24 @@ Nơi thêm rule:
 
 - Rule ngôn ngữ có context: [ocr_language_corrections.json](file:///d:/grid-osm/data/ocr_language_corrections.json)
 - Gazetteer địa danh: [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
-- Logic detect/OCR/image evidence: [src/vision](file:///d:/grid-osm/src/vision)
+- Logic detect/OCR: [src/vision](file:///d:/grid-osm/src/vision)
 - Logic cleanup/selection OCR: [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning)
 - Normalize từ/phrase: [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py)
-
-Không nên thêm cleanup kiểu keyword để xóa riêng một từ/cụm nếu lỗi có thể giải bằng bằng chứng ảnh/crop.
 
 ---
 
 ## Hậu xử lý dữ liệu
 
-Nếu cần finalize/audit kết quả sau khi quét:
+Nếu cần làm sạch kết quả sau khi quét:
 
 ```powershell
-python scripts/finalize_results.py
-python scripts/audit_results.py
+python clean_data.py
 ```
 
-Các output runtime chính nằm trong:
+Các output có thể gồm:
 
-- [runtime/results.json](file:///d:/grid-osm/runtime/results.json)
-- [runtime/map_data.json](file:///d:/grid-osm/runtime/map_data.json)
-- [runtime/checkpoint.json](file:///d:/grid-osm/runtime/checkpoint.json)
+- `clean_results.json`
+- `clean_results.csv`
 
 Tùy script hiện tại và cấu hình output.
 
