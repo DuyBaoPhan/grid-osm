@@ -15,53 +15,51 @@ def _continuation_tokens_are_valid(words: List[str]) -> bool:
     """True nếu phần nối thêm đủ giống tên địa điểm, không phải mô tả/rating rác."""
     if not words or len(words) > 5:
         return False
+
     continuation = " ".join(words)
     if _is_junk_line(continuation):
+        return False
+    if _junk_token_count(continuation) > 0:
         return False
     has_vietnamese_or_title = any(
         re.search(r'[À-ỹĐđ]', word) or word[:1].isupper() or word.isupper()
         for word in words
     )
-    if _looks_like_bad_ocr(continuation) and not has_vietnamese_or_title:
-        return False
-    if _junk_token_count(continuation) > 0:
+    if _is_category_or_description_segment(continuation) and not has_vietnamese_or_title:
         return False
     if re.search(r'\d+(?:[.,]\d+)?\s*(?:\(|★|\*)', continuation):
         return False
+
     digit_count = sum(ch.isdigit() for ch in continuation)
     letter_count = sum(ch.isalpha() for ch in continuation)
     if digit_count and digit_count / max(1, digit_count + letter_count) > 0.20:
         return False
 
-    connector_keys = {"giao", "duong", "le", "street", "road", "corner", "nga", "tu", "xoay"}
-    known_descriptor_keys = {
-        "the", "coffee", "shop", "cafe", "tea", "house", "restaurant", "bar", "store",
-        "corporation", "company", "boutique", "plaza", "mplaza",
-        "quan", "ca", "phe", "tra", "sua", "nha", "hang", "tiem", "cho", "thach",
-    }
-    title_or_viet = 0
-    connector_count = 0
-    known_descriptor_count = 0
+    strong_count = 0
     for word in words:
         key = _strip_vietnamese_accents(word).lower()
-        if key in connector_keys:
-            connector_count += 1
+        has_vietnamese = bool(re.search(r'[À-ỹĐđ]', word))
+        has_name_shape = bool(word[:1].isupper() or word.isupper())
+        is_known = _is_known_token(word)
+        is_short_plain_unknown = (
+            len(key) <= 3
+            and not has_vietnamese
+            and not has_name_shape
+            and not is_known
+        )
+        if is_short_plain_unknown:
+            return False
+        if has_vietnamese or has_name_shape or is_known:
+            strong_count += 1
             continue
-        if word[:1].isupper() or word.isupper() or re.search(r'[À-ỹĐđ]', word):
-            title_or_viet += 1
-            continue
-        if key in known_descriptor_keys or _is_known_token(word):
-            known_descriptor_count += 1
-            continue
+        if _looks_like_bad_ocr(word) or _looks_like_junk_token(word):
+            return False
         return False
 
-    strong_count = title_or_viet + connector_count + known_descriptor_count
     if strong_count != len(words):
         return False
-    if title_or_viet + connector_count >= 1:
-        return True
-    # All-lower category chains are usually Google category text, not missed name suffix.
-    return len(words) <= 3 and any(_strip_vietnamese_accents(w).lower() in {"the", "nha", "tiem", "quan"} for w in words)
+    # All-lower known chains are often category text, so require at least one name signal.
+    return any(re.search(r'[À-ỹĐđ]', word) or word[:1].isupper() or word.isupper() for word in words)
 
 
 def _append_missing_known_suffix(base_text: str, alternate_text: str) -> str:

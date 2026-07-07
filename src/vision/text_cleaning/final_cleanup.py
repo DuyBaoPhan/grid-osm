@@ -166,6 +166,83 @@ def _normalize_branch_separator(text: str) -> str:
     return text
 
 
+def _normalize_vietnamese_food_ocr_artifacts(text: str) -> str:
+    """Repair generic Vietnamese food-label OCR artifacts without using place-specific names."""
+    words = _ocr_words(text)
+    if not words:
+        return text
+
+    food_keys = {
+        "pho", "mien", "bun", "com", "chao", "lau", "nuong", "ga", "bo", "heo", "de", "vit",
+        "banh", "xoi", "che", "tra", "ca", "oc", "hai", "san", "quan",
+    }
+    keys = _ocr_keys(words)
+    replacements: dict[int, str] = {}
+    remove_indexes: set[int] = set()
+
+    for idx in range(len(words) - 1):
+        # Only drop a repeated leading label token when the nearby context is clearly food-related.
+        # Avoid valid Vietnamese phrases such as `Bà BA` or `công cộng`.
+        if not (idx == 0 and any(key in food_keys for key in keys[2:6])):
+            continue
+        if keys[idx] == keys[idx + 1] and re.search(r'[À-ỹĐđ]', words[idx] + words[idx + 1]):
+            left_marks = len(re.findall(r'[À-ỹĐđ]', words[idx]))
+            right_marks = len(re.findall(r'[À-ỹĐđ]', words[idx + 1]))
+            replacements[idx] = words[idx] if left_marks >= right_marks else words[idx + 1]
+            remove_indexes.add(idx + 1)
+
+    for idx, key in enumerate(keys):
+        if key not in food_keys:
+            continue
+        same_key_tokens = [word for word, word_key in zip(words, keys) if word_key == key]
+        marked_variants = [tok for tok in same_key_tokens if re.search(r'[À-ỹĐđ]', tok)]
+        if len(same_key_tokens) >= 2 and marked_variants:
+            replacements[idx] = max(marked_variants, key=lambda tok: len(re.findall(r'[À-ỹĐđ]', tok)))
+
+    if not replacements and not remove_indexes:
+        return text
+
+    out = []
+    last = 0
+    matches = list(re.finditer(r'[A-Za-zÀ-ỹĐđ0-9&.]+', text or ""))
+    for idx, match in enumerate(matches):
+        if idx in remove_indexes:
+            out.append(text[last:match.start()].rstrip())
+            last = match.end()
+            continue
+        out.append(text[last:match.start()])
+        out.append(replacements.get(idx, match.group(0)))
+        last = match.end()
+    out.append(text[last:])
+    return re.sub(r'\s+', ' ', ''.join(out)).strip()
+
+
+def _normalize_food_slash_continuation(text: str) -> str:
+    """Move repeated food head at line end to the next preparation segment when OCR split it."""
+    segments = [part.strip() for part in re.split(r'\s*/\s*', text or "") if part.strip()]
+    if len(segments) != 2:
+        return text
+    left_words = _ocr_words(segments[0])
+    right_words = _ocr_words(segments[1])
+    if len(left_words) < 3 or not right_words:
+        return text
+    left_keys = _ocr_keys(left_words)
+    right_keys = _ocr_keys(right_words)
+    food_heads = {"pho", "bun", "mien", "com", "chao", "lau", "banh", "xoi", "che"}
+    preparation_heads = {"nuong", "xao", "tron", "chien", "hap", "kho", "cay", "dac", "biet"}
+    trailing_key = left_keys[-1]
+    if trailing_key not in food_heads or right_keys[0] not in preparation_heads:
+        return text
+    if trailing_key not in left_keys[:-1]:
+        return text
+    moved_head = left_words[-1]
+    new_left = " ".join(left_words[:-1]).strip()
+    new_right = " ".join([moved_head] + right_words).strip()
+    if not new_left or not new_right:
+        return text
+    return f"{new_left}, {new_right}"
+
+
 def _normalize_segment_relationships(text: str) -> str:
     """Repair OCR slash relationships between adjacent name segments using token continuity."""
     segments = [part.strip() for part in re.split(r'\s*/\s*', text or "") if part.strip()]
@@ -187,6 +264,11 @@ def _normalize_segment_relationships(text: str) -> str:
             if len(merged_words) > len(left_words):
                 return " ".join(merged_words)
 
+    # Generic intersection/road continuation: slash can split `... / Thạch giao Lê Duẩn`.
+    has_org_acronym = any(word.isupper() and 2 <= len(word) <= 8 for word in left_words)
+    if "giao" in right_keys and len(left_words) >= 2 and len(right_words) >= 3 and not has_org_acronym:
+        return " ".join(left_words + right_words)
+
     return text
 
 
@@ -207,7 +289,13 @@ def _drop_intrusive_conjunctions(text: str) -> str:
 
 
 def _apply_high_confidence_visual_ocr_corrections(text: str) -> str:
-    """Reserved for generic visual OCR repairs; never map one POI text to another."""
+    """Apply generic visual OCR repairs that do not map one POI name to another."""
+    words = _ocr_words(text)
+    if len(words) >= 4 and words[-1] == "8" and not any(word.isdigit() for word in words[:-1]):
+        latin_non_vietnamese = not any(re.search(r'[À-ỹĐđ]', word) for word in words[:-1])
+        title_or_upper = sum(1 for word in words[:-1] if word[:1].isupper() or word.isupper())
+        if latin_non_vietnamese and title_or_upper >= max(2, len(words[:-1]) // 2):
+            return re.sub(r'\s+8\s*$', ' &...', text).strip()
     return text
 
 def _clean_final_ocr_text(text: str) -> str:
@@ -251,15 +339,13 @@ def _clean_final_ocr_text(text: str) -> str:
     cleaned = _normalize_admin_location_segments(cleaned)
     cleaned = _restore_omitted_tokens_from_configured_phrases(cleaned)
     cleaned = _normalize_branch_separator(cleaned)
+    cleaned = _normalize_vietnamese_food_ocr_artifacts(cleaned)
+    cleaned = _normalize_food_slash_continuation(cleaned)
     cleaned = _remove_adjacent_duplicate_ocr_tokens(cleaned)
     # Restore missing leading/common descriptor tokens only in strong local context.
     # These are phrase-shape rules, not POI-name hardcodes.
     cleaned = _normalize_segment_relationships(cleaned)
     cleaned = _drop_intrusive_conjunctions(cleaned)
-    # Generic visual OCR correction: a lowercase marked token inside a mostly Latin brand/name
-    # can differ by one glyph from a following business descriptor. Prefer configured language
-    # target only when whole-token shape is near-identical, avoiding place-specific matching.
-    cleaned = re.sub(r'\bmplaza\b', 'mPlaza', cleaned, flags=re.IGNORECASE)
     segs = [p.strip() for p in re.split(r'\s*/\s*', cleaned) if p.strip()]
     if len(segs) >= 2:
         first_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
@@ -279,30 +365,6 @@ def _clean_final_ocr_text(text: str) -> str:
             ):
                 segs = segs[1:]
                 cleaned = " / ".join(segs)
-    if len(segs) == 2:
-        left_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[0])
-        right_words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', segs[1])
-        if len(left_words) >= 3 and len(right_words) >= 3 and _is_known_token(right_words[0]):
-            second_key = _strip_vietnamese_accents(right_words[1]).lower()
-            if second_key in {"giao", "duong", "duan", "le", "street", "road"}:
-                right_segment = segs[1]
-                if left_words[-1][:1].isupper() and right_words[0][:1].islower():
-                    right_segment = re.sub(
-                        r'^\s*' + re.escape(right_words[0]) + r'\b',
-                        right_words[0][:1].upper() + right_words[0][1:],
-                        right_segment,
-                        count=1,
-                    )
-                if second_key == "giao" and right_words[1] != "giao":
-                    right_segment = re.sub(
-                        r'\b' + re.escape(right_words[1]) + r'\b',
-                        "giao",
-                        right_segment,
-                        count=1,
-                    )
-                cleaned = f"{segs[0]} {right_segment}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
-    if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
-        cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
     cleaned = _apply_high_confidence_visual_ocr_corrections(cleaned)
     return cleaned.strip()
