@@ -250,6 +250,67 @@ Runtime tạo/cập nhật:
 
 ---
 
+## Boundary toàn Việt Nam và chạy tuần tự
+
+Tải boundary theo tỉnh/thành phố, quận/huyện vào [boundaries](file:///d:/grid-osm/boundaries):
+
+```powershell
+py scripts/download_vietnam_boundaries.py --province "TP. Hồ Chí Minh" --district "Quận 1" --limit 1
+py scripts/download_vietnam_boundaries.py --province "TP. Hồ Chí Minh"
+py scripts/download_vietnam_boundaries.py
+```
+
+Output chính:
+
+```text
+boundaries/<province_slug>/<district_slug>.geojson
+boundaries/manifest.json
+centers/post_office_centers.json
+```
+
+Tọa độ bắt đầu quét (bưu điện trung tâm hoặc centroid fallback) lưu riêng ở [centers/post_office_centers.json](file:///d:/grid-osm/centers/post_office_centers.json), không trộn vào manifest boundary.
+
+Tải tọa độ bưu điện cho từng quận/huyện:
+
+```powershell
+py scripts/download_post_office_centers.py --force
+```
+
+Nếu không tìm thấy bưu điện bằng Nominatim, script tự ghi centroid boundary để quét vẫn chạy được.
+
+Chạy 1 khu vực từ manifest, không sửa [config.py](file:///d:/grid-osm/src/config.py):
+
+```powershell
+py main.py --scan-mode manifest --province "TP. Hồ Chí Minh" --district "Quận 1" --max-areas 1
+```
+
+Chạy tuần tự toàn bộ manifest:
+
+```powershell
+py main.py --scan-mode manifest
+```
+
+Runtime mỗi khu vực tách riêng:
+
+```text
+runtime/areas/<province_slug>/<district_slug>/checkpoint.json
+runtime/areas/<province_slug>/<district_slug>/results.json
+runtime/areas/<province_slug>/<district_slug>/clean_results.csv
+runtime/areas/<province_slug>/<district_slug>/map_viewer.html
+runtime/areas/<province_slug>/<district_slug>/done.json
+```
+
+Có thể lọc hoặc resume bằng CLI:
+
+```powershell
+py main.py --scan-mode manifest --province "Hà Nội"
+py main.py --scan-mode manifest --start-index 20 --max-areas 5
+```
+
+> Lưu ý: downloader dùng Nominatim/OSM nên có `--sleep` mặc định để tránh gọi API quá nhanh. Quét toàn Việt Nam ở zoom 21 sẽ rất lâu.
+
+---
+
 ## Xem dashboard
 
 Mở:

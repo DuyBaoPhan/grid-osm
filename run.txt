@@ -1,0 +1,8 @@
+Lệnh chạy toàn quốc:
+py main.py --scan-mode manifest
+
+Lệnh chạy riêng 1 quận huyện:
+py main.py --scan-mode manifest --province "Hồ Chí Minh" --district "Bình Thạnh" --max-areas 1
+
+Lệnh chạy riêng 1 tỉnh/thành phố (tất cả các quận huyện của tỉnh đó):
+py main.py --scan-mode manifest --province "Hồ Chí Minh"

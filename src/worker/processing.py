@@ -12,8 +12,6 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright
 
 from config import (
     BROWSER_RESTART_EVERY,
-    CENTER_LAT,
-    CENTER_LNG,
     DELAY_BETWEEN_REQ,
     MAX_RETRIES,
     PAGE_LOAD_TIMEOUT,
@@ -51,12 +49,13 @@ class TileProcessingMixin:
         Retry MAX_RETRIES lần nếu lỗi.
         """
         tx, ty = tile
-        # Tile (0,0) dùng chính xác CENTER_LAT/CENTER_LNG để Bưu điện Trung tâm Sài Gòn nằm giữa màn hình
+        # Tile (0,0) dùng tâm của khu vực hiện tại trong Coordinator.
+        area = self.coord.area
         if tx == 0 and ty == 0:
-            lat, lng = CENTER_LAT, CENTER_LNG
+            lat, lng = area.center_lat, area.center_lng
         else:
-            lat, lng = tile_center(tx, ty, ZOOM_LEVEL)
-        strict_bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL)
+            lat, lng = tile_center(tx, ty, ZOOM_LEVEL, area.center_lat, area.center_lng)
+        strict_bbox = tile_viewport_bbox(tx, ty, ZOOM_LEVEL, area.center_lat, area.center_lng)
         url = _GMAP_URL.format(zoom=SCREENSHOT_ZOOM, lat=round(lat, 6), lng=round(lng, 6))
         logger.info("  [Navigate] URL: %s (zoom=%d)", url, SCREENSHOT_ZOOM)
 
@@ -326,6 +325,8 @@ class TileProcessingMixin:
                 "review_reason":    canonical_match.reason,
                 "approx_lat":       poi_lat,
                 "approx_lng":       poi_lng,
+                "crop_image":       item.get("crop_image") or item.get("crop_path", ""),
+                "crop_path":        item.get("crop_path") or item.get("crop_image", ""),
                 "tile_x":           tx,
                 "tile_y":           ty,
                 "distance_pixels":  round(distance_pixels, 1),
