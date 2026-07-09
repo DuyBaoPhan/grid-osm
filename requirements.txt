@@ -9,3 +9,4 @@ torchvision>=0.15.0
 vietocr>=0.3.13
 paddleocr>=2.7.0
 rapidfuzz>=3.0.0
+openpyxl

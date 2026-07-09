@@ -117,7 +117,8 @@ def area_from_manifest_row(row: dict, centers: dict[str, dict] | None = None) ->
     if not province or not district:
         return None
     centroid = row.get("centroid") or []
-    center = get_center(province, district, centers)
+    boundary_path = str(row.get("boundary_path") or "")
+    center = get_center(province, district, centers, boundary_path=boundary_path)
     try:
         if center:
             center_lat = float(center["center_lat"])
@@ -127,7 +128,6 @@ def area_from_manifest_row(row: dict, centers: dict[str, dict] | None = None) ->
             center_lng = float(centroid[1])
     except Exception:
         return None
-    boundary_path = str(row.get("boundary_path") or "")
     if boundary_path and not Path(boundary_path).is_absolute():
         boundary_path = str(config.BASE_DIR / boundary_path)
     return ScanArea(

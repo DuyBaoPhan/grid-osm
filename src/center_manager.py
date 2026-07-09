@@ -37,7 +37,26 @@ def write_centers(rows: dict[str, dict], path: str | Path | None = None) -> Path
     return p
 
 
-def get_center(province: str, district: str, centers: dict[str, dict] | None = None) -> dict | None:
+def get_center(
+    province: str,
+    district: str,
+    centers: dict[str, dict] | None = None,
+    boundary_path: str | None = None
+) -> dict | None:
     data = centers if centers is not None else read_centers()
+    
+    # 1. Try exact key match (slugified province/district)
     row = data.get(center_key(province, district))
-    return row if isinstance(row, dict) else None
+    if row and isinstance(row, dict):
+        return row
+        
+    # 2. Try boundary_path match if provided (handles case where user renamed district/province)
+    if boundary_path:
+        norm_path = str(boundary_path).replace("\\", "/").strip().lower()
+        for k, v in data.items():
+            if isinstance(v, dict):
+                v_bp = str(v.get("boundary_path") or "").replace("\\", "/").strip().lower()
+                if v_bp and v_bp == norm_path:
+                    return v
+                    
+    return None
