@@ -128,8 +128,8 @@ def normalize_ocr_background(crop_img: np.ndarray) -> np.ndarray:
         s = hsv[:, :, 1]
         v = hsv[:, :, 2]
 
-        # Giữ chữ màu đậm (V < 165) hoặc chữ có màu sắc sặc sỡ (S > 80)
-        # Loại bỏ các vùng nền xám/xanh nhạt của đường và nền đất ngà
+        # Giữ chữ màu đậm (V < 165) hoặc chữ có màu sắc sặc sỡ (S > 80).
+        # Loại bỏ các vùng nền xám/xanh nhạt của đường và nền đất ngà.
         text_mask = (v < 165) | (s > 80)
         text_mask = cv2.dilate(text_mask.astype(np.uint8), np.ones((2, 2), np.uint8), iterations=1).astype(bool)
         clean_bg = np.array([245, 242, 232], dtype=np.uint8)  # BGR ngà nhạt giống crop đọc tốt
