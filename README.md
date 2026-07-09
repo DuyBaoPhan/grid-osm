@@ -344,26 +344,6 @@ Nên chạy test này trước khi sửa [src/vision](file:///d:/grid-osm/src/vi
 
 ---
 
-## Quy tắc sửa OCR trong dự án
-
-Bắt buộc:
-
-1. Không hardcode riêng cho một ảnh, một POI, một quận.
-2. Tìm root cause trước khi sửa.
-3. Mỗi bug OCR phải có regression test.
-4. Không làm lỗi cũ xuất hiện lại.
-5. Rule phải tổng quát cho dữ liệu Việt Nam.
-6. Brand/acronym phải được bảo vệ.
-7. Dictionary correction phải có context.
-
-Nơi thêm rule:
-
-- Rule ngôn ngữ có context: [ocr_language_corrections.json](file:///d:/grid-osm/data/ocr_language_corrections.json)
-- Gazetteer địa danh: [vietnam_places.txt](file:///d:/grid-osm/data/vietnam_places.txt)
-- Logic detect/OCR: [src/vision](file:///d:/grid-osm/src/vision)
-- Logic cleanup/selection OCR: [src/vision/text_cleaning](file:///d:/grid-osm/src/vision/text_cleaning)
-- Normalize từ/phrase: [vietnam_places.py](file:///d:/grid-osm/src/vietnam_places.py)
-
 ---
 
 ## Hậu xử lý dữ liệu
