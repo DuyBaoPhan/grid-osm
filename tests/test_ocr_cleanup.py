@@ -23,7 +23,13 @@ from src.vision import (
     _texts_are_unrelated,
 )
 from src.vision.crop_processing import split_crop_into_lines
-from src.vision.recognizers import _recognize_text_crop_vietocr
+from src.vision.text_cleaning.spelling import _remove_adjacent_duplicate_ocr_tokens
+from src.vision.recognizers import (
+    _build_one_pass_ocr_image,
+    _ocr_needs_rescue,
+    _recognize_text_crop_vietocr,
+    _recognize_text_crop_vietocr_rescue,
+)
 
 
 def test_context_spelling_fixes_common_ocr_errors():
@@ -189,7 +195,6 @@ def test_stray_leading_capital_artifacts_are_removed_safely():
 def test_punctuation_precision_regressions_are_preserved():
     assert not _normalized_regresses_quality("Olivia s Prime Steakhouse", "Olivia's Prime Steakhouse")
     assert _clean_final_ocr_text("Olivia's Prime Steakhouse") == "Olivia's Prime Steakhouse"
-    assert _clean_final_ocr_text("Capi Studio DIY Souvenirs 8") == "Capi Studio DIY Souvenirs &..."
     assert _clean_final_ocr_text("Capi Studio DIY Souvenirs &...") == "Capi Studio DIY Souvenirs &..."
     assert _clean_final_ocr_text("125 Hai Bà Trưng") == "125 Hai Bà Trưng"
 
@@ -376,7 +381,10 @@ def test_reported_cong_duong_sach_crop_image_ocr_uses_contextual_spelling():
     import numpy as np
 
     root = os.path.dirname(os.path.dirname(__file__))
-    paths = glob.glob(os.path.join(root, "crops", "tile_0_0_poi_7_*.png"))
+    paths = [
+        path for path in glob.glob(os.path.join(root, "crops", "tile_0_0_poi_7_*.png"))
+        if "Cổng" in os.path.basename(path) or "Đường_sách" in os.path.basename(path)
+    ]
     if not paths:
         pytest.skip("missing optional reported Cổng Đường sách regression crop")
     img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -448,3 +456,84 @@ def test_spatial_exact_fuzzy_canonical_requires_location_evidence():
     assert match.action == "keep_ocr"
     assert match.selected == "Nice Weather"
 
+
+def test_adjacent_duplicate_before_segment_boundary_is_preserved():
+    assert _remove_adjacent_duplicate_ocr_tokens("Tuyền Tuyền / Quán (Thủ Thừa)") == "Tuyền Tuyền / Quán (Thủ Thừa)"
+    assert _remove_adjacent_duplicate_ocr_tokens("Tuyền Tuyền Quán") == "Tuyền Quán"
+
+
+def test_fast_safe_quality_gate_accepts_clean_text_and_rejects_weak_text():
+    assert not _ocr_needs_rescue("Cổng sau Trường", {"line_count": 1})
+    assert not _ocr_needs_rescue("Cổng sau Trường Đại học Kỹ thuật Y", {"line_count": 2})
+    assert _ocr_needs_rescue("", {"line_count": 1})
+    assert _ocr_needs_rescue("Tram vin nông nân", {"line_count": 1})
+    assert _ocr_needs_rescue("quantousus", {"line_count": 1})
+    assert _ocr_needs_rescue("A", {"line_count": 2})
+    assert _ocr_needs_rescue("XOKOHAMA", {"line_count": 2})
+    assert _ocr_needs_rescue("36bHappyH lower / Fruits Giỏ Trái Cây", {"line_count": 1})
+
+
+def test_one_pass_canonical_image_preserves_multiple_text_lines():
+    import cv2
+    import numpy as np
+
+    img = np.full((54, 180, 3), 245, dtype=np.uint8)
+    cv2.putText(img, "Bun mam", (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (35, 35, 35), 1, cv2.LINE_AA)
+    cv2.putText(img, "Noodle Shop", (8, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (80, 80, 80), 1, cv2.LINE_AA)
+
+    canonical = _build_one_pass_ocr_image(img, 1.0)
+    assert canonical.size > 0
+    assert canonical.shape[0] >= 40
+    assert canonical.shape[1] > img.shape[1]
+
+
+def test_fast_safe_uses_one_pass_when_quality_is_good(monkeypatch):
+    import numpy as np
+    import src.vision.recognizers as recognizers
+
+    calls = {"predict": 0, "rescue": 0}
+
+    class DummyPredictor:
+        def predict(self, _image):
+            calls["predict"] += 1
+            return "Cổng sau Trường"
+
+    def fail_rescue(*_args, **_kwargs):
+        calls["rescue"] += 1
+        return "SHOULD NOT USE"
+
+    monkeypatch.setattr(recognizers, "_get_vietocr_predictor", lambda: DummyPredictor())
+    monkeypatch.setattr(recognizers, "_recognize_text_crop_vietocr_rescue", fail_rescue)
+    img = np.full((80, 180, 3), 245, dtype=np.uint8)
+    import cv2
+    cv2.putText(img, "Cong sau Truong", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (35, 35, 35), 1, cv2.LINE_AA)
+    text = _recognize_text_crop_vietocr(img, [0, 0, 180, 80])
+    assert text == "Cổng sau Trường"
+    assert calls["predict"] == 1
+    assert calls["rescue"] == 0
+
+
+def test_fast_safe_falls_back_to_rescue_when_one_pass_is_weak(monkeypatch):
+    import numpy as np
+    import src.vision.recognizers as recognizers
+
+    calls = {"predict": 0, "rescue": 0}
+
+    class DummyPredictor:
+        def predict(self, _image):
+            calls["predict"] += 1
+            return ""
+
+    def rescue(*_args, **_kwargs):
+        calls["rescue"] += 1
+        return "Cổng sau Trường Đại học Kỹ thuật Y"
+
+    monkeypatch.setattr(recognizers, "_get_vietocr_predictor", lambda: DummyPredictor())
+    monkeypatch.setattr(recognizers, "_recognize_text_crop_vietocr_rescue", rescue)
+    img = np.full((80, 220, 3), 245, dtype=np.uint8)
+    import cv2
+    cv2.putText(img, "bad", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (35, 35, 35), 1, cv2.LINE_AA)
+    text = _recognize_text_crop_vietocr(img, [0, 0, 220, 80])
+    assert text == "Cổng sau Trường Đại học Kỹ thuật Y"
+    assert calls["predict"] == 1
+    assert calls["rescue"] == 1

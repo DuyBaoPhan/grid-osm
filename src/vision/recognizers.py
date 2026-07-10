@@ -214,7 +214,240 @@ def _recognize_text_crop_vietocr_normalized(
         return ""
 
 
-def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_side: str = "left", scale: float = 1.0, cx: float = None, cy: float = None) -> str:
+def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    """Build a single canonical image for VietOCR from a cleaned POI crop."""
+    if prepared_crop is None or prepared_crop.size == 0:
+        return np.empty((0, 0, 3), dtype=np.uint8)
+
+    tx1, ty1, tx2, ty2 = detect_text_area(prepared_crop, scale)
+    tx1_safe = max(0, tx1 - int(12 * scale))
+    tx2_safe = min(prepared_crop.shape[1], tx2 + int(12 * scale))
+    text_crop = prepared_crop[ty1:ty2, tx1_safe:tx2_safe]
+    if text_crop.size == 0:
+        return np.empty((0, 0, 3), dtype=np.uint8)
+
+    line_crops = split_crop_into_lines(text_crop, scale)
+    usable_lines = [line for line in line_crops if line is not None and line.size > 0]
+    if not usable_lines:
+        return np.empty((0, 0, 3), dtype=np.uint8)
+
+    line_items = []
+    for line in usable_lines:
+        if line is None or line.size == 0:
+            continue
+        hsv = cv2.cvtColor(line, cv2.COLOR_BGR2HSV)
+        s = hsv[:, :, 1]
+        v = hsv[:, :, 2]
+        ink_mask = ((v < 190) | (s > 60)).astype(np.uint8)
+        ys, xs = np.where(ink_mask > 0)
+        if len(xs) == 0 or len(ys) == 0:
+            continue
+        pad_x = max(6, int(8 * scale))
+        pad_y = max(4, int(5 * scale))
+        x1 = max(0, int(xs.min()) - pad_x)
+        x2 = min(line.shape[1], int(xs.max()) + pad_x + 1)
+        y1 = max(0, int(ys.min()) - pad_y)
+        y2 = min(line.shape[0], int(ys.max()) + pad_y + 1)
+        trimmed = line[y1:y2, x1:x2]
+        if trimmed.size == 0:
+            continue
+        ink_area = int(len(xs))
+        ink_w = int(xs.max() - xs.min() + 1)
+        ink_h = int(ys.max() - ys.min() + 1)
+        line_items.append({
+            "image": trimmed,
+            "ink_area": ink_area,
+            "ink_w": ink_w,
+            "ink_h": ink_h,
+            "ink_x1": int(xs.min()),
+            "ink_x2": int(xs.max()),
+            "line_index": len(line_items),
+        })
+
+    if not line_items:
+        return np.empty((0, 0, 3), dtype=np.uint8)
+
+    max_area = max(item["ink_area"] for item in line_items)
+    max_w = max(item["ink_w"] for item in line_items)
+    filtered_items = []
+    for idx, item in enumerate(line_items):
+        area_ratio = item["ink_area"] / max(1, max_area)
+        width_ratio = item["ink_w"] / max(1, max_w)
+        # Keep real label lines by relative ink geometry. Drop tiny leading/trailing
+        # components that sit inside the detection box but are not the POI label.
+        if area_ratio >= 0.45 or (area_ratio >= 0.32 and width_ratio >= 0.55):
+            filtered_items.append(item)
+    if not filtered_items:
+        filtered_items = [max(line_items, key=lambda item: item["ink_area"])]
+    line_items = filtered_items
+
+    max_h = max(item["ink_h"] for item in line_items)
+    if len(line_items) > 1 and max_h > 0:
+        primary_sized = []
+        last_idx = len(line_items) - 1
+        prior_items = line_items[:-1]
+        prior_min_x = min((item.get("ink_x1", 0) for item in prior_items), default=0)
+        prior_max_w = max((item["ink_w"] for item in prior_items), default=0)
+        for idx, item in enumerate(line_items):
+            height_ratio = item["ink_h"] / max(1, max_h)
+            area_ratio = item["ink_area"] / max(1, max_area)
+            is_trailing_small_line = idx == last_idx and height_ratio <= 0.80 and area_ratio <= 0.90
+            is_trailing_left_wide_outlier = (
+                idx == last_idx
+                and item.get("ink_x1", 0) <= prior_min_x - max(8, int(10 * scale))
+                and item["ink_w"] >= prior_max_w * 1.15
+            )
+            if not (is_trailing_small_line or is_trailing_left_wide_outlier):
+                primary_sized.append(item)
+        if primary_sized:
+            line_items = primary_sized
+
+    normalized_lines = []
+    target_h = max(48, int(50 * scale))
+    for item in line_items:
+        line = item["image"]
+        h_line, w_line = line.shape[:2]
+        if h_line <= 0 or w_line <= 0:
+            continue
+        ratio = target_h / h_line
+        resized = cv2.resize(
+            line,
+            (max(1, int(w_line * ratio)), target_h),
+            interpolation=cv2.INTER_CUBIC if ratio >= 1.0 else cv2.INTER_AREA,
+        )
+        # Gentle sharpen improves Vietnamese tone marks on small Google Maps labels.
+        blurred = cv2.GaussianBlur(resized, (0, 0), 0.8)
+        resized = cv2.addWeighted(resized, 1.35, blurred, -0.35, 0)
+        normalized_lines.append(resized)
+
+    if not normalized_lines:
+        return np.empty((0, 0, 3), dtype=np.uint8)
+
+    bg_color = np.median(prepared_crop, axis=(0, 1)).astype(int).tolist()
+    pad_h = max(8, int(8 * scale))
+    pad_w = max(16, int(18 * scale))
+    gap = max(8, int(8 * scale))
+    sep_w = max(10, int(12 * scale))
+    out_w = sum(line.shape[1] for line in normalized_lines) + 2 * pad_w + gap * (len(normalized_lines) - 1)
+    out_h = target_h + 2 * pad_h
+    canvas = np.full((out_h, out_w, 3), bg_color, dtype=np.uint8)
+
+    # VietOCR is strongest on single-line text. Convert multi-line labels into one
+    # horizontal OCR line with plain whitespace gaps. Avoid drawing artificial
+    # separators because slashes can be read as glyphs and corrupt Vietnamese tones.
+    x = pad_w
+    y = pad_h
+    for idx, line in enumerate(normalized_lines):
+        canvas[y:y + line.shape[0], x:x + line.shape[1]] = line
+        x += line.shape[1]
+        if idx < len(normalized_lines) - 1:
+            x += gap
+    return canvas
+
+
+def _one_pass_quality_features(canonical_img: np.ndarray, scale: float = 1.0) -> dict:
+    """Extract generic image features used by the fast_safe quality gate."""
+    if canonical_img is None or canonical_img.size == 0:
+        return {"line_count": 0, "text_area": 0}
+    try:
+        lines = _select_primary_line_crops(split_crop_into_lines(canonical_img, scale))
+        text_area = int(sum(line.shape[0] * line.shape[1] for line in lines if line is not None and line.size > 0))
+        return {"line_count": len(lines), "text_area": text_area}
+    except Exception:
+        return {"line_count": 0, "text_area": int(canonical_img.shape[0] * canonical_img.shape[1])}
+
+
+def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
+    """Return True when one-pass OCR is too weak and should fall back to rescue OCR."""
+    cleaned = _clean_final_ocr_text(text or "")
+    if not cleaned:
+        return True
+    if _looks_like_bad_ocr(cleaned) or _looks_like_vietnamese_gibberish(cleaned):
+        return True
+    if _junk_token_count(cleaned) > 0:
+        return True
+    tokens = _ocr_tokens(cleaned)
+    if not tokens:
+        return True
+    quality = _score_ocr_text_quality(cleaned)
+    artifact_score = _ocr_artifact_score(cleaned)
+    if artifact_score >= 4 and quality < 25:
+        return True
+    if artifact_score >= 2 and quality < 45:
+        return True
+    if quality < -20:
+        return True
+    features = features or {}
+    line_count = int(features.get("line_count") or 0)
+    if line_count >= 2 and len(tokens) <= 1:
+        return True
+    if line_count >= 2 and len(cleaned) < 5:
+        return True
+    return False
+
+
+def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float], icon_side: str = "left", scale: float = 1.0, cx: float = None, cy: float = None):
+    """Fast path: one VietOCR call on a canonical cleaned crop."""
+    predictor = _get_vietocr_predictor()
+    if predictor is None or cv_img is None:
+        return "", {"line_count": 0, "text_area": 0}
+
+    h_img, w_img = cv_img.shape[:2]
+    x1_orig, y1_orig, x2_orig, y2_orig = map(int, bbox)
+    pad = int(10 * scale)
+    y1 = max(0, y1_orig - pad)
+    y2 = min(h_img, y2_orig + pad)
+    x1 = max(0, x1_orig - pad)
+    x2 = min(w_img, x2_orig + pad)
+    raw_crop = cv_img[y1:y2, x1:x2]
+    if raw_crop.size == 0:
+        return "", {"line_count": 0, "text_area": 0}
+
+    bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
+    crop_clean = raw_crop.copy()
+    h_rc, w_rc = crop_clean.shape[:2]
+    border_w = int(4 * scale)
+    if border_w > 0:
+        if border_w < h_rc:
+            crop_clean[0:border_w, :] = bg_color
+            crop_clean[h_rc - border_w:, :] = bg_color
+        # Do not wipe left/right borders in one-pass mode. Many Google Maps labels
+        # start near the crop edge; wiping side borders causes prefix loss such as
+        # Honda->Jonda, Easia->asia, Fago->ago, In->n, TK CASTING->KCASTING.
+
+    if cx is not None and cy is not None:
+        cx_local = cx - x1
+        cy_local = cy - y1
+        if icon_side == "left":
+            mask_w = max(0, min(w_rc, int(cx_local + 12.0 * scale)))
+            crop_clean[:, 0:mask_w] = bg_color
+        elif icon_side == "right":
+            mask_x = max(0, min(w_rc, int(cx_local - 18.0 * scale)))
+            crop_clean[:, mask_x:w_rc] = bg_color
+        elif icon_side == "top":
+            mask_h = max(0, min(h_rc, int(cy_local + 18.0 * scale)))
+            crop_clean[0:mask_h, :] = bg_color
+        else:
+            r = int(16 * scale)
+            cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
+
+    canonical_source = normalize_ocr_background(crop_clean)
+    canonical_img = _build_one_pass_ocr_image(canonical_source, scale)
+    features = _one_pass_quality_features(canonical_img, scale)
+    if canonical_img.size == 0:
+        return "", features
+    try:
+        rgb = cv2.cvtColor(canonical_img, cv2.COLOR_BGR2RGB)
+        raw_text = (predictor.predict(Image.fromarray(rgb)) or "").strip()
+        text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
+        text_clean = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(_clean_junk_words(text_clean)))
+        return text_clean, features
+    except Exception as exc:
+        logger.debug("One-pass VietOCR error: %s", exc)
+        return "", features
+
+
+def _recognize_text_crop_vietocr_rescue(cv_img: np.ndarray, bbox: List[float], icon_side: str = "left", scale: float = 1.0, cx: float = None, cy: float = None) -> str:
     predictor = _get_vietocr_predictor()
     if predictor is None or cv_img is None:
         return ""
@@ -627,3 +860,25 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
 
     selected_text = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(selected_text))
     return selected_text
+
+
+def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_side: str = "left", scale: float = 1.0, cx: float = None, cy: float = None) -> str:
+    """Recognize POI text with fast_safe strategy: one-pass first, rescue only when quality is weak."""
+    one_pass_text, features = _recognize_text_crop_vietocr_one_pass(cv_img, bbox, icon_side, scale, cx, cy)
+    if not _ocr_needs_rescue(one_pass_text, features):
+        logger.info("  [OCR one-pass accepted] Text='%s'", one_pass_text)
+        return one_pass_text
+    logger.info("  [OCR one-pass rescue] Text='%s' features=%s", one_pass_text, features)
+    rescue_text = _recognize_text_crop_vietocr_rescue(cv_img, bbox, icon_side, scale, cx, cy)
+    one_score = _score_ocr_text_quality(one_pass_text)
+    rescue_score = _score_ocr_text_quality(rescue_text)
+    if one_pass_text and (not rescue_text or rescue_score + 8 < one_score):
+        logger.info(
+            "  [OCR keep one-pass after rescue] OnePass='%s' Rescue='%s' scores=(%.2f, %.2f)",
+            one_pass_text,
+            rescue_text,
+            one_score,
+            rescue_score,
+        )
+        return one_pass_text
+    return rescue_text

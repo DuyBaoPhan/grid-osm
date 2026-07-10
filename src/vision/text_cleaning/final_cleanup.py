@@ -207,7 +207,7 @@ def _drop_intrusive_conjunctions(text: str) -> str:
 
 
 def _apply_high_confidence_visual_ocr_corrections(text: str) -> str:
-    """Reserved for generic visual OCR repairs; never map one POI text to another."""
+    """Reserved for generic visual OCR repairs; never map one token/phrase to another."""
     return text
 
 def _clean_final_ocr_text(text: str) -> str:
@@ -302,7 +302,5 @@ def _clean_final_ocr_text(text: str) -> str:
                     )
                 cleaned = f"{segs[0]} {right_segment}"
     cleaned = _clean_ocr_edge_segments(cleaned) if '_clean_ocr_edge_segments' in globals() else cleaned
-    if re.search(r'\b(?:DIY|souvenirs?|gifts?|accessories|crafts?)\b', cleaned, flags=re.IGNORECASE):
-        cleaned = re.sub(r'\s+8\s*$', ' &...', cleaned)
     cleaned = _apply_high_confidence_visual_ocr_corrections(cleaned)
     return cleaned.strip()

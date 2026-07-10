@@ -57,6 +57,7 @@ def _remove_adjacent_duplicate_ocr_tokens(text: str) -> str:
             )
             and not any(ch.isdigit() for ch in prev_token + token)
             and not ((len(prev_token) == 1 or len(token) == 1) and key not in {"q", "p"})
+            and not re.match(r'\s*/', text[match.end():])
         ):
             keep = _choose_better_duplicate_token(prev_token, token)
             replacements[prev_idx] = keep

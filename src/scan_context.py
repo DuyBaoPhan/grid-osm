@@ -7,6 +7,8 @@ from typing import Iterator, Optional
 import config
 from boundary_manager import read_manifest, slugify
 from center_manager import get_center, read_centers
+from vietnam_places import strip_vietnamese_accents
+
 
 
 @dataclass(frozen=True)
@@ -147,8 +149,8 @@ def iter_manifest_areas(
     start_index: int = 0,
     max_areas: int = 0,
 ) -> Iterator[ScanArea]:
-    province_filter = (province_filter or "").casefold().strip()
-    district_filter = (district_filter or "").casefold().strip()
+    province_filter = strip_vietnamese_accents(province_filter or "").strip()
+    district_filter = strip_vietnamese_accents(district_filter or "").strip()
     centers = read_centers()
     emitted = 0
     for idx, row in enumerate(sorted(read_manifest(), key=_manifest_sort_key)):
@@ -157,11 +159,12 @@ def iter_manifest_areas(
         area = area_from_manifest_row(row, centers)
         if area is None:
             continue
-        if province_filter and province_filter not in area.province.casefold():
+        if province_filter and province_filter not in strip_vietnamese_accents(area.province):
             continue
-        if district_filter and district_filter not in area.district.casefold():
+        if district_filter and district_filter not in strip_vietnamese_accents(area.district):
             continue
         yield area
         emitted += 1
         if max_areas and emitted >= max_areas:
             break
+
