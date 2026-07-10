@@ -281,27 +281,6 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
         filtered_items = [max(line_items, key=lambda item: item["ink_area"])]
     line_items = filtered_items
 
-    max_h = max(item["ink_h"] for item in line_items)
-    if len(line_items) > 1 and max_h > 0:
-        primary_sized = []
-        last_idx = len(line_items) - 1
-        prior_items = line_items[:-1]
-        prior_min_x = min((item.get("ink_x1", 0) for item in prior_items), default=0)
-        prior_max_w = max((item["ink_w"] for item in prior_items), default=0)
-        for idx, item in enumerate(line_items):
-            height_ratio = item["ink_h"] / max(1, max_h)
-            area_ratio = item["ink_area"] / max(1, max_area)
-            is_trailing_small_line = idx == last_idx and height_ratio <= 0.80 and area_ratio <= 0.90
-            is_trailing_left_wide_outlier = (
-                idx == last_idx
-                and item.get("ink_x1", 0) <= prior_min_x - max(8, int(10 * scale))
-                and item["ink_w"] >= prior_max_w * 1.15
-            )
-            if not (is_trailing_small_line or is_trailing_left_wide_outlier):
-                primary_sized.append(item)
-        if primary_sized:
-            line_items = primary_sized
-
     normalized_lines = []
     target_h = max(48, int(50 * scale))
     for item in line_items:
@@ -358,7 +337,7 @@ def _one_pass_quality_features(canonical_img: np.ndarray, scale: float = 1.0) ->
 
 
 def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
-    """Return True when one-pass OCR is too weak and should fall back to rescue OCR."""
+    """Return True when one-pass OCR is too weak/suspicious and should fall back to rescue OCR."""
     cleaned = _clean_final_ocr_text(text or "")
     if not cleaned:
         return True
@@ -369,6 +348,35 @@ def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
     tokens = _ocr_tokens(cleaned)
     if not tokens:
         return True
+
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ0-9&]+', cleaned)
+    alpha_tokens = [w for w in words if w != "&" and any(ch.isalpha() for ch in w)]
+    known_count = sum(1 for w in alpha_tokens if _is_known_token(w))
+    unknown_tokens = [w for w in alpha_tokens if not _is_known_token(w)]
+    unknown_ratio = len(unknown_tokens) / max(1, len(alpha_tokens))
+    marked_unknown = [w for w in unknown_tokens if re.search(r'[À-ỹĐđ]', w)]
+    allcaps_unknown = [w for w in unknown_tokens if w.isupper() and len(w) >= 4]
+    weird_marked_case = [w for w in alpha_tokens if re.search(r'[À-ỹĐđ]', w) and sum(1 for ch in w if ch.isupper()) >= 2 and not w.isupper()]
+
+    if len(alpha_tokens) <= 2 and known_count == 0 and not any(w.isupper() and 2 <= len(w) <= 6 for w in alpha_tokens):
+        return True
+    if len(alpha_tokens) >= 3 and unknown_ratio >= 0.50 and (marked_unknown or len(unknown_tokens) >= 2):
+        return True
+    if len(alpha_tokens) >= 3 and len(allcaps_unknown) >= 2:
+        return True
+    if weird_marked_case:
+        return True
+    if re.search(r'(?<=\w)[,;:](?=\w)', cleaned):
+        return True
+    if re.search(r'\b[A-Za-zÀ-ỹĐđ]{1,2}\s*[-–—]\s*[A-Za-zÀ-ỹĐđ]{1,3}\b', cleaned):
+        return True
+    if re.search(r'[-–—]', cleaned) and marked_unknown:
+        return True
+    if len(alpha_tokens) >= 2 and re.search(r'[À-ỹĐđ]', cleaned) and re.search(r'\b\d\b\s*$', cleaned):
+        return True
+    if len(alpha_tokens) >= 8 and re.search(r'[-–—/,]', cleaned) and unknown_ratio >= 0.35:
+        return True
+
     quality = _score_ocr_text_quality(cleaned)
     artifact_score = _ocr_artifact_score(cleaned)
     if artifact_score >= 4 and quality < 25:
@@ -411,9 +419,6 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
         if border_w < h_rc:
             crop_clean[0:border_w, :] = bg_color
             crop_clean[h_rc - border_w:, :] = bg_color
-        if border_w < w_rc:
-            crop_clean[:, 0:border_w] = bg_color
-            crop_clean[:, w_rc - border_w:] = bg_color
 
     if cx is not None and cy is not None:
         cx_local = cx - x1
@@ -427,9 +432,6 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
         elif icon_side == "top":
             mask_h = max(0, min(h_rc, int(cy_local + 18.0 * scale)))
             crop_clean[0:mask_h, :] = bg_color
-        else:
-            r = int(16 * scale)
-            cv2.circle(crop_clean, (int(cx_local), int(cy_local)), r, bg_color, -1)
 
     canonical_source = normalize_ocr_background(crop_clean)
     canonical_img = _build_one_pass_ocr_image(canonical_source, scale)
@@ -478,9 +480,6 @@ def _recognize_text_crop_vietocr_rescue(cv_img: np.ndarray, bbox: List[float], i
         if border_w < h_rc:
             crop_clean[0:border_w, :] = bg_color
             crop_clean[h_rc - border_w:, :] = bg_color
-        if border_w < w_rc:
-            crop_clean[:, 0:border_w] = bg_color
-            crop_clean[:, w_rc - border_w:] = bg_color
 
     def _ocr_from_prepared_crop(prepared_crop: np.ndarray) -> str:
         tx1, ty1, tx2, ty2 = detect_text_area(prepared_crop, scale)

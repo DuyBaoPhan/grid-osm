@@ -120,7 +120,7 @@ def _restore_omitted_tokens_from_configured_phrases(text: str) -> str:
     """Restore omitted tokens when OCR output is a subsequence of a configured phrase."""
     words = _ocr_words(text)
     keys = _ocr_keys(words)
-    if len(keys) < 2:
+    if len(keys) < 3:
         return text
     for phrase in _load_configured_phrase_targets():
         phrase_keys = _ocr_keys(list(phrase))

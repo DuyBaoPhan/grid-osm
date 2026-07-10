@@ -93,9 +93,6 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
                 if border_w < hp:
                     img_part[0:border_w, :] = bg_color
                     img_part[hp - border_w:, :] = bg_color
-                if border_w < wp:
-                    img_part[:, 0:border_w] = bg_color
-                    img_part[:, wp - border_w:] = bg_color
 
         def _mask_icon_for_detection(img_part: np.ndarray):
             """Mask icon chỉ để tìm text box, không dùng ảnh này làm crop cuối."""
@@ -148,17 +145,17 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
             # HSV-only không bắt được các mảng trắng/xám nên vẫn còn dấu vết.
             if icon_side == "left":
                 icon_edge_in_crop = int(cx_local + 12.5 * scale) - tx1
-                clean_w = max(0, min(final_w, icon_edge_in_crop))
+                clean_w = max(0, min(final_w, icon_edge_in_crop, max(0, text_left_in_crop - int(2 * scale))))
                 if clean_w > 0:
                     crop[:, :clean_w] = bg_color
             elif icon_side == "right":
                 icon_edge_in_crop = int(cx_local - 12.5 * scale) - tx1
-                clean_x = max(0, min(final_w, icon_edge_in_crop))
+                clean_x = max(0, min(final_w, icon_edge_in_crop, max(0, text_right_in_crop + int(2 * scale))))
                 if clean_x < final_w:
                     crop[:, clean_x:] = bg_color
             elif icon_side == "top":
                 icon_edge_in_crop = int(cy_local + 12.5 * scale) - ty1
-                clean_h = max(0, min(final_h, icon_edge_in_crop))
+                clean_h = max(0, min(final_h, icon_edge_in_crop, max(0, text_top_in_crop - int(2 * scale))))
                 if clean_h > 0:
                     crop[:clean_h, :] = bg_color
 

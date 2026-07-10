@@ -24,6 +24,12 @@ except Exception:  # pragma: no cover - optional runtime dependency fallback
     fuzz = None
     process = None
 
+try:
+    from symspellpy import SymSpell, Verbosity
+except Exception:  # pragma: no cover - optional runtime dependency fallback
+    SymSpell = None
+    Verbosity = None
+
 
 _TOKEN_RE = re.compile(r"[A-Za-zÀ-ỹĐđ0-9]+")
 _MAX_NGRAM = 6
@@ -263,7 +269,9 @@ def _load_strict_phrase_dictionary() -> Dict[str, Tuple[str, ...]]:
             return
         key = " ".join(strip_vietnamese_accents(tok) for tok in canonical_tokens)
         if key:
-            phrase_dict[key] = canonical_tokens
+            prev = phrase_dict.get(key)
+            if prev is None or sum(_has_vietnamese_mark(tok) for tok in canonical_tokens) > sum(_has_vietnamese_mark(tok) for tok in prev):
+                phrase_dict[key] = canonical_tokens
 
     exact, _, _ = _load_places()
     for canonical_tokens in exact.values():
@@ -271,6 +279,10 @@ def _load_strict_phrase_dictionary() -> Dict[str, Tuple[str, ...]]:
 
     for canonical in _load_osm_words().values():
         add_phrase(canonical)
+        tokens = [m.group(0) for m in _TOKEN_RE.finditer(canonical or "")]
+        for n in range(2, 6):
+            for start in range(0, len(tokens) - n + 1):
+                add_phrase(" ".join(tokens[start:start + n]))
 
     for canonical in _load_curated_phrase_corrections().values():
         add_phrase(canonical)
@@ -292,6 +304,14 @@ def _is_strict_phrase_blocked(raw_tokens: Tuple[str, ...], canonical_tokens: Tup
         _has_vietnamese_mark(rt)
         and rt != ct
         and strip_vietnamese_accents(rt) != strip_vietnamese_accents(ct)
+        for rt, ct in zip(raw_tokens, canonical_tokens)
+    ):
+        return True
+    if len(raw_tokens) > 2 and any(
+        _has_vietnamese_mark(rt)
+        and _has_vietnamese_mark(ct)
+        and rt != ct
+        and strip_vietnamese_accents(rt) == strip_vietnamese_accents(ct)
         for rt, ct in zip(raw_tokens, canonical_tokens)
     ):
         return True
@@ -328,6 +348,15 @@ def _apply_strict_phrase_corrections(
             if canonical is None:
                 continue
             raw_tokens = tuple(original_tokens[start:start + n])
+            if all(rt == ct for rt, ct in zip(raw_tokens, canonical)):
+                continue
+            raw_mark_count = sum(_has_vietnamese_mark(tok) for tok in raw_tokens)
+            canonical_mark_count = sum(_has_vietnamese_mark(tok) for tok in canonical)
+            if raw_mark_count >= canonical_mark_count and all(
+                strip_vietnamese_accents(rt) == strip_vietnamese_accents(ct)
+                for rt, ct in zip(raw_tokens, canonical)
+            ):
+                continue
             if _is_strict_phrase_blocked(raw_tokens, canonical):
                 continue
             for off, repl in enumerate(canonical):
@@ -489,6 +518,193 @@ def is_known_token(token: str) -> bool:
         return False
     clean = strip_vietnamese_accents(token).lower()
     return clean in _load_known_tokens()
+
+
+def _token_is_vietnamese_like_for_correction(token: str) -> bool:
+    """Conservative token gate for SymSpell correction."""
+    if not token or _is_token_brand_like(token) or any(ch.isdigit() for ch in token):
+        return False
+    if not re.fullmatch(r"[A-Za-zÀ-ỹĐđ]{3,}", token):
+        return False
+    if token.isupper() and len(token) >= 2:
+        return False
+    # Prefer tokens that already look Vietnamese/OCR-noisy, or lowercase common words.
+    return _has_vietnamese_mark(token) or token[:1].islower()
+
+
+@lru_cache(maxsize=1)
+def _load_fuzzy_phrase_choices() -> Tuple[List[str], Dict[str, Tuple[str, ...]]]:
+    """Build phrase choices for rapidfuzz from existing non-runtime dictionaries."""
+    phrase_dict = _load_strict_phrase_dictionary()
+    choices: List[str] = []
+    lookup: Dict[str, Tuple[str, ...]] = {}
+    for key, canonical in phrase_dict.items():
+        if not (2 <= len(canonical) <= 5):
+            continue
+        choices.append(key)
+        lookup[key] = canonical
+    choices.sort(key=lambda item: (-len(item.split()), item))
+    return choices, lookup
+
+
+def _fuzzy_phrase_replacements(original_tokens: List[str], stripped_tokens: List[str]) -> Dict[int, str]:
+    """Use rapidfuzz to correct noisy 2-5 token phrases against dictionary phrases."""
+    if process is None or fuzz is None:
+        return {}
+    choices, lookup = _load_fuzzy_phrase_choices()
+    if not choices:
+        return {}
+
+    replacements: Dict[int, str] = {}
+    occupied: Set[int] = set()
+    for n in range(5, 1, -1):
+        same_len_choices = [choice for choice in choices if len(choice.split()) == n]
+        if not same_len_choices:
+            continue
+        for start in range(0, len(original_tokens) - n + 1):
+            indexes = list(range(start, start + n))
+            if any(idx in occupied for idx in indexes):
+                continue
+            raw_tokens = tuple(original_tokens[start:start + n])
+            unknown_count = sum(1 for tok in raw_tokens if not is_known_token(tok))
+            marked_count = sum(1 for tok in raw_tokens if _has_vietnamese_mark(tok))
+            allow_marked_two_token_phrase = n == 2 and marked_count == 2
+            if unknown_count < 2 and not (n == 2 and unknown_count == 1 and marked_count == 2) and not allow_marked_two_token_phrase:
+                continue
+            if _is_brand_like(raw_tokens) or any(_is_token_brand_like(tok) for tok in raw_tokens):
+                continue
+            src_key = " ".join(stripped_tokens[start:start + n])
+            match = process.extractOne(src_key, same_len_choices, scorer=fuzz.WRatio)
+            if not match:
+                continue
+            matched_key, score, _ = match
+            if score < 92:
+                continue
+            canonical = lookup.get(matched_key)
+            if not canonical:
+                continue
+            if len(raw_tokens) != len(canonical) or _is_brand_like(raw_tokens):
+                continue
+            if any(any(ch.isdigit() for ch in tok) for tok in raw_tokens):
+                continue
+            if any(tok.isupper() and len(tok) >= 2 and tok not in {"TP"} for tok in raw_tokens):
+                continue
+            # Prevent unrelated phrase jumps: first letters should mostly agree.
+            src_parts = src_key.split()
+            dst_parts = matched_key.split()
+            first_letter_hits = sum(1 for s, d in zip(src_parts, dst_parts) if s[:1] == d[:1])
+            if first_letter_hits < max(1, n - 1):
+                continue
+            if allow_marked_two_token_phrase and unknown_count == 0:
+                same_base_positions = sum(
+                    1 for raw, can in zip(raw_tokens, canonical)
+                    if strip_vietnamese_accents(raw) == strip_vietnamese_accents(can)
+                )
+                one_insert_missing = any(
+                    len(strip_vietnamese_accents(can)) == len(strip_vietnamese_accents(raw)) + 1
+                    and strip_vietnamese_accents(raw)[:1] == strip_vietnamese_accents(can)[:1]
+                    and fuzz.ratio(strip_vietnamese_accents(raw), strip_vietnamese_accents(can)) >= 80
+                    for raw, can in zip(raw_tokens, canonical)
+                )
+                if not (score >= 99.5 or (same_base_positions >= n - 1 and one_insert_missing)):
+                    continue
+            for off, repl in enumerate(canonical):
+                replacements[start + off] = repl
+                occupied.add(start + off)
+    return replacements
+
+
+@lru_cache(maxsize=1)
+def _load_symspell_resources():
+    """Build SymSpell dictionary and base->canonical lookup from internal corpus only."""
+    if SymSpell is None:
+        return None, {}
+    sym = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+    canonical_by_base: Dict[str, str] = {}
+
+    def add_token(token: str, freq: int = 1) -> None:
+        token = (token or "").strip()
+        if not token or any(ch.isdigit() for ch in token):
+            return
+        if not re.fullmatch(r"[A-Za-zÀ-ỹĐđ]{2,}", token):
+            return
+        base = strip_vietnamese_accents(token).lower()
+        if not base or _is_token_brand_like(token):
+            return
+        sym.create_dictionary_entry(base, max(1, int(freq)))
+        prev = canonical_by_base.get(base)
+        if prev is None or (_has_vietnamese_mark(token) and not _has_vietnamese_mark(prev)):
+            canonical_by_base[base] = token
+
+    exact, _, _ = _load_places()
+    for canonical_tokens in exact.values():
+        for tok in canonical_tokens:
+            add_token(tok, 5)
+    for canonical in _load_osm_words().values():
+        for tok in _TOKEN_RE.findall(canonical):
+            add_token(tok, 3)
+    for canonical in _load_curated_phrase_corrections().values():
+        for tok in _TOKEN_RE.findall(canonical):
+            add_token(tok, 4)
+    for _, canonical, _ in _load_contextual_token_corrections():
+        for tok in _TOKEN_RE.findall(canonical):
+            add_token(tok, 2)
+    return sym, canonical_by_base
+
+
+def _symspell_token_replacements(original_tokens: List[str], stripped_tokens: List[str], occupied: Set[int]) -> Dict[int, str]:
+    """Use SymSpell only for unknown, Vietnamese-like tokens with unambiguous candidates."""
+    if Verbosity is None:
+        return {}
+    sym, canonical_by_base = _load_symspell_resources()
+    if sym is None or not canonical_by_base:
+        return {}
+
+    replacements: Dict[int, str] = {}
+    for idx, (raw, key) in enumerate(zip(original_tokens, stripped_tokens)):
+        if idx in occupied or is_known_token(raw) or not _token_is_vietnamese_like_for_correction(raw):
+            continue
+        max_distance = 1 if len(key) <= 4 else 2
+        suggestions = sym.lookup(key, Verbosity.CLOSEST, max_edit_distance=max_distance, include_unknown=False)
+        if not suggestions:
+            continue
+        best = suggestions[0]
+        tied = [s for s in suggestions if s.distance == best.distance and s.count >= max(1, int(best.count * 0.8))]
+        if len(tied) > 1:
+            continue
+        canonical = canonical_by_base.get(best.term)
+        if not canonical or strip_vietnamese_accents(canonical).lower() == key:
+            continue
+        if _is_token_brand_like(canonical):
+            continue
+        replacements[idx] = _match_case(raw, canonical)
+    return replacements
+
+
+def normalize_ocr_spelling_fuzzy(text: str) -> str:
+    """Dictionary-backed fuzzy OCR cleanup: rapidfuzz phrase pass then SymSpell token pass."""
+    if not text:
+        return text
+    matches = list(_TOKEN_RE.finditer(text))
+    if not matches:
+        return text
+
+    original_tokens = [m.group(0) for m in matches]
+    stripped_tokens = [strip_vietnamese_accents(tok) for tok in original_tokens]
+    replacements = _fuzzy_phrase_replacements(original_tokens, stripped_tokens)
+    occupied = set(replacements.keys())
+    replacements.update(_symspell_token_replacements(original_tokens, stripped_tokens, occupied))
+    if not replacements:
+        return text
+
+    out = []
+    last = 0
+    for idx, match in enumerate(matches):
+        out.append(text[last:match.start()])
+        out.append(replacements.get(idx, match.group(0)))
+        last = match.end()
+    out.append(text[last:])
+    return "".join(out)
 
 
 

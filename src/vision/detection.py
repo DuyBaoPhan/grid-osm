@@ -266,26 +266,45 @@ async def extract_pois_from_screenshot(
         top_sq = img[y1_t:y2_t, x1_t:x2_t]
         
         def get_square_score(sq):
+            """Score vùng có giống icon/blob ở rìa không, không phụ thuộc icon tròn/vuông/chữ nhật."""
             if sq is None or sq.size == 0:
                 return -999.0
             try:
+                hp, wp = sq.shape[:2]
                 hsv = cv2.cvtColor(sq, cv2.COLOR_BGR2HSV)
+                gray = cv2.cvtColor(sq, cv2.COLOR_BGR2GRAY)
                 s = hsv[:, :, 1]
                 v = hsv[:, :, 2]
-                
-                fg_mask = ~((v > 215) & (s < 30))
-                
-                h_sz, w_sz = sq.shape[:2]
-                cy_min, cy_max = int(0.25 * h_sz), int(0.75 * h_sz)
-                cx_min, cx_max = int(0.25 * w_sz), int(0.75 * w_sz)
-                center_mask = fg_mask[cy_min:cy_max, cx_min:cx_max]
-                center_fg_ratio = np.mean(center_mask) if center_mask.size > 0 else 0.0
-                
-                mean_sat = float(np.mean(s))
-                mean_val = float(np.mean(v))
-                
-                score = mean_sat + 60.0 * center_fg_ratio - 0.2 * mean_val
-                return score
+
+                # Icon có thể xám nhạt nên kết hợp màu + tương phản sáng/tối, không chỉ saturation.
+                bg_v = float(np.median(v))
+                color_mask = (s > 35) & (v > 55)
+                contrast_mask = np.abs(gray.astype(np.float32) - float(np.median(gray))) > 22.0
+                dark_mask = v < max(185.0, bg_v - 18.0)
+                mask = (color_mask | contrast_mask | dark_mask).astype(np.uint8) * 255
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+                best = -999.0
+                component_count = 0
+                for label in range(1, num_labels):
+                    x, y, w_box, h_box, area = stats[label]
+                    if area < max(8, int(10 * scale * scale)):
+                        continue
+                    component_count += 1
+                    box_area = max(1, w_box * h_box)
+                    fill_ratio = area / box_area
+                    aspect = w_box / max(1, h_box)
+                    compact_bonus = 24.0 if 0.45 <= aspect <= 2.2 else -18.0
+                    fill_bonus = 55.0 * min(1.0, fill_ratio)
+                    area_bonus = 45.0 * min(1.0, area / max(1.0, 0.22 * hp * wp))
+                    size_ok = 10.0 if h_box >= 0.35 * hp or w_box >= 0.35 * wp else -15.0
+                    best = max(best, area_bonus + fill_bonus + compact_bonus + size_ok)
+
+                # Text-like vùng thường có nhiều component nhỏ/nét rời, phạt để không nhầm chữ đầu là icon.
+                text_like_penalty = 18.0 * max(0, component_count - 2)
+                return best - text_like_penalty
             except Exception:
                 return -999.0
                 
@@ -293,17 +312,14 @@ async def extract_pois_from_screenshot(
         score_right = get_square_score(right_sq)
         score_top = get_square_score(top_sq)
         
-        THRESHOLD = 10.0
-        # Nếu không có icon rõ ràng ở bất kỳ phía nào → mặc định là left (hầu hết POI đều có icon bên trái)
-        # để bắt được cả các icon màu xám/nhạt không vượt qua THRESHOLD
-        if max(score_left, score_right, score_top) < THRESHOLD:
-            icon_side = "left"
-        elif score_top > score_left + THRESHOLD and score_top > score_right + THRESHOLD:
-            icon_side = "top"
-        elif score_right > score_left + THRESHOLD:
-            icon_side = "right"
-        else:
-            icon_side = "left"
+        ICON_CONF_THRESHOLD = 78.0
+        ICON_MARGIN = 12.0
+        side_scores = {"left": score_left, "right": score_right, "top": score_top}
+        icon_side, best_score = max(side_scores.items(), key=lambda item: item[1])
+        second_score = max(score for side, score in side_scores.items() if side != icon_side)
+        icon_confident = best_score >= ICON_CONF_THRESHOLD and (best_score - second_score) >= ICON_MARGIN
+        if not icon_confident:
+            icon_side = "none"
 
         # Định vị chính xác tâm icon bằng phương pháp tìm trọng tâm (centroid) màu sắc
         icon_w_search = int(30 * scale)
@@ -422,8 +438,13 @@ async def extract_pois_from_screenshot(
             "y": cy,
             "confidence": conf,
             "bbox": [float(left_exp), float(top_exp), float(right_exp - left_exp), float(bottom_exp - top_exp)],
-            "has_icon": True,
+            "has_icon": bool(icon_confident),
             "icon_side": icon_side,
+            "icon_score_left": float(score_left),
+            "icon_score_right": float(score_right),
+            "icon_score_top": float(score_top),
+            "icon_score_best": float(best_score),
+            "icon_score_second": float(second_score),
             "yolo_height": float(height),
             "edge_cut": bool(edge_sides),
             "edge_sides": edge_sides,

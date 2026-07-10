@@ -39,6 +39,18 @@ def _normalize_ocr_spelling_by_dictionary(text: str) -> str:
     return normalize_ocr_spelling(text)
 
 
+def _normalize_ocr_spelling_by_fuzzy_dictionary(text: str) -> str:
+    """Sửa lỗi OCR fuzzy bằng dictionary/corpus nội bộ, không hardcode runtime."""
+    try:
+        from src.vietnam_places import normalize_ocr_spelling_fuzzy
+    except ImportError:
+        try:
+            from vietnam_places import normalize_ocr_spelling_fuzzy
+        except ImportError:
+            return text
+    return normalize_ocr_spelling_fuzzy(text)
+
+
 def _is_known_token(token: str) -> bool:
     """True nếu token là từ tiếng Việt / địa danh có trong từ điển."""
     try:

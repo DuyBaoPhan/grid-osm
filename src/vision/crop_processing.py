@@ -211,25 +211,46 @@ def split_crop_into_lines_normalized(crop_img: np.ndarray, scale: float = 1.0) -
 
 
 def _select_primary_line_crops(line_crops: List[np.ndarray]) -> List[np.ndarray]:
-    """Chỉ giữ dòng tên chính: ưu tiên dòng có font/chiều cao chữ lớn nhất, bỏ mô tả nhỏ bên dưới."""
+    """Giữ các dòng chữ liền kề có tín hiệu đủ mạnh; không bỏ dòng tên phụ chỉ vì thấp hơn."""
     usable = [crop for crop in line_crops if crop is not None and crop.size > 0]
     if len(usable) <= 1:
         return usable
 
-    heights = [crop.shape[0] for crop in usable]
-    max_h = max(heights)
-    if max_h <= 0:
+    def _ink_metrics(crop: np.ndarray) -> tuple:
+        try:
+            hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+            s = hsv[:, :, 1]
+            v = hsv[:, :, 2]
+            mask = ((v < 190) | (s > 45)).astype(np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+            ys, xs = np.where(mask > 0)
+            if len(xs) == 0 or len(ys) == 0:
+                return 0, 0, 0
+            ink_h = int(ys.max() - ys.min() + 1)
+            ink_w = int(xs.max() - xs.min() + 1)
+            ink_area = int(mask.sum())
+            return ink_h, ink_w, ink_area
+        except Exception:
+            return crop.shape[0], crop.shape[1], crop.shape[0] * crop.shape[1]
+
+    metrics = [_ink_metrics(crop) for crop in usable]
+    first_h, first_w, first_area = metrics[0]
+    if first_h <= 0 or first_w <= 0:
         return usable[:1]
 
-    # Google Maps thường đặt tên chính ở đầu nhãn; category/mô tả nằm dưới.
-    # Padding làm dòng nhỏ có crop height gần dòng chính, nên không chọn mọi dòng gần max.
-    first_h = heights[0]
-    keep_threshold = max(first_h * 0.92, max_h * 0.82)
-    kept = []
-    for crop, h in zip(usable, heights):
-        if h >= keep_threshold:
+    kept = [usable[0]]
+    for crop, (ink_h, ink_w, ink_area) in zip(usable[1:], metrics[1:]):
+        if ink_h <= 0 or ink_w <= 0:
+            break
+        height_ratio = ink_h / max(1, first_h)
+        width_ratio = ink_w / max(1, first_w)
+        area_ratio = ink_area / max(1, first_area)
+        # Giữ dòng dưới nếu vẫn là dòng chữ thật, không phải nhiễu nhỏ hoặc subtitle quá yếu.
+        if height_ratio >= 0.58 and width_ratio >= 0.35 and area_ratio >= 0.25:
             kept.append(crop)
+            if len(kept) >= 2:
+                break
             continue
         break
 
-    return kept or [usable[0]]
+    return kept
