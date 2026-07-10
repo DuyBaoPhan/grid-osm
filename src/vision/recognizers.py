@@ -406,14 +406,14 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
     bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
     crop_clean = raw_crop.copy()
     h_rc, w_rc = crop_clean.shape[:2]
-    border_w = int(4 * scale)
+    border_w = int(10 * scale)
     if border_w > 0:
         if border_w < h_rc:
             crop_clean[0:border_w, :] = bg_color
             crop_clean[h_rc - border_w:, :] = bg_color
-        # Do not wipe left/right borders in one-pass mode. Many Google Maps labels
-        # start near the crop edge; wiping side borders causes prefix loss such as
-        # Honda->Jonda, Easia->asia, Fago->ago, In->n, TK CASTING->KCASTING.
+        if border_w < w_rc:
+            crop_clean[:, 0:border_w] = bg_color
+            crop_clean[:, w_rc - border_w:] = bg_color
 
     if cx is not None and cy is not None:
         cx_local = cx - x1
@@ -440,7 +440,8 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
         rgb = cv2.cvtColor(canonical_img, cv2.COLOR_BGR2RGB)
         raw_text = (predictor.predict(Image.fromarray(rgb)) or "").strip()
         text_clean = re.sub(r'^.*?\(\d+(?:[.,]\d+)?\s*[KkM]?[+-]?\)\s*(?:[-·•*]\s*)?', '', raw_text).strip()
-        text_clean = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(_clean_junk_words(text_clean)))
+        text_clean = _clean_junk_words(_clean_spelling(text_clean))
+        text_clean = _remove_adjacent_duplicate_ocr_tokens(_clean_final_ocr_text(text_clean))
         return text_clean, features
     except Exception as exc:
         logger.debug("One-pass VietOCR error: %s", exc)
