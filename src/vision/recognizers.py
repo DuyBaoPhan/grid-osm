@@ -227,7 +227,11 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
         return np.empty((0, 0, 3), dtype=np.uint8)
 
     line_crops = split_crop_into_lines(text_crop, scale)
-    usable_lines = [line for line in line_crops if line is not None and line.size > 0]
+    # Filter smaller category/rating subtitles before flattening. Once lines are
+    # joined horizontally, their original font geometry is lost and fluent junk
+    # can receive a misleadingly high language score.
+    usable_lines = _select_primary_line_crops(line_crops)
+    usable_lines = [line for line in usable_lines if line is not None and line.size > 0]
     if not usable_lines:
         return np.empty((0, 0, 3), dtype=np.uint8)
 
@@ -267,20 +271,6 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
     if not line_items:
         return np.empty((0, 0, 3), dtype=np.uint8)
 
-    max_area = max(item["ink_area"] for item in line_items)
-    max_w = max(item["ink_w"] for item in line_items)
-    filtered_items = []
-    for idx, item in enumerate(line_items):
-        area_ratio = item["ink_area"] / max(1, max_area)
-        width_ratio = item["ink_w"] / max(1, max_w)
-        # Keep real label lines by relative ink geometry. Drop tiny leading/trailing
-        # components that sit inside the detection box but are not the POI label.
-        if area_ratio >= 0.45 or (area_ratio >= 0.32 and width_ratio >= 0.55):
-            filtered_items.append(item)
-    if not filtered_items:
-        filtered_items = [max(line_items, key=lambda item: item["ink_area"])]
-    line_items = filtered_items
-
     normalized_lines = []
     target_h = max(48, int(50 * scale))
     for item in line_items:
@@ -294,7 +284,6 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
             (max(1, int(w_line * ratio)), target_h),
             interpolation=cv2.INTER_CUBIC if ratio >= 1.0 else cv2.INTER_AREA,
         )
-        # Gentle sharpen improves Vietnamese tone marks on small Google Maps labels.
         blurred = cv2.GaussianBlur(resized, (0, 0), 0.8)
         resized = cv2.addWeighted(resized, 1.35, blurred, -0.35, 0)
         normalized_lines.append(resized)
@@ -306,14 +295,10 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
     pad_h = max(8, int(8 * scale))
     pad_w = max(16, int(18 * scale))
     gap = max(8, int(8 * scale))
-    sep_w = max(10, int(12 * scale))
     out_w = sum(line.shape[1] for line in normalized_lines) + 2 * pad_w + gap * (len(normalized_lines) - 1)
     out_h = target_h + 2 * pad_h
     canvas = np.full((out_h, out_w, 3), bg_color, dtype=np.uint8)
 
-    # VietOCR is strongest on single-line text. Convert multi-line labels into one
-    # horizontal OCR line with plain whitespace gaps. Avoid drawing artificial
-    # separators because slashes can be read as glyphs and corrupt Vietnamese tones.
     x = pad_w
     y = pad_h
     for idx, line in enumerate(normalized_lines):
@@ -324,16 +309,27 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
     return canvas
 
 
-def _one_pass_quality_features(canonical_img: np.ndarray, scale: float = 1.0) -> dict:
+def _retained_source_line_count(prepared_crop: np.ndarray, scale: float = 1.0) -> int:
+    """Count title-like lines retained by the same geometry used for one-pass OCR."""
+    if prepared_crop is None or prepared_crop.size == 0:
+        return 0
+    tx1, ty1, tx2, ty2 = detect_text_area(prepared_crop, scale)
+    text_crop = prepared_crop[ty1:ty2, max(0, tx1 - int(12 * scale)):min(prepared_crop.shape[1], tx2 + int(12 * scale))]
+    if text_crop.size == 0:
+        return 0
+    return len(_select_primary_line_crops(split_crop_into_lines(text_crop, scale)))
+
+
+def _one_pass_quality_features(canonical_img: np.ndarray, scale: float = 1.0, source_line_count: int = 0) -> dict:
     """Extract generic image features used by the fast_safe quality gate."""
     if canonical_img is None or canonical_img.size == 0:
-        return {"line_count": 0, "text_area": 0}
+        return {"line_count": 0, "source_line_count": source_line_count, "text_area": 0}
     try:
         lines = _select_primary_line_crops(split_crop_into_lines(canonical_img, scale))
         text_area = int(sum(line.shape[0] * line.shape[1] for line in lines if line is not None and line.size > 0))
-        return {"line_count": len(lines), "text_area": text_area}
+        return {"line_count": len(lines), "source_line_count": source_line_count, "text_area": text_area}
     except Exception:
-        return {"line_count": 0, "text_area": int(canonical_img.shape[0] * canonical_img.shape[1])}
+        return {"line_count": 0, "source_line_count": source_line_count, "text_area": int(canonical_img.shape[0] * canonical_img.shape[1])}
 
 
 def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
@@ -387,9 +383,15 @@ def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
         return True
     features = features or {}
     line_count = int(features.get("line_count") or 0)
+    retained_line_count = int(features.get("retained_line_count") or 0)
     if line_count >= 2 and len(tokens) <= 1:
         return True
     if line_count >= 2 and len(cleaned) < 5:
+        return True
+    # Targeted coverage gate: only rescue when geometry retained multiple title-like
+    # lines but OCR returned fewer tokens than lines. Do not penalize normal multi-line
+    # labels that already produced adequate text.
+    if retained_line_count >= 2 and len(tokens) < retained_line_count:
         return True
     return False
 
@@ -434,8 +436,12 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
             crop_clean[0:mask_h, :] = bg_color
 
     canonical_source = normalize_ocr_background(crop_clean)
+    source_lines = split_crop_into_lines(canonical_source, scale)
+    source_line_count = len([line for line in source_lines if line is not None and line.size > 0])
+    retained_line_count = _retained_source_line_count(canonical_source, scale)
     canonical_img = _build_one_pass_ocr_image(canonical_source, scale)
-    features = _one_pass_quality_features(canonical_img, scale)
+    features = _one_pass_quality_features(canonical_img, scale, source_line_count=source_line_count)
+    features["retained_line_count"] = retained_line_count
     if canonical_img.size == 0:
         return "", features
     try:

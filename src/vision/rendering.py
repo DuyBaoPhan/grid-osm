@@ -51,206 +51,109 @@ def enhance_for_detection(image_bytes: bytes) -> bytes:
 
 
 def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float = 1.0):
-    """Lưu ảnh crop POI đẹp: chỉ text, padding đều, không lộ icon, không cắt chữ."""
+    """Save text-only POI crop using bbox-relative component geometry."""
     try:
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return
-
+        img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
         bbox = poi.get("bbox")
-        if not bbox:
+        if img is None or not bbox:
             return
 
         l, t, w, h = map(int, bbox)
         h_img, w_img = img.shape[:2]
-
-        # Lấy vùng rộng hơn bbox để detect đủ chữ sát biên trước khi crop lại đẹp.
-        outer_pad = max(10, int(12 * scale))
-        y1 = max(0, t - outer_pad)
-        y2 = min(h_img, t + h + outer_pad)
-        x1 = max(0, l - outer_pad)
-        x2 = min(w_img, l + w + outer_pad)
-
-        raw_crop = img[y1:y2, x1:x2]
-        if raw_crop.size == 0:
+        # Keep context slightly larger than a typical 24–28 px map icon, but avoid
+        # pulling broad road polygons into the saved crop.
+        outer_x = max(28, int(34 * scale))
+        outer_y = max(10, int(12 * scale))
+        x1, x2 = max(0, l - outer_x), min(w_img, l + w + outer_x)
+        y1, y2 = max(0, t - outer_y), min(h_img, t + h + outer_y)
+        raw = img[y1:y2, x1:x2]
+        if raw.size == 0:
             return
 
-        bg_color = np.median(raw_crop, axis=(0, 1)).astype(int).tolist()
-        h_rc, w_rc = raw_crop.shape[:2]
+        hp, wp = raw.shape[:2]
+        bx1, bx2 = l - x1, l + w - x1
+        by1, by2 = t - y1, t + h - y1
+        corner = max(2, min(8, hp // 4, wp // 4))
+        samples = np.concatenate((
+            raw[:corner, :corner].reshape(-1, 3), raw[:corner, -corner:].reshape(-1, 3),
+            raw[-corner:, :corner].reshape(-1, 3), raw[-corner:, -corner:].reshape(-1, 3),
+        ))
+        bg = np.median(samples, axis=0).astype(np.uint8)
 
-        cx = poi.get("x")
-        cy = poi.get("y")
-        icon_side = poi.get("icon_side", "left")
-        cx_local = (cx - x1) if cx is not None else None
-        cy_local = (cy - y1) if cy is not None else None
+        hsv = cv2.cvtColor(raw, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)
+        bg_gray = float(cv2.cvtColor(bg.reshape(1, 1, 3), cv2.COLOR_BGR2GRAY)[0, 0])
+        candidate = (((hsv[:, :, 1] > 38) & (hsv[:, :, 2] > 55)) |
+                     (np.abs(gray.astype(np.float32) - bg_gray) > 48)).astype(np.uint8) * 255
+        candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
 
-        def _clean_outer_border(img_part: np.ndarray):
-            """Dọn viền của ảnh detect để không bắt nhiễu map ở vùng lấy rộng."""
-            border_w = max(8, int(10 * scale))
-            hp, wp = img_part.shape[:2]
-            if border_w > 0:
-                if border_w < hp:
-                    img_part[0:border_w, :] = bg_color
-                    img_part[hp - border_w:, :] = bg_color
+        band = max(20, int(28 * scale))
+        edge_rois = (
+            (max(0, by1 - band), min(hp, by2 + band), max(0, bx1 - band), min(wp, bx1 + band)),
+            (max(0, by1 - band), min(hp, by2 + band), max(0, bx2 - band), min(wp, bx2 + band)),
+            (max(0, by1 - band), min(hp, by1 + band), max(0, bx1 - band), min(wp, bx2 + band)),
+        )
+        icon_mask = np.zeros((hp, wp), np.uint8)
+        for ya, yb, xa, xb in edge_rois:
+            roi = candidate[ya:yb, xa:xb]
+            count, labels, stats, _ = cv2.connectedComponentsWithStats(roi, 8)
+            for label in range(1, count):
+                cx, cy, cw, ch, area = stats[label]
+                if area < max(35, int(38 * scale * scale)):
+                    continue
+                aspect = cw / max(1, ch)
+                fill = area / max(1, cw * ch)
+                # Require icon-scale geometry and a center close to a YOLO boundary.
+                # Small compact glyph groups can otherwise be mistaken for icons and
+                # removed before text bounds are measured.
+                compact = 0.65 <= aspect <= 1.55 and fill >= 0.34
+                min_side = max(14, int(15 * scale))
+                max_side = max(34, int(38 * scale))
+                icon_sized = min_side <= cw <= max_side and min_side <= ch <= max_side
+                center_x = xa + cx + cw / 2.0
+                center_y = ya + cy + ch / 2.0
+                near_vertical_edge = min(abs(center_x - bx1), abs(center_x - bx2)) <= max(14, int(18 * scale))
+                near_top_edge = abs(center_y - by1) <= max(14, int(18 * scale))
+                if compact and icon_sized and (near_vertical_edge or near_top_edge):
+                    component = (labels == label).astype(np.uint8) * 255
+                    icon_mask[ya:yb, xa:xb] |= component
+        icon_mask = cv2.dilate(icon_mask, np.ones((5, 5), np.uint8), iterations=1)
 
-        def _mask_icon_for_detection(img_part: np.ndarray):
-            """Mask icon chỉ để tìm text box, không dùng ảnh này làm crop cuối."""
-            if img_part is None or img_part.size == 0 or cx_local is None or cy_local is None:
-                return
-            hp, wp = img_part.shape[:2]
-            if icon_side == "left":
-                mask_w = max(0, min(wp, int(cx_local + 7.5 * scale)))
-                img_part[:, :mask_w] = bg_color
-            elif icon_side == "right":
-                mask_x = max(0, min(wp, int(cx_local - 7.5 * scale)))
-                img_part[:, mask_x:] = bg_color
-            elif icon_side == "top":
-                mask_h = max(0, min(hp, int(cy_local + 7.5 * scale)))
-                img_part[:mask_h, :] = bg_color
-
-        # Ảnh detect có thể bị mask icon; crop cuối lấy từ raw_crop để không mất nét chữ.
-        detect_img = raw_crop.copy()
-        _clean_outer_border(detect_img)
-        _mask_icon_for_detection(detect_img)
-
-        tx1, ty1, tx2, ty2 = detect_text_area(detect_img, scale)
-
-        # Padding đẹp 4 phía. Giữ phải rộng hơn vì chữ cuối thường sát biên/nhỏ.
-        pad_left = max(6, int(8 * scale))
-        pad_right = max(10, int(14 * scale))
-        pad_top = max(4, int(5 * scale))
-        pad_bottom = max(5, int(6 * scale))
-        raw_tx1 = tx1
-        raw_ty1 = ty1
-        raw_tx2 = tx2
-        raw_ty2 = ty2
-        tx1 = max(0, raw_tx1 - pad_left)
-        ty1 = max(0, raw_ty1 - pad_top)
-        tx2 = min(w_rc, raw_tx2 + pad_right)
-        ty2 = min(h_rc, raw_ty2 + pad_bottom)
-
-        crop = raw_crop[ty1:ty2, tx1:tx2].copy()
+        detect = raw.copy()
+        detect[icon_mask > 0] = bg
+        tx1, ty1, tx2, ty2 = detect_text_area(detect, scale)
+        # Keep crop compact, but reserve extra left safety because antialiased first
+        # glyphs are the most common part missed by projection-based text bounds.
+        pad_l = max(10, int(14 * scale))
+        pad_r = max(8, int(10 * scale))
+        pad_t = max(4, int(5 * scale))
+        pad_b = max(5, int(6 * scale))
+        fx1, fy1 = max(0, tx1 - pad_l), max(0, ty1 - pad_t)
+        fx2, fy2 = min(wp, tx2 + pad_r), min(hp, ty2 + pad_b)
+        crop = raw[fy1:fy2, fx1:fx2].copy()
         if crop.size == 0:
             return
 
-        # Dọn icon sót trong vùng padding, không tô vào vùng text đã detect.
-        final_h, final_w = crop.shape[:2]
-        text_left_in_crop = max(0, raw_tx1 - tx1)
-        text_right_in_crop = min(final_w, raw_tx2 - tx1)
-        text_top_in_crop = max(0, raw_ty1 - ty1)
+        # Protect detected text rectangle, erase compact icons only in its padding.
+        local_mask = icon_mask[fy1:fy2, fx1:fx2]
+        guard = np.zeros_like(local_mask)
+        gx1, gx2 = max(0, tx1 - fx1), min(crop.shape[1], tx2 - fx1)
+        gy1, gy2 = max(0, ty1 - fy1), min(crop.shape[0], ty2 - fy1)
+        guard[gy1:gy2, gx1:gx2] = 255
+        crop[(local_mask > 0) & (guard == 0)] = bg
 
-        if cx_local is not None and cy_local is not None:
-            # Dọn vùng icon theo tọa độ thật, gồm cả icon trắng/bóng mờ low-saturation.
-            # HSV-only không bắt được các mảng trắng/xám nên vẫn còn dấu vết.
-            if icon_side == "left":
-                icon_edge_in_crop = int(cx_local + 12.5 * scale) - tx1
-                clean_w = max(0, min(final_w, icon_edge_in_crop, max(0, text_left_in_crop - int(2 * scale))))
-                if clean_w > 0:
-                    crop[:, :clean_w] = bg_color
-            elif icon_side == "right":
-                icon_edge_in_crop = int(cx_local - 12.5 * scale) - tx1
-                clean_x = max(0, min(final_w, icon_edge_in_crop, max(0, text_right_in_crop + int(2 * scale))))
-                if clean_x < final_w:
-                    crop[:, clean_x:] = bg_color
-            elif icon_side == "top":
-                icon_edge_in_crop = int(cy_local + 12.5 * scale) - ty1
-                clean_h = max(0, min(final_h, icon_edge_in_crop, max(0, text_top_in_crop - int(2 * scale))))
-                if clean_h > 0:
-                    crop[:clean_h, :] = bg_color
-
-            # Dọn thêm mảng màu icon nếu còn chạm mép ngoài vùng hình chữ nhật.
-            def _erase_edge_connected_icon(side: str):
-                hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-                s = hsv_crop[:, :, 1]
-                v = hsv_crop[:, :, 2]
-                icon_mask = ((s > 35) & (v > 60)).astype(np.uint8) * 255
-                kernel = np.ones((3, 3), np.uint8)
-                icon_mask = cv2.dilate(icon_mask, kernel, iterations=1)
-                scan_w = min(final_w, max(18, int(28 * scale)))
-                scan_h = min(final_h, max(18, int(28 * scale)))
-                edge_tol = max(2, int(3 * scale))
-                clean_mask = np.zeros((final_h, final_w), dtype=np.uint8)
-
-                if side == "left":
-                    roi = icon_mask[:, :scan_w]
-                    x_base, y_base = 0, 0
-                elif side == "right":
-                    roi = icon_mask[:, final_w - scan_w:]
-                    x_base, y_base = final_w - scan_w, 0
-                elif side == "top":
-                    roi = icon_mask[:scan_h, :]
-                    x_base, y_base = 0, 0
-                else:
-                    return
-
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(roi, 8)
-                for label in range(1, num_labels):
-                    x, y, w_box, h_box, area = stats[label]
-                    if area < max(2, int(3 * scale * scale)):
-                        continue
-                    touches_edge = (
-                        (side == "left" and x <= edge_tol) or
-                        (side == "right" and x + w_box >= roi.shape[1] - edge_tol) or
-                        (side == "top" and y <= edge_tol)
-                    )
-                    if touches_edge:
-                        component = (labels == label).astype(np.uint8) * 255
-                        clean_mask[y_base:y_base + roi.shape[0], x_base:x_base + roi.shape[1]] |= component
-
-                if np.any(clean_mask):
-                    clean_mask[:] = cv2.dilate(clean_mask, kernel, iterations=1)
-                    crop[clean_mask > 0] = bg_color
-
-            if icon_side == "left":
-                _erase_edge_connected_icon("left")
-            elif icon_side == "right":
-                _erase_edge_connected_icon("right")
-            elif icon_side == "top":
-                _erase_edge_connected_icon("top")
-
-        # Làm sạch nền viền rất mỏng trên/dưới; không tô trái/phải để tránh mất nét đầu/cuối.
-        edge_pad = max(1, int(1 * scale))
-        if crop.shape[0] > 2 * edge_pad:
-            crop[0:edge_pad, :] = bg_color
-            crop[crop.shape[0] - edge_pad:, :] = bg_color
-
-        def _remove_thin_colored_horizontal_lines(img_part: np.ndarray):
-            """Xóa line xanh/cyan mảnh do Google Maps overlay/hover lọt vào ảnh crop lưu debug."""
-            if img_part is None or img_part.size == 0:
-                return img_part
-            try:
-                hp, wp = img_part.shape[:2]
-                hsv = cv2.cvtColor(img_part, cv2.COLOR_BGR2HSV)
-                h = hsv[:, :, 0]
-                s = hsv[:, :, 1]
-                v = hsv[:, :, 2]
-                # Bắt line xanh/cyan bão hòa cao, rất mảnh và kéo dài ngang.
-                line_mask = (((h >= 80) & (h <= 115) & (s > 45) & (v > 120))).astype(np.uint8) * 255
-                kernel = np.ones((1, max(8, int(10 * scale))), np.uint8)
-                line_mask = cv2.morphologyEx(line_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(line_mask, 8)
-                clean_mask = np.zeros((hp, wp), dtype=np.uint8)
-                for label in range(1, num_labels):
-                    x, y, w_box, h_box, area = stats[label]
-                    if h_box <= max(3, int(3 * scale)) and w_box >= max(24, int(0.28 * wp)):
-                        clean_mask[labels == label] = 255
-                if np.any(clean_mask):
-                    clean_mask = cv2.dilate(clean_mask, np.ones((2, 2), np.uint8), iterations=1)
-                    img_part[clean_mask > 0] = bg_color
-            except Exception:
-                pass
-            return img_part
-
-        crop = _remove_thin_colored_horizontal_lines(crop)
+        edge = max(1, int(scale))
+        if crop.shape[0] > edge * 2:
+            crop[:edge, :] = bg
+            crop[-edge:, :] = bg
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        is_success, im_buf_arr = cv2.imencode(".png", crop)
-        if is_success:
-            with open(output_path, "wb") as f:
-                f.write(im_buf_arr.tobytes())
+        ok, encoded = cv2.imencode(".png", crop)
+        if ok:
+            with open(output_path, "wb") as handle:
+                handle.write(encoded.tobytes())
         else:
             cv2.imwrite(output_path, crop)
         logger.info("  [Crop saved] %s", os.path.basename(output_path))
-    except Exception as e:
-        logger.warning("Không thể lưu ảnh crop POI: %s", e)
+    except Exception as exc:
+        logger.warning("Không thể lưu ảnh crop POI: %s", exc)

@@ -245,8 +245,13 @@ def _select_primary_line_crops(line_crops: List[np.ndarray]) -> List[np.ndarray]
         height_ratio = ink_h / max(1, first_h)
         width_ratio = ink_w / max(1, first_w)
         area_ratio = ink_area / max(1, first_area)
-        # Giữ dòng dưới nếu vẫn là dòng chữ thật, không phải nhiễu nhỏ hoặc subtitle quá yếu.
-        if height_ratio >= 0.58 and width_ratio >= 0.35 and area_ratio >= 0.25:
+        # A wrapped POI title can render its second line slightly smaller because of
+        # antialiasing and Vietnamese marks. Real samples measure about 0.80 glyph
+        # height, while secondary category text is much smaller (about 0.61).
+        # Keep the threshold relative and vocabulary-free.
+        same_font_line = height_ratio >= 0.75
+        substantial_line = width_ratio >= 0.42 and area_ratio >= 0.38
+        if same_font_line and substantial_line:
             kept.append(crop)
             if len(kept) >= 2:
                 break
