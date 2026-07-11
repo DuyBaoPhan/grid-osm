@@ -143,7 +143,10 @@ def _recognize_text_crop_vietocr_normalized(
             if crop.size == 0:
                 return ""
 
-            line_crops = _select_primary_line_crops(split_crop_into_lines_normalized(crop, scale))
+            line_crops = [
+                line for line in split_crop_into_lines_normalized(crop, scale)
+                if line is not None and line.size > 0
+            ]
             variant_texts = []
             for line_crop in line_crops:
                 if line_crop.size == 0:
@@ -227,11 +230,10 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
         return np.empty((0, 0, 3), dtype=np.uint8)
 
     line_crops = split_crop_into_lines(text_crop, scale)
-    # Filter smaller category/rating subtitles before flattening. Once lines are
-    # joined horizontally, their original font geometry is lost and fluent junk
-    # can receive a misleadingly high language score.
-    usable_lines = _select_primary_line_crops(line_crops)
-    usable_lines = [line for line in usable_lines if line is not None and line.size > 0]
+    # Full-information mode: preserve every detected text line. Category/description
+    # lines are acceptable output, and dropping them here makes later coverage checks
+    # impossible because omitted pixels never reach OCR.
+    usable_lines = [line for line in line_crops if line is not None and line.size > 0]
     if not usable_lines:
         return np.empty((0, 0, 3), dtype=np.uint8)
 
@@ -309,15 +311,28 @@ def _build_one_pass_ocr_image(prepared_crop: np.ndarray, scale: float = 1.0) -> 
     return canvas
 
 
-def _retained_source_line_count(prepared_crop: np.ndarray, scale: float = 1.0) -> int:
-    """Count title-like lines retained by the same geometry used for one-pass OCR."""
+def _retained_source_metrics(prepared_crop: np.ndarray, scale: float = 1.0) -> dict:
+    """Measure title-like source lines using geometry shared with one-pass OCR."""
     if prepared_crop is None or prepared_crop.size == 0:
-        return 0
+        return {"count": 0, "ink_width_sum": 0}
     tx1, ty1, tx2, ty2 = detect_text_area(prepared_crop, scale)
     text_crop = prepared_crop[ty1:ty2, max(0, tx1 - int(12 * scale)):min(prepared_crop.shape[1], tx2 + int(12 * scale))]
     if text_crop.size == 0:
-        return 0
-    return len(_select_primary_line_crops(split_crop_into_lines(text_crop, scale)))
+        return {"count": 0, "ink_width_sum": 0}
+    lines = [
+        line for line in split_crop_into_lines(text_crop, scale)
+        if line is not None and line.size > 0
+    ]
+    widths = []
+    for line in lines:
+        if line is None or line.size == 0:
+            continue
+        hsv = cv2.cvtColor(line, cv2.COLOR_BGR2HSV)
+        mask = ((hsv[:, :, 2] < 190) | (hsv[:, :, 1] > 45)).astype(np.uint8)
+        ys, xs = np.where(mask > 0)
+        if len(xs):
+            widths.append(int(xs.max() - xs.min() + 1))
+    return {"count": len(widths), "ink_width_sum": int(sum(widths))}
 
 
 def _one_pass_quality_features(canonical_img: np.ndarray, scale: float = 1.0, source_line_count: int = 0) -> dict:
@@ -384,14 +399,20 @@ def _ocr_needs_rescue(text: str, features: dict = None) -> bool:
     features = features or {}
     line_count = int(features.get("line_count") or 0)
     retained_line_count = int(features.get("retained_line_count") or 0)
+    retained_ink_width = int(features.get("retained_ink_width") or 0)
     if line_count >= 2 and len(tokens) <= 1:
         return True
     if line_count >= 2 and len(cleaned) < 5:
         return True
-    # Targeted coverage gate: only rescue when geometry retained multiple title-like
-    # lines but OCR returned fewer tokens than lines. Do not penalize normal multi-line
-    # labels that already produced adequate text.
     if retained_line_count >= 2 and len(tokens) < retained_line_count:
+        return True
+    # At Google Maps label scale, one rendered character occupies roughly 5–9 px.
+    # Use conservative 9 px estimate: rescue only when recognized character count is
+    # clearly too small for retained source ink. This catches a fully omitted line
+    # while avoiding rescue for normal OCR spacing differences.
+    recognized_chars = len(re.sub(r'[^A-Za-zÀ-ỹĐđ0-9]', '', cleaned))
+    min_expected_chars = retained_ink_width / max(1.0, 9.0 * max(1.0, float(features.get("scale") or 1.0)))
+    if retained_line_count >= 2 and recognized_chars < min_expected_chars * 0.72:
         return True
     return False
 
@@ -438,10 +459,12 @@ def _recognize_text_crop_vietocr_one_pass(cv_img: np.ndarray, bbox: List[float],
     canonical_source = normalize_ocr_background(crop_clean)
     source_lines = split_crop_into_lines(canonical_source, scale)
     source_line_count = len([line for line in source_lines if line is not None and line.size > 0])
-    retained_line_count = _retained_source_line_count(canonical_source, scale)
+    retained_metrics = _retained_source_metrics(canonical_source, scale)
     canonical_img = _build_one_pass_ocr_image(canonical_source, scale)
     features = _one_pass_quality_features(canonical_img, scale, source_line_count=source_line_count)
-    features["retained_line_count"] = retained_line_count
+    features["retained_line_count"] = retained_metrics["count"]
+    features["retained_ink_width"] = retained_metrics["ink_width_sum"]
+    features["scale"] = scale
     if canonical_img.size == 0:
         return "", features
     try:
@@ -498,7 +521,10 @@ def _recognize_text_crop_vietocr_rescue(cv_img: np.ndarray, bbox: List[float], i
             return ""
 
         try:
-            line_crops = _select_primary_line_crops(split_crop_into_lines(crop_local, scale))
+            line_crops = [
+                line for line in split_crop_into_lines(crop_local, scale)
+                if line is not None and line.size > 0
+            ]
             
             texts = []
 
@@ -822,6 +848,29 @@ def _recognize_text_crop_vietocr_rescue(cv_img: np.ndarray, bbox: List[float], i
             logger.info("  [OCR prefix rescue] Selected='%s' + Unmasked='%s'", selected_text, unmasked_clean)
             selected_text = unmasked_clean
 
+    def _extension_has_consensus(base_text: str, candidate_text: str, variants: list[str]) -> bool:
+        """Accept added OCR content only when another independent variant supports it."""
+        base_tokens = _ocr_tokens(base_text)
+        candidate_tokens = _ocr_tokens(candidate_text)
+        if len(candidate_tokens) <= len(base_tokens):
+            return True
+        added = []
+        remaining = list(base_tokens)
+        for token in candidate_tokens:
+            if token in remaining:
+                remaining.remove(token)
+            else:
+                added.append(token)
+        if not added:
+            return True
+        for other in variants:
+            other_tokens = _ocr_tokens(other)
+            if all(token in other_tokens for token in added):
+                return True
+        return False
+
+    all_variants = [primary_masked, primary_unmasked, norm_text]
+
     if selected_text and primary_text and selected_text != primary_text:
         merged_text = _merge_best_diacritics(primary_text, selected_text)
         merged_text = _clean_final_ocr_text(merged_text)
@@ -831,21 +880,24 @@ def _recognize_text_crop_vietocr_rescue(cv_img: np.ndarray, bbox: List[float], i
 
     for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
         rescued_text = _append_missing_known_suffix(selected_text, alt_text)
-        if rescued_text != selected_text:
+        other_variants = [text for text in all_variants if text and text != alt_text]
+        if rescued_text != selected_text and _extension_has_consensus(selected_text, rescued_text, other_variants):
             logger.info("  [OCR suffix rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
             selected_text = rescued_text
             break
 
     for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
         rescued_text = _merge_missing_middle_tokens(selected_text, alt_text)
-        if rescued_text != selected_text:
+        other_variants = [text for text in all_variants if text and text != alt_text]
+        if rescued_text != selected_text and _extension_has_consensus(selected_text, rescued_text, other_variants):
             logger.info("  [OCR missing-middle rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, rescued_text)
             selected_text = rescued_text
             break
 
     for alt_source, alt_text in (("masked", primary_masked), ("unmasked", primary_unmasked), ("normalized", norm_text)):
         merged_text = _merge_overlapping_ocr_continuation(selected_text, alt_text)
-        if merged_text != selected_text:
+        other_variants = [text for text in all_variants if text and text != alt_text]
+        if merged_text != selected_text and _extension_has_consensus(selected_text, merged_text, other_variants):
             logger.info("  [OCR overlap rescue] Selected='%s' + %s='%s' -> '%s'", selected_text, alt_source, alt_text, merged_text)
             selected_text = merged_text
             break
@@ -878,6 +930,50 @@ def _recognize_text_crop_vietocr(cv_img: np.ndarray, bbox: List[float], icon_sid
     rescue_text = _recognize_text_crop_vietocr_rescue(cv_img, bbox, icon_side, scale, cx, cy)
     one_score = _score_ocr_text_quality(one_pass_text)
     rescue_score = _score_ocr_text_quality(rescue_text)
+
+    if one_pass_text and rescue_text:
+        retained_line_count = int(features.get("retained_line_count") or 0)
+        # Slash-delimited rescue segments must be supported by separate source lines.
+        # A one-line crop cannot legitimately produce an extra second segment; this
+        # is a stronger visual constraint than language score or dictionary support.
+        rescue_segments = [part.strip() for part in re.split(r'\s*/\s*', rescue_text) if part.strip()]
+        if retained_line_count > 0 and len(rescue_segments) > retained_line_count:
+            logger.info(
+                "  [OCR reject unsupported segments] OnePass='%s' Rescue='%s' segments=%d source_lines=%d",
+                one_pass_text,
+                rescue_text,
+                len(rescue_segments),
+                retained_line_count,
+            )
+            return one_pass_text
+
+        one_tokens = _ocr_tokens(one_pass_text)
+        rescue_tokens = _ocr_tokens(rescue_text)
+        if len(rescue_tokens) > len(one_tokens):
+            remaining = list(one_tokens)
+            added = []
+            for token in rescue_tokens:
+                if token in remaining:
+                    remaining.remove(token)
+                else:
+                    added.append(token)
+            # A longer rescue must add linguistically supported tokens and must not
+            # increase OCR artifacts. This catches hallucinated category/suffix text
+            # even when the full rescue string receives a misleading length bonus.
+            supported_added = sum(1 for token in added if _is_known_token(token))
+            added_support_ratio = supported_added / max(1, len(added))
+            rescue_artifacts = _ocr_artifact_score(rescue_text)
+            one_artifacts = _ocr_artifact_score(one_pass_text)
+            if added and (added_support_ratio < 0.5 or rescue_artifacts > one_artifacts + 1):
+                logger.info(
+                    "  [OCR reject unsupported extension] OnePass='%s' Rescue='%s' added=%s support=%.2f",
+                    one_pass_text,
+                    rescue_text,
+                    added,
+                    added_support_ratio,
+                )
+                return one_pass_text
+
     if one_pass_text and (not rescue_text or rescue_score + 8 < one_score):
         logger.info(
             "  [OCR keep one-pass after rescue] OnePass='%s' Rescue='%s' scores=(%.2f, %.2f)",
