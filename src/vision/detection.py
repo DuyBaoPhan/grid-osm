@@ -6,12 +6,13 @@ import asyncio
 import logging
 import os
 import re
+import unicodedata
 from typing import List, Tuple
 
 import cv2
 import numpy as np
 
-from config import SAVE_POI_CROPS, POI_CROPS_DIR
+from config import SAVE_POI_CROPS, POI_CROPS_DIR, CROP_ONLY_MODE
 from .models import _get_yolo_model
 from .text_cleaning import (
     _clean_ocr_edge_segments,
@@ -20,7 +21,6 @@ from .text_cleaning import (
     _looks_like_bad_ocr,
 )
 from .geometry import expand_bbox_downward, detect_text_area
-from .recognizers import _recognize_text_crop_vietocr
 from .rendering import save_poi_crop
 
 logger = logging.getLogger(__name__)
@@ -103,8 +103,10 @@ def _merge_overlapping_boxes(boxes_list: List[dict], scale: float = 1.0) -> List
                 should_merge = False
                 if io_min > 0.65:
                     should_merge = True
-                elif dist < 45.0 * scale:
-                    if dist_x < 15.0 * scale or dist_y < 15.0 * scale:
+                elif dist < 35.0 * scale:
+                    is_horizontal_pair = dist_y < 8.0 * scale
+                    is_vertical_pair = (dist_x < 8.0 * scale) and (dist_y < 20.0 * scale)
+                    if is_horizontal_pair or is_vertical_pair:
                         should_merge = True
 
                 if should_merge:
@@ -157,6 +159,7 @@ async def extract_pois_from_screenshot(
     tx: int = 0,
     ty: int = 0,
     img_metadata: dict = None,
+    area_prefix: str = "",
 ) -> Tuple[List[dict], bool]:
     model = _get_yolo_model()
     if model is None:
@@ -373,52 +376,34 @@ async def extract_pois_from_screenshot(
         left_exp, top_exp, right_exp, bottom_exp = expand_bbox_downward(img, [left, top, right, bottom], max_expand=int(28 * scale))
         b_expanded = [left_exp, top_exp, right_exp, bottom_exp]
         
-        # OCR text dùng logic phóng to 6x và phân tích đa dòng (loại bỏ icon)
-        text = _recognize_text_crop_vietocr(img, b_expanded, icon_side, scale, cx=cx, cy=cy)
-        name = _clean_spelling(text)
-        name_cleaned = _clean_ocr_edge_segments(name)
-        if name_cleaned != name:
-            logger.info("  [OCR edge cleanup] '%s' -> '%s'", name, name_cleaned)
-            name = name_cleaned
-        logger.debug(
-            "  [POI OCR] tile=(%s,%s) idx=%d conf=%.3f icon=%s box=(%.0f,%.0f,%.0f,%.0f) "
-            "expanded=(%.0f,%.0f,%.0f,%.0f) center=(%.1f,%.1f) text='%s' name='%s'",
-            tx,
-            ty,
-            i,
-            conf,
-            icon_side,
-            left,
-            top,
-            right,
-            bottom,
-            left_exp,
-            top_exp,
-            right_exp,
-            bottom_exp,
-            cx,
-            cy,
-            text,
-            name,
-        )
-        
-        if _should_drop_poi_name(name):
-            logger.info(
-                "  [POI filtered] tile=(%s,%s) idx=%d name='%s' conf=%.3f box=(%.0f,%.0f,%.0f,%.0f)",
-                tx,
-                ty,
-                i,
-                name,
-                conf,
-                left,
-                top,
-                right,
-                bottom,
+        if CROP_ONLY_MODE:
+            name = f"crop_{i}"
+        else:
+            # Import chậm chỉ khi cần text; crop-only không tải VietOCR/PaddleOCR.
+            from .recognizers import _recognize_text_crop_vietocr
+
+            text = _recognize_text_crop_vietocr(img, b_expanded, icon_side, scale, cx=cx, cy=cy)
+            name = _clean_spelling(text)
+            name_cleaned = _clean_ocr_edge_segments(name)
+            if name_cleaned != name:
+                logger.info("  [OCR edge cleanup] '%s' -> '%s'", name, name_cleaned)
+                name = name_cleaned
+            logger.debug(
+                "  [POI OCR] tile=(%s,%s) idx=%d conf=%.3f icon=%s box=(%.0f,%.0f,%.0f,%.0f) "
+                "expanded=(%.0f,%.0f,%.0f,%.0f) center=(%.1f,%.1f) text='%s' name='%s'",
+                tx, ty, i, conf, icon_side, left, top, right, bottom,
+                left_exp, top_exp, right_exp, bottom_exp, cx, cy, text, name,
             )
-            continue
-        
-        if not name:
-            name = f"Unknown_{i}"
+
+            if _should_drop_poi_name(name):
+                logger.info(
+                    "  [POI filtered] tile=(%s,%s) idx=%d name='%s' conf=%.3f box=(%.0f,%.0f,%.0f,%.0f)",
+                    tx, ty, i, name, conf, left, top, right, bottom,
+                )
+                continue
+
+            if not name:
+                name = f"Unknown_{i}"
   
         # Đánh dấu POI bị cắt sát mép ảnh để worker chụp rescue view riêng.
         edge_margin = max(24.0, 48.0 * scale)
@@ -453,11 +438,14 @@ async def extract_pois_from_screenshot(
         pois.append(poi_item)
   
         if SAVE_POI_CROPS:
-            # Làm sạch tên file để loại bỏ ký tự không hợp lệ trên Windows
+            # Tên file chứa tỉnh/quận; mọi crop vẫn nằm chung POI_CROPS_DIR.
             safe_name = re.sub(r'[\\/*?:"<>|]', "", name).replace(" ", "_").strip()
             if not safe_name:
                 safe_name = f"Unknown_{i}"
-            filename = f"tile_{tx}_{ty}_poi_{i}_{safe_name}.png"
+            ascii_area = unicodedata.normalize("NFKD", area_prefix).encode("ascii", "ignore").decode("ascii")
+            safe_area = re.sub(r"[^a-z0-9]+", "_", ascii_area.lower()).strip("_")
+            prefix = f"{safe_area}__" if safe_area else ""
+            filename = f"{prefix}tile_{tx}_{ty}_poi_{i}_{safe_name}.png"
             output_path = os.path.join(POI_CROPS_DIR, filename)
             poi_item["crop_image"] = output_path
             poi_item["crop_path"] = output_path

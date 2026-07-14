@@ -79,20 +79,27 @@ def save_poi_crop(image_bytes: bytes, poi: dict, output_path: str, scale: float 
             raw[-corner:, :corner].reshape(-1, 3), raw[-corner:, -corner:].reshape(-1, 3),
         ))
         bg = np.median(samples, axis=0).astype(np.uint8)
+        bg_gray = float(cv2.cvtColor(bg.reshape(1, 1, 3), cv2.COLOR_BGR2GRAY)[0, 0])
+        if bg_gray < 50:
+            bg = np.array([240, 245, 245], dtype=np.uint8)  # BGR fallback for light gray/cream GMap bg
+            bg_gray = 243.0
 
         hsv = cv2.cvtColor(raw, cv2.COLOR_BGR2HSV)
         gray = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)
-        bg_gray = float(cv2.cvtColor(bg.reshape(1, 1, 3), cv2.COLOR_BGR2GRAY)[0, 0])
         candidate = (((hsv[:, :, 1] > 38) & (hsv[:, :, 2] > 55)) |
                      (np.abs(gray.astype(np.float32) - bg_gray) > 48)).astype(np.uint8) * 255
         candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
 
         band = max(20, int(28 * scale))
-        edge_rois = (
-            (max(0, by1 - band), min(hp, by2 + band), max(0, bx1 - band), min(wp, bx1 + band)),
-            (max(0, by1 - band), min(hp, by2 + band), max(0, bx2 - band), min(wp, bx2 + band)),
-            (max(0, by1 - band), min(hp, by1 + band), max(0, bx1 - band), min(wp, bx2 + band)),
-        )
+        icon_side = poi.get("icon_side", "none")
+        edge_rois = []
+        if icon_side == "left":
+            edge_rois.append((max(0, by1 - band), min(hp, by2 + band), max(0, bx1 - band), min(wp, bx1 + band)))
+        elif icon_side == "right":
+            edge_rois.append((max(0, by1 - band), min(hp, by2 + band), max(0, bx2 - band), min(wp, bx2 + band)))
+        elif icon_side == "top":
+            edge_rois.append((max(0, by1 - band), min(hp, by1 + band), max(0, bx1 - band), min(wp, bx2 + band)))
+
         icon_mask = np.zeros((hp, wp), np.uint8)
         for ya, yb, xa, xb in edge_rois:
             roi = candidate[ya:yb, xa:xb]
