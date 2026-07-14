@@ -197,13 +197,15 @@ def detect_text_area(
         sorted_boxes = sorted(idxs, key=lambda b: b[0])
         
         # 1. Kiểm tra và loại bỏ icon ở bên trái (nếu có)
-        pop_thresh = int(18 * scale)
+        pop_thresh_w = int(14 * scale)
+        pop_thresh_h = int(14 * scale)
         if len(sorted_boxes) >= 3:
             b_first = sorted_boxes[0]
             b_second = sorted_boxes[1]
             gap_left = b_second[0] - (b_first[0] + b_first[2])
-            # Nếu contour đầu tiên to/rộng cả chiều ngang lẫn dọc (>= 18px) và có khoảng trống với chữ
-            if b_first[2] >= pop_thresh and b_first[3] >= pop_thresh and gap_left >= int(3 * scale):
+            aspect = b_first[2] / float(b_first[3]) if b_first[3] > 0 else 0.0
+            # Chỉ coi là icon nếu: to, có tỉ lệ khung hình dạng vuông (0.7 đến 1.45) và khoảng cách rõ ràng với chữ
+            if b_first[2] >= pop_thresh_w and b_first[3] >= pop_thresh_h and 0.7 <= aspect <= 1.45 and gap_left >= int(5 * scale):
                 sorted_boxes.pop(0)
         
         # 2. Kiểm tra và loại bỏ icon ở bên phải (nếu có)
@@ -211,7 +213,8 @@ def detect_text_area(
             b_last = sorted_boxes[-1]
             b_prev = sorted_boxes[-2]
             gap_right = b_last[0] - (b_prev[0] + b_prev[2])
-            if b_last[2] >= pop_thresh and b_last[3] >= pop_thresh and gap_right >= int(3 * scale):
+            aspect = b_last[2] / float(b_last[3]) if b_last[3] > 0 else 0.0
+            if b_last[2] >= pop_thresh_w and b_last[3] >= pop_thresh_h and 0.7 <= aspect <= 1.45 and gap_right >= int(5 * scale):
                 sorted_boxes.pop()
         
         # Nếu sau khi loại bỏ icon vẫn còn ít nhất 1 hộp hợp lệ (đáp ứng từ ngắn hoặc dính nét)

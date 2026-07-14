@@ -14,11 +14,11 @@ OLLAMA_API_BASE   = "http://localhost:11434/v1"
 OLLAMA_MODEL      = "qwen2.5vl:3b"           
 
 # ── Worker ───────────────────────────────────────────────────
-NUM_WORKERS            = 1              # Tăng lên 4 worker để chụp nhanh hơn theo yêu cầu người dùng
+NUM_WORKERS            = 2              # Tăng lên 4 worker để chụp nhanh hơn theo yêu cầu người dùng
 DELAY_BETWEEN_REQ      = 0.8            # giây nghỉ giữa mỗi tile
 MAX_RETRIES            = 2              # số lần retry khi tile lỗi
 BROWSER_RESTART_EVERY  = 100            # restart browser sau N tile
-HEADLESS               = False          # Set False để hiển thị giao diện trình duyệt của từng worker
+HEADLESS               = True          # Set False để hiển thị giao diện trình duyệt của từng worker
 
 # ── Địa lý ───────────────────────────────────────────────────
 ZOOM_LEVEL       = 21                   # zoom chia luoi tile - Google Maps max zoom = 21
@@ -38,9 +38,10 @@ SCREENSHOT_W   = 1920            # Fullscreen width (1920x1080)
 SCREENSHOT_H   = 1080            # Fullscreen height
 SCREENSHOT_OVERLAP_PX = 100      # Khoảng tràn viền xung quanh ô quét (tăng để cứu chữ/icon sát mép tốt hơn)
 SCREENSHOT_DIR = str(BASE_DIR / "screenshots")  # thư mục lưu ảnh debug (tùy chọn)
-SAVE_SCREENSHOTS = True          # Đổi thành True để lưu ảnh xuống ổ đĩa!
+SAVE_SCREENSHOTS = True         # Crop-only: không lưu ảnh tile debug
 SAVE_POI_CROPS = True            # Lưu riêng từng mảnh ảnh POI được nhận diện
 POI_CROPS_DIR = str(BASE_DIR / "crops") # Thư mục lưu các mảnh ảnh POI
+CROP_ONLY_MODE = False            # Chỉ YOLO + làm sạch/lưu crop; bỏ OCR, DOM, GPS và xuất text
 
 # ── Map load ─────────────────────────────────────────────────
 PAGE_LOAD_TIMEOUT  = 20_000            # ms — timeout goto()

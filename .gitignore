@@ -229,7 +229,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
+output_test/
 # Generated scan start centers
 SKILL.md
 run.txt

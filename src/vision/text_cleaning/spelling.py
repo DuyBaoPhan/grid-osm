@@ -5,6 +5,7 @@ import re
 from .dictionary import (
     _is_known_token,
     _normalize_ocr_spelling_by_dictionary,
+    _normalize_ocr_spelling_by_fuzzy_dictionary,
     _normalize_vietnamese_place_phrases,
     _strip_vietnamese_accents,
 )
@@ -176,8 +177,12 @@ def _clean_spelling(text: str) -> str:
     text = re.sub(r"[\"`\\\[\]\{\}]", "", text)
     text = re.sub(r"(?<![A-Za-zÀ-ỹĐđ])'|'(?![A-Za-zÀ-ỹĐđ])", "", text)
     text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'(?<=[A-Za-zÀ-ỹĐđ])\s+\d\s+(?=[A-Za-zÀ-ỹĐđ])', ' ', text)
+    text = re.sub(r'(?<=[A-Za-zÀ-ỹĐđ])\s*[:;]\s*(?=[A-Za-zÀ-ỹĐđ])', ' ', text)
     text = _fix_latin_brand_ocr_artifacts(text)
     text = _normalize_vietnamese_place_phrases(text)
+    text = _normalize_ocr_spelling_by_dictionary(text)
+    text = _normalize_ocr_spelling_by_fuzzy_dictionary(text)
     text = _normalize_ocr_spelling_by_dictionary(text)
     text = _remove_adjacent_duplicate_ocr_tokens(text)
     return text
